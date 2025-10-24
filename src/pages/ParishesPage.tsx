@@ -1,24 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
-import './DiocesesPage.css';
+import './ParishesPage.css';
 
 interface Diocese {
   id: string;
   name: string;
+}
+
+interface Parish {
+  id: string;
+  name: string;
   city: string;
   state: string;
-  bishopName?: string;
+  priestName?: string;
   email?: string;
   phone?: string;
   status: string;
-  createdAt: string;
+  dioceseId: string;
+  diocese?: Diocese;
 }
 
-export const DiocesesPage: React.FC = () => {
+export const ParishesPage: React.FC = () => {
+  const [parishes, setParishes] = useState<Parish[]>([]);
   const [dioceses, setDioceses] = useState<Diocese[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [editingDiocese, setEditingDiocese] = useState<Diocese | null>(null);
+  const [editingParish, setEditingParish] = useState<Parish | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     address: '',
@@ -27,20 +34,24 @@ export const DiocesesPage: React.FC = () => {
     zipCode: '',
     phone: '',
     email: '',
-    bishopName: '',
+    priestName: '',
+    dioceseId: '',
   });
 
   useEffect(() => {
-    fetchDioceses();
+    fetchData();
   }, []);
 
-  const fetchDioceses = async () => {
+  const fetchData = async () => {
     try {
-      const response = await api.get('/dioceses');
-      setDioceses(response.data);
+      const [parishesRes, diocesesRes] = await Promise.all([
+        api.get('/parishes'),
+        api.get('/dioceses'),
+      ]);
+      setParishes(parishesRes.data);
+      setDioceses(diocesesRes.data);
     } catch (error) {
-      console.error('Erro ao carregar dioceses:', error);
-      alert('Erro ao carregar dioceses');
+      console.error('Erro ao carregar dados:', error);
     } finally {
       setLoading(false);
     }
@@ -48,48 +59,51 @@ export const DiocesesPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!formData.dioceseId) {
+      alert('Selecione uma diocese');
+      return;
+    }
+    
     try {
-      if (editingDiocese) {
-        await api.patch(`/dioceses/${editingDiocese.id}`, formData);
-        alert('Diocese atualizada com sucesso!');
+      if (editingParish) {
+        await api.patch(`/parishes/${editingParish.id}`, formData);
+        alert('Paróquia atualizada!');
       } else {
-        await api.post('/dioceses', formData);
-        alert('Diocese criada com sucesso!');
+        await api.post('/parishes', formData);
+        alert('Paróquia criada!');
       }
       setShowModal(false);
       resetForm();
-      fetchDioceses();
+      fetchData();
     } catch (error: any) {
-      console.error('Erro ao salvar diocese:', error);
-      alert(error.response?.data?.message || 'Erro ao salvar diocese');
+      alert(error.response?.data?.message || 'Erro ao salvar');
     }
   };
 
-  const handleEdit = (diocese: Diocese) => {
-    setEditingDiocese(diocese);
+  const handleEdit = (parish: Parish) => {
+    setEditingParish(parish);
     setFormData({
-      name: diocese.name,
+      name: parish.name,
       address: '',
-      city: diocese.city,
-      state: diocese.state,
+      city: parish.city,
+      state: parish.state,
       zipCode: '',
-      phone: diocese.phone || '',
-      email: diocese.email || '',
-      bishopName: diocese.bishopName || '',
+      phone: parish.phone || '',
+      email: parish.email || '',
+      priestName: parish.priestName || '',
+      dioceseId: parish.dioceseId,
     });
     setShowModal(true);
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta diocese?')) return;
-    
+    if (!confirm('Excluir esta paróquia?')) return;
     try {
-      await api.delete(`/dioceses/${id}`);
-      alert('Diocese excluída com sucesso!');
-      fetchDioceses();
+      await api.delete(`/parishes/${id}`);
+      fetchData();
     } catch (error: any) {
-      console.error('Erro ao excluir diocese:', error);
-      alert(error.response?.data?.message || 'Erro ao excluir diocese');
+      alert(error.response?.data?.message || 'Erro ao excluir');
     }
   };
 
@@ -102,154 +116,110 @@ export const DiocesesPage: React.FC = () => {
       zipCode: '',
       phone: '',
       email: '',
-      bishopName: '',
+      priestName: '',
+      dioceseId: '',
     });
-    setEditingDiocese(null);
+    setEditingParish(null);
   };
 
-  const handleCloseModal = () => {
-    setShowModal(false);
-    resetForm();
-  };
-
-  if (loading) {
-    return <div className="loading">Carregando...</div>;
-  }
+  if (loading) return <div className="loading">Carregando...</div>;
 
   return (
-    <div className="dioceses-page">
+    <div className="parishes-page">
       <div className="page-header">
-        <h1>Dioceses</h1>
+        <h1>Paróquias</h1>
         <button className="btn-primary" onClick={() => setShowModal(true)}>
-          + Nova Diocese
+          + Nova Paróquia
         </button>
       </div>
 
-      <div className="dioceses-grid">
-        {dioceses.map((diocese) => (
-          <div key={diocese.id} className="diocese-card">
+      <div className="parishes-grid">
+        {parishes.map((parish) => (
+          <div key={parish.id} className="parish-card">
             <div className="card-header">
-              <h3>{diocese.name}</h3>
-              <span className={`status ${diocese.status.toLowerCase()}`}>
-                {diocese.status === 'ACTIVE' ? 'Ativa' : 'Inativa'}
+              <h3>{parish.name}</h3>
+              <span className={`status ${parish.status.toLowerCase()}`}>
+                {parish.status === 'ACTIVE' ? 'Ativa' : 'Inativa'}
               </span>
             </div>
             <div className="card-body">
-              <p><strong>Bispo:</strong> {diocese.bishopName || 'Não informado'}</p>
-              <p><strong>Localização:</strong> {diocese.city} - {diocese.state}</p>
-              {diocese.email && <p><strong>Email:</strong> {diocese.email}</p>}
-              {diocese.phone && <p><strong>Telefone:</strong> {diocese.phone}</p>}
+              <p><strong>Pároco:</strong> {parish.priestName || 'Não informado'}</p>
+              <p><strong>Diocese:</strong> {parish.diocese?.name || 'N/A'}</p>
+              <p><strong>Localização:</strong> {parish.city} - {parish.state}</p>
+              {parish.email && <p><strong>Email:</strong> {parish.email}</p>}
+              {parish.phone && <p><strong>Telefone:</strong> {parish.phone}</p>}
             </div>
             <div className="card-actions">
-              <button className="btn-edit" onClick={() => handleEdit(diocese)}>
-                Editar
-              </button>
-              <button className="btn-delete" onClick={() => handleDelete(diocese.id)}>
-                Excluir
-              </button>
+              <button className="btn-edit" onClick={() => handleEdit(parish)}>Editar</button>
+              <button className="btn-delete" onClick={() => handleDelete(parish.id)}>Excluir</button>
             </div>
           </div>
         ))}
       </div>
 
-      {dioceses.length === 0 && (
+      {parishes.length === 0 && (
         <div className="empty-state">
-          <p>Nenhuma diocese cadastrada.</p>
+          <p>Nenhuma paróquia cadastrada.</p>
           <button className="btn-primary" onClick={() => setShowModal(true)}>
-            Cadastrar primeira diocese
+            Cadastrar primeira paróquia
           </button>
         </div>
       )}
 
       {showModal && (
-        <div className="modal-overlay" onClick={handleCloseModal}>
+        <div className="modal-overlay" onClick={() => { setShowModal(false); resetForm(); }}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>{editingDiocese ? 'Editar Diocese' : 'Nova Diocese'}</h2>
-              <button className="btn-close" onClick={handleCloseModal}>×</button>
+              <h2>{editingParish ? 'Editar Paróquia' : 'Nova Paróquia'}</h2>
+              <button className="btn-close" onClick={() => { setShowModal(false); resetForm(); }}>×</button>
             </div>
             <form onSubmit={handleSubmit}>
               <div className="form-group">
-                <label>Nome da Diocese *</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
-                />
+                <label>Diocese *</label>
+                <select value={formData.dioceseId} onChange={(e) => setFormData({ ...formData, dioceseId: e.target.value })} required>
+                  <option value="">Selecione</option>
+                  {dioceses.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
               </div>
               <div className="form-group">
-                <label>Nome do Bispo</label>
-                <input
-                  type="text"
-                  value={formData.bishopName}
-                  onChange={(e) => setFormData({ ...formData, bishopName: e.target.value })}
-                />
+                <label>Nome *</label>
+                <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+              </div>
+              <div className="form-group">
+                <label>Pároco</label>
+                <input type="text" value={formData.priestName} onChange={(e) => setFormData({ ...formData, priestName: e.target.value })} />
               </div>
               <div className="form-row">
                 <div className="form-group">
                   <label>Cidade *</label>
-                  <input
-                    type="text"
-                    value={formData.city}
-                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    required
-                  />
+                  <input type="text" value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} required />
                 </div>
                 <div className="form-group">
                   <label>Estado *</label>
-                  <input
-                    type="text"
-                    value={formData.state}
-                    onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-                    maxLength={2}
-                    required
-                  />
+                  <input type="text" value={formData.state} onChange={(e) => setFormData({ ...formData, state: e.target.value })} maxLength={2} required />
                 </div>
               </div>
               <div className="form-group">
                 <label>Endereço *</label>
-                <input
-                  type="text"
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  required
-                />
+                <input type="text" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} required />
               </div>
               <div className="form-row">
                 <div className="form-group">
                   <label>CEP *</label>
-                  <input
-                    type="text"
-                    value={formData.zipCode}
-                    onChange={(e) => setFormData({ ...formData, zipCode: e.target.value })}
-                    required
-                  />
+                  <input type="text" value={formData.zipCode} onChange={(e) => setFormData({ ...formData, zipCode: e.target.value })} required />
                 </div>
                 <div className="form-group">
                   <label>Telefone</label>
-                  <input
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  />
+                  <input type="tel" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
                 </div>
               </div>
               <div className="form-group">
                 <label>Email</label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                />
+                <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
               </div>
               <div className="modal-actions">
-                <button type="button" className="btn-secondary" onClick={handleCloseModal}>
-                  Cancelar
-                </button>
-                <button type="submit" className="btn-primary">
-                  {editingDiocese ? 'Atualizar' : 'Criar'}
-                </button>
+                <button type="button" className="btn-secondary" onClick={() => { setShowModal(false); resetForm(); }}>Cancelar</button>
+                <button type="submit" className="btn-primary">{editingParish ? 'Atualizar' : 'Criar'}</button>
               </div>
             </form>
           </div>
