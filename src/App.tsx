@@ -3,6 +3,9 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AdminLayout from './layouts/AdminLayout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
+import { DiocesesPage } from './pages/DiocesesPage';
+import { ParishesPage } from './pages/ParishesPage';
+import { CommunitiesPage } from './pages/CommunitiesPage';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -44,9 +47,9 @@ function AppRoutes() {
         }
       >
         <Route index element={<DashboardPage />} />
-        <Route path="dioceses" element={<div style={{ padding: '24px' }}>Dioceses (em desenvolvimento)</div>} />
-        <Route path="parishes" element={<div style={{ padding: '24px' }}>Paróquias (em desenvolvimento)</div>} />
-        <Route path="communities" element={<div style={{ padding: '24px' }}>Comunidades (em desenvolvimento)</div>} />
+        <Route path="dioceses" element={<DiocesesPage />} />
+        <Route path="parishes" element={<ParishesPage />} />
+        <Route path="communities" element={<CommunitiesPage />} />
         <Route path="members" element={<div style={{ padding: '24px' }}>Membros (em desenvolvimento)</div>} />
         <Route path="events" element={<div style={{ padding: '24px' }}>Eventos (em desenvolvimento)</div>} />
         <Route path="schedules" element={<div style={{ padding: '24px' }}>Escalas (em desenvolvimento)</div>} />
