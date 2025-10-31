@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './EventsPage.css';
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 interface Diocese {
   id: string;
   name: string;
@@ -89,10 +91,10 @@ const EventsPage: React.FC = () => {
     try {
       const token = localStorage.getItem('token');
       const [eventsRes, communitiesRes] = await Promise.all([
-        axios.get('http://localhost:3000/api/v1/events', {
+        axios.get(`${API_URL}/events`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        axios.get('http://localhost:3000/api/v1/communities', {
+        axios.get(`${API_URL}/communities`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);
@@ -119,13 +121,13 @@ const EventsPage: React.FC = () => {
 
       if (editingEvent) {
         await axios.patch(
-          `http://localhost:3000/api/v1/events/${editingEvent.id}`,
+          `${API_URL}/events/${editingEvent.id}`,
           payload,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         alert('Evento atualizado com sucesso!');
       } else {
-        await axios.post('http://localhost:3000/api/v1/events', payload, {
+        await axios.post(`${API_URL}/events`, payload, {
           headers: { Authorization: `Bearer ${token}` },
         });
         alert('Evento criado com sucesso!');
@@ -163,7 +165,7 @@ const EventsPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:3000/api/v1/events/${id}`, {
+      await axios.delete(`${API_URL}/events/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       alert('Evento excluído com sucesso!');
