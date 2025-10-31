@@ -3,7 +3,12 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AdminLayout from './components/AdminLayout';
 import LoginPage from './pages/LoginPage';
+import DiocesesPage from './pages/DiocesesPage';
+import ParishesPage from './pages/ParishesPage';
+import CommunitiesPage from './pages/CommunitiesPage';
+import MembersPage from './pages/MembersPage';
 import EventsPage from './pages/EventsPage';
+import UsersPage from './pages/UsersPage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { token, loading } = useAuth();
@@ -35,12 +40,12 @@ const App: React.FC = () => {
             }
           >
             <Route index element={<Navigate to="/admin/dioceses" replace />} />
-            <Route path="dioceses" element={<div style={{padding: '2rem'}}>Página de Dioceses (em desenvolvimento)</div>} />
-            <Route path="parishes" element={<div style={{padding: '2rem'}}>Página de Paróquias (em desenvolvimento)</div>} />
-            <Route path="communities" element={<div style={{padding: '2rem'}}>Página de Comunidades (em desenvolvimento)</div>} />
-            <Route path="members" element={<div style={{padding: '2rem'}}>Página de Membros (em desenvolvimento)</div>} />
+            <Route path="dioceses" element={<DiocesesPage />} />
+            <Route path="parishes" element={<ParishesPage />} />
+            <Route path="communities" element={<CommunitiesPage />} />
+            <Route path="members" element={<MembersPage />} />
             <Route path="events" element={<EventsPage />} />
-            <Route path="users" element={<div style={{padding: '2rem'}}>Página de Usuários (em desenvolvimento)</div>} />
+            <Route path="users" element={<UsersPage />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/admin" replace />} />
