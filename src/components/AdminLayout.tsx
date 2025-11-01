@@ -13,7 +13,12 @@ const AdminLayout: React.FC = () => {
   };
 
   const isSystemAdmin = user?.role === 'SYSTEM_ADMIN';
-  const canManageUsers = user?.role === 'SYSTEM_ADMIN' || user?.role === 'DIOCESAN_ADMIN' || user?.role === 'PARISH_ADMIN' || user?.role === 'COMMUNITY_COORDINATOR';
+  const isDiocesanAdmin = user?.role === 'DIOCESAN_ADMIN';
+  const isParishAdmin = user?.role === 'PARISH_ADMIN';
+  const isCommunityCoordinator = user?.role === 'COMMUNITY_COORDINATOR';
+  
+  const canManageDioceses = isSystemAdmin || isDiocesanAdmin;
+  const canManageUsers = isSystemAdmin || isDiocesanAdmin || isParishAdmin || isCommunityCoordinator;
 
   return (
     <div className="admin-layout">
@@ -25,9 +30,11 @@ const AdminLayout: React.FC = () => {
         </div>
 
         <nav className="sidebar-nav">
-          <Link to="/admin/dioceses" className="nav-link">
-            📍 Dioceses
-          </Link>
+          {canManageDioceses && (
+            <Link to="/admin/dioceses" className="nav-link">
+              📍 Dioceses
+            </Link>
+          )}
           <Link to="/admin/parishes" className="nav-link">
             ⛪ Paróquias
           </Link>

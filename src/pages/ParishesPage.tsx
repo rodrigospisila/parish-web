@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useAuth } from '../contexts/AuthContext';
 import './ParishesPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -23,11 +24,14 @@ interface Parish {
 }
 
 const ParishesPage: React.FC = () => {
+  const { user: currentUser } = useAuth();
   const [parishes, setParishes] = useState<Parish[]>([]);
   const [dioceses, setDioceses] = useState<Diocese[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingParish, setEditingParish] = useState<Parish | null>(null);
+  
+  const canDelete = currentUser?.role === 'SYSTEM_ADMIN' || currentUser?.role === 'DIOCESAN_ADMIN';
   const [searchTerm, setSearchTerm] = useState('');
   const [currentUserRole, setCurrentUserRole] = useState<string>('');
 
@@ -196,9 +200,11 @@ const ParishesPage: React.FC = () => {
                 <button className="btn-edit" onClick={() => handleEdit(parish)}>
                   Editar
                 </button>
-                <button className="btn-delete" onClick={() => handleDelete(parish.id)}>
-                  Excluir
-                </button>
+                {canDelete && (
+                  <button className="btn-delete" onClick={() => handleDelete(parish.id)}>
+                    Excluir
+                  </button>
+                )}
               </div>
             </div>
           ))
