@@ -29,6 +29,7 @@ const ParishesPage: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingParish, setEditingParish] = useState<Parish | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentUserRole, setCurrentUserRole] = useState<string>('');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -48,6 +49,11 @@ const ParishesPage: React.FC = () => {
   const fetchData = async () => {
     try {
       const token = localStorage.getItem('token');
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        setCurrentUserRole(user.role);
+      }
       const [parishesRes, diocesesRes] = await Promise.all([
         axios.get(`${API_URL}/parishes`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -152,9 +158,11 @@ const ParishesPage: React.FC = () => {
     <div className="parishes-page">
       <div className="page-header">
         <h1>Paróquias</h1>
-        <button className="btn-primary" onClick={() => setShowModal(true)}>
-          + Nova Paróquia
-        </button>
+        {currentUserRole !== 'PARISH_ADMIN' && (
+          <button className="btn-primary" onClick={() => setShowModal(true)}>
+            + Nova Paróquia
+          </button>
+        )}
       </div>
 
       <div className="filters">

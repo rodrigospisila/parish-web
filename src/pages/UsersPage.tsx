@@ -43,7 +43,10 @@ const UsersPage: React.FC = () => {
     { value: 'SYSTEM_ADMIN', label: 'Administrador do Sistema' },
     { value: 'DIOCESAN_ADMIN', label: 'Administrador Diocesano' },
     { value: 'PARISH_ADMIN', label: 'Administrador Paroquial' },
-    { value: 'COMMUNITY_ADMIN', label: 'Administrador de Comunidade' },
+    { value: 'COMMUNITY_COORDINATOR', label: 'Coordenador de Comunidade' },
+    { value: 'PASTORAL_COORDINATOR', label: 'Coordenador de Pastoral' },
+    { value: 'VOLUNTEER', label: 'Voluntário' },
+    { value: 'FAITHFUL', label: 'Fiel' },
   ];
 
   useEffect(() => {
