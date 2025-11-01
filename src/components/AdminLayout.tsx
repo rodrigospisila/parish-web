@@ -13,6 +13,7 @@ const AdminLayout: React.FC = () => {
   };
 
   const isSystemAdmin = user?.role === 'SYSTEM_ADMIN';
+  const canManageUsers = user?.role === 'SYSTEM_ADMIN' || user?.role === 'DIOCESAN_ADMIN' || user?.role === 'PARISH_ADMIN' || user?.role === 'COMMUNITY_COORDINATOR';
 
   return (
     <div className="admin-layout">
@@ -39,7 +40,7 @@ const AdminLayout: React.FC = () => {
           <Link to="/admin/events" className="nav-link">
             📅 Eventos
           </Link>
-          {isSystemAdmin && (
+          {canManageUsers && (
             <Link to="/admin/users" className="nav-link">
               🔐 Usuários
             </Link>
