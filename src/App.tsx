@@ -24,6 +24,25 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
+const RoleProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles: string[] }> = ({ children, allowedRoles }) => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <div>Carregando...</div>;
+  }
+
+  if (!user || !allowedRoles.includes(user.role)) {
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <h2 style={{ color: '#e74c3c' }}>Acesso Negado</h2>
+        <p>Você não tem permissão para acessar esta página.</p>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+};
+
 const App: React.FC = () => {
   return (
     <AuthProvider>
@@ -39,8 +58,12 @@ const App: React.FC = () => {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Navigate to="/admin/dioceses" replace />} />
-            <Route path="dioceses" element={<DiocesesPage />} />
+            <Route index element={<Navigate to="/admin/parishes" replace />} />
+            <Route path="dioceses" element={
+              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN', 'DIOCESAN_ADMIN']}>
+                <DiocesesPage />
+              </RoleProtectedRoute>
+            } />
             <Route path="parishes" element={<ParishesPage />} />
             <Route path="communities" element={<CommunitiesPage />} />
             <Route path="members" element={<MembersPage />} />
