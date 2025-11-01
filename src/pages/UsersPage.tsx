@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import './UsersPage.css';
@@ -30,6 +30,9 @@ interface User {
   role: string;
   isActive: boolean;
   diocese?: Diocese;
+  dioceseId?: string;
+  parishId?: string;
+  communityId?: string;
   createdAt: string;
 }
 
@@ -49,21 +52,124 @@ const UsersPage: React.FC = () => {
     email: '',
     phone: '',
     password: '',
-    role: 'PARISH_ADMIN',
+    role: 'FAITHFUL',
     dioceseId: '',
     parishId: '',
     communityId: '',
   });
 
-  const roles = [
-    { value: 'SYSTEM_ADMIN', label: 'Administrador do Sistema' },
-    { value: 'DIOCESAN_ADMIN', label: 'Administrador Diocesano' },
-    { value: 'PARISH_ADMIN', label: 'Administrador Paroquial' },
-    { value: 'COMMUNITY_COORDINATOR', label: 'Coordenador de Comunidade' },
-    { value: 'PASTORAL_COORDINATOR', label: 'Coordenador de Pastoral' },
-    { value: 'VOLUNTEER', label: 'Voluntário' },
-    { value: 'FAITHFUL', label: 'Fiel' },
+  // Definir hierarquia de roles
+  const allRoles = [
+    { value: 'SYSTEM_ADMIN', label: 'Administrador do Sistema', level: 1 },
+    { value: 'DIOCESAN_ADMIN', label: 'Administrador Diocesano', level: 2 },
+    { value: 'PARISH_ADMIN', label: 'Administrador Paroquial', level: 3 },
+    { value: 'COMMUNITY_COORDINATOR', label: 'Coordenador de Comunidade', level: 4 },
+    { value: 'PASTORAL_COORDINATOR', label: 'Coordenador de Pastoral', level: 5 },
+    { value: 'VOLUNTEER', label: 'Voluntário', level: 6 },
+    { value: 'FAITHFUL', label: 'Fiel', level: 7 },
   ];
+
+  // Filtrar roles disponíveis baseado no usuário logado
+  const availableRoles = useMemo(() => {
+    if (!currentUser) return [];
+    
+    const currentUserLevel = allRoles.find(r => r.value === currentUser.role)?.level || 999;
+    
+    // Só pode criar usuários de nível inferior
+    return allRoles.filter(r => r.level > currentUserLevel);
+  }, [currentUser]);
+
+  // Filtrar dioceses disponíveis baseado no usuário logado
+  const availableDioceses = useMemo(() => {
+    if (!currentUser) return [];
+    
+    if (currentUser.role === 'SYSTEM_ADMIN') {
+      return dioceses; // Todas as dioceses
+    }
+    
+    if (currentUser.role === 'DIOCESAN_ADMIN') {
+      // Apenas sua diocese
+      return dioceses.filter(d => d.id === currentUser.dioceseId);
+    }
+    
+    // PARISH_ADMIN e COMMUNITY_COORDINATOR não veem o campo
+    return [];
+  }, [currentUser, dioceses]);
+
+  // Filtrar paróquias disponíveis baseado no usuário logado e diocese selecionada
+  const availableParishes = useMemo(() => {
+    if (!currentUser) return [];
+    
+    if (currentUser.role === 'SYSTEM_ADMIN') {
+      // Todas as paróquias da diocese selecionada
+      return parishes.filter(p => p.dioceseId === formData.dioceseId);
+    }
+    
+    if (currentUser.role === 'DIOCESAN_ADMIN') {
+      // Apenas paróquias da sua diocese
+      return parishes.filter(p => p.dioceseId === currentUser.dioceseId);
+    }
+    
+    // PARISH_ADMIN e COMMUNITY_COORDINATOR não veem o campo
+    return [];
+  }, [currentUser, parishes, formData.dioceseId]);
+
+  // Filtrar comunidades disponíveis baseado no usuário logado e paróquia selecionada
+  const availableCommunities = useMemo(() => {
+    if (!currentUser) return [];
+    
+    if (currentUser.role === 'SYSTEM_ADMIN' || currentUser.role === 'DIOCESAN_ADMIN') {
+      // Todas as comunidades da paróquia selecionada
+      return communities.filter(c => c.parishId === formData.parishId);
+    }
+    
+    if (currentUser.role === 'PARISH_ADMIN') {
+      // Apenas comunidades da sua paróquia
+      return communities.filter(c => c.parishId === currentUser.parishId);
+    }
+    
+    // COMMUNITY_COORDINATOR não vê o campo
+    return [];
+  }, [currentUser, communities, formData.parishId]);
+
+  // Verificar se deve mostrar campo Diocese
+  const shouldShowDioceseField = useMemo(() => {
+    if (!currentUser) return false;
+    
+    // Só mostra para SYSTEM_ADMIN e DIOCESAN_ADMIN
+    if (!['SYSTEM_ADMIN', 'DIOCESAN_ADMIN'].includes(currentUser.role)) {
+      return false;
+    }
+    
+    // E só quando o role selecionado precisa de diocese
+    return ['DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(formData.role);
+  }, [currentUser, formData.role]);
+
+  // Verificar se deve mostrar campo Paróquia
+  const shouldShowParishField = useMemo(() => {
+    if (!currentUser) return false;
+    
+    // Só mostra para SYSTEM_ADMIN e DIOCESAN_ADMIN
+    if (!['SYSTEM_ADMIN', 'DIOCESAN_ADMIN'].includes(currentUser.role)) {
+      return false;
+    }
+    
+    // E só quando o role selecionado precisa de paróquia
+    return ['PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(formData.role);
+  }, [currentUser, formData.role]);
+
+  // Verificar se deve mostrar campo Comunidade
+  const shouldShowCommunityField = useMemo(() => {
+    if (!currentUser) return false;
+    
+    // Só mostra para SYSTEM_ADMIN, DIOCESAN_ADMIN e PARISH_ADMIN
+    if (!['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN'].includes(currentUser.role)) {
+      return false;
+    }
+    
+    // E só quando o role selecionado é COMMUNITY_COORDINATOR
+    return formData.role === 'COMMUNITY_COORDINATOR';
+  }, [currentUser, formData.role]);
 
   useEffect(() => {
     fetchData();
@@ -100,32 +206,42 @@ const UsersPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     try {
       const token = localStorage.getItem('token');
-      const payload: any = {
+      
+      // Preparar dados para envio
+      const dataToSend: any = {
         name: formData.name,
         email: formData.email,
-        phone: formData.phone || undefined,
+        phone: formData.phone,
         role: formData.role,
-        dioceseId: formData.dioceseId || undefined,
-        parishId: formData.parishId || undefined,
-        communityId: formData.communityId || undefined,
       };
 
+      // Adicionar senha apenas se for criação
       if (!editingUser) {
-        payload.password = formData.password;
+        dataToSend.password = formData.password;
+      }
+
+      // Adicionar dioceseId, parishId, communityId baseado no role
+      if (['DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(formData.role)) {
+        dataToSend.dioceseId = formData.dioceseId || currentUser?.dioceseId || null;
+      }
+      
+      if (['PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(formData.role)) {
+        dataToSend.parishId = formData.parishId || currentUser?.parishId || null;
+      }
+      
+      if (formData.role === 'COMMUNITY_COORDINATOR') {
+        dataToSend.communityId = formData.communityId || currentUser?.communityId || null;
       }
 
       if (editingUser) {
-        await axios.patch(
-          `${API_URL}/users/${editingUser.id}`,
-          payload,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        await axios.patch(`${API_URL}/users/${editingUser.id}`, dataToSend, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         alert('Usuário atualizado com sucesso!');
       } else {
-        await axios.post(`${API_URL}/users`, payload, {
+        await axios.post(`${API_URL}/users`, dataToSend, {
           headers: { Authorization: `Bearer ${token}` },
         });
         alert('Usuário criado com sucesso!');
@@ -136,7 +252,8 @@ const UsersPage: React.FC = () => {
       fetchData();
     } catch (error: any) {
       console.error('Erro ao salvar usuário:', error);
-      alert(error.response?.data?.message || 'Erro ao salvar usuário');
+      const errorMessage = error.response?.data?.message || 'Erro ao salvar usuário';
+      alert(errorMessage);
     }
   };
 
@@ -149,26 +266,10 @@ const UsersPage: React.FC = () => {
       password: '',
       role: user.role,
       dioceseId: user.diocese?.id || '',
-      parishId: (user as any).parishId || '',
-      communityId: (user as any).communityId || '',
+      parishId: '',
+      communityId: '',
     });
     setShowModal(true);
-  };
-
-  const handleToggleActive = async (user: User) => {
-    try {
-      const token = localStorage.getItem('token');
-      await axios.patch(
-        `${API_URL}/users/${user.id}`,
-        { isActive: !user.isActive },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      alert(`Usuário ${!user.isActive ? 'ativado' : 'desativado'} com sucesso!`);
-      fetchData();
-    } catch (error: any) {
-      console.error('Erro ao alterar status:', error);
-      alert(error.response?.data?.message || 'Erro ao alterar status');
-    }
   };
 
   const handleDelete = async (id: string) => {
@@ -183,7 +284,27 @@ const UsersPage: React.FC = () => {
       fetchData();
     } catch (error: any) {
       console.error('Erro ao excluir usuário:', error);
-      alert(error.response?.data?.message || 'Erro ao excluir usuário');
+      const errorMessage = error.response?.data?.message || 'Erro ao excluir usuário';
+      alert(errorMessage);
+    }
+  };
+
+  const handleToggleActive = async (user: User) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.patch(
+        `${API_URL}/users/${user.id}`,
+        { isActive: !user.isActive },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      alert(`Usuário ${!user.isActive ? 'ativado' : 'desativado'} com sucesso!`);
+      fetchData();
+    } catch (error: any) {
+      console.error('Erro ao atualizar status:', error);
+      const errorMessage = error.response?.data?.message || 'Erro ao atualizar status';
+      alert(errorMessage);
     }
   };
 
@@ -193,7 +314,7 @@ const UsersPage: React.FC = () => {
       email: '',
       phone: '',
       password: '',
-      role: 'PARISH_ADMIN',
+      role: 'FAITHFUL',
       dioceseId: '',
       parishId: '',
       communityId: '',
@@ -202,7 +323,7 @@ const UsersPage: React.FC = () => {
   };
 
   const getRoleLabel = (role: string) => {
-    return roles.find(r => r.value === role)?.label || role;
+    return allRoles.find(r => r.value === role)?.label || role;
   };
 
   const filteredUsers = users.filter((user) =>
@@ -338,9 +459,10 @@ const UsersPage: React.FC = () => {
                 <select
                   required
                   value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value, dioceseId: '', parishId: '', communityId: '' })}
                 >
-                  {roles.map((role) => (
+                  <option value="">Selecione uma função</option>
+                  {availableRoles.map((role) => (
                     <option key={role.value} value={role.value}>
                       {role.label}
                     </option>
@@ -348,18 +470,18 @@ const UsersPage: React.FC = () => {
                 </select>
               </div>
 
-              {(formData.role === 'DIOCESAN_ADMIN' || formData.role === 'PARISH_ADMIN' || formData.role === 'COMMUNITY_COORDINATOR') && (
+              {shouldShowDioceseField && (
                 <div className="form-group">
-                  <label>Diocese {(formData.role === 'DIOCESAN_ADMIN' || formData.role === 'PARISH_ADMIN' || formData.role === 'COMMUNITY_COORDINATOR') ? '*' : ''}</label>
+                  <label>Diocese *</label>
                   <select
-                    required={formData.role === 'DIOCESAN_ADMIN' || formData.role === 'PARISH_ADMIN' || formData.role === 'COMMUNITY_COORDINATOR'}
+                    required
                     value={formData.dioceseId}
                     onChange={(e) => {
                       setFormData({ ...formData, dioceseId: e.target.value, parishId: '', communityId: '' });
                     }}
                   >
                     <option value="">Selecione uma diocese</option>
-                    {dioceses.map((diocese) => (
+                    {availableDioceses.map((diocese) => (
                       <option key={diocese.id} value={diocese.id}>
                         {diocese.name}
                       </option>
@@ -368,7 +490,7 @@ const UsersPage: React.FC = () => {
                 </div>
               )}
 
-              {(formData.role === 'PARISH_ADMIN' || formData.role === 'COMMUNITY_COORDINATOR') && formData.dioceseId && (
+              {shouldShowParishField && formData.dioceseId && (
                 <div className="form-group">
                   <label>Paróquia *</label>
                   <select
@@ -379,18 +501,16 @@ const UsersPage: React.FC = () => {
                     }}
                   >
                     <option value="">Selecione uma paróquia</option>
-                    {parishes
-                      .filter(p => p.dioceseId === formData.dioceseId)
-                      .map((parish) => (
-                        <option key={parish.id} value={parish.id}>
-                          {parish.name}
-                        </option>
-                      ))}
+                    {availableParishes.map((parish) => (
+                      <option key={parish.id} value={parish.id}>
+                        {parish.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               )}
 
-              {formData.role === 'COMMUNITY_COORDINATOR' && formData.parishId && (
+              {shouldShowCommunityField && formData.parishId && (
                 <div className="form-group">
                   <label>Comunidade *</label>
                   <select
@@ -399,13 +519,11 @@ const UsersPage: React.FC = () => {
                     onChange={(e) => setFormData({ ...formData, communityId: e.target.value })}
                   >
                     <option value="">Selecione uma comunidade</option>
-                    {communities
-                      .filter(c => c.parishId === formData.parishId)
-                      .map((community) => (
-                        <option key={community.id} value={community.id}>
-                          {community.name}
-                        </option>
-                      ))}
+                    {availableCommunities.map((community) => (
+                      <option key={community.id} value={community.id}>
+                        {community.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               )}
