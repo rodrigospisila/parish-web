@@ -213,8 +213,14 @@ const UsersPage: React.FC = () => {
 
   if (loading) return <div className="loading">Carregando...</div>;
 
-  // Apenas SYSTEM_ADMIN pode acessar
-  if (currentUser?.role !== 'SYSTEM_ADMIN') {
+  // Verificar permissão de acesso
+  const canManageUsers = 
+    currentUser?.role === 'SYSTEM_ADMIN' || 
+    currentUser?.role === 'DIOCESAN_ADMIN' || 
+    currentUser?.role === 'PARISH_ADMIN' || 
+    currentUser?.role === 'COMMUNITY_COORDINATOR';
+
+  if (!canManageUsers) {
     return (
       <div className="access-denied">
         <h2>Acesso Negado</h2>
