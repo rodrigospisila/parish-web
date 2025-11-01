@@ -10,6 +10,18 @@ interface Diocese {
   name: string;
 }
 
+interface Parish {
+  id: string;
+  name: string;
+  dioceseId: string;
+}
+
+interface Community {
+  id: string;
+  name: string;
+  parishId: string;
+}
+
 interface User {
   id: string;
   name: string;
@@ -25,6 +37,8 @@ const UsersPage: React.FC = () => {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [dioceses, setDioceses] = useState<Diocese[]>([]);
+  const [parishes, setParishes] = useState<Parish[]>([]);
+  const [communities, setCommunities] = useState<Community[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -37,6 +51,8 @@ const UsersPage: React.FC = () => {
     password: '',
     role: 'PARISH_ADMIN',
     dioceseId: '',
+    parishId: '',
+    communityId: '',
   });
 
   const roles = [
@@ -56,16 +72,24 @@ const UsersPage: React.FC = () => {
   const fetchData = async () => {
     try {
       const token = localStorage.getItem('token');
-      const [usersRes, diocesesRes] = await Promise.all([
+      const [usersRes, diocesesRes, parishesRes, communitiesRes] = await Promise.all([
         axios.get(`${API_URL}/users`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         axios.get(`${API_URL}/dioceses`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
+        axios.get(`${API_URL}/parishes`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        axios.get(`${API_URL}/communities`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
       ]);
       setUsers(usersRes.data);
       setDioceses(diocesesRes.data);
+      setParishes(parishesRes.data);
+      setCommunities(communitiesRes.data);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       alert('Erro ao carregar dados');
@@ -85,6 +109,8 @@ const UsersPage: React.FC = () => {
         phone: formData.phone || undefined,
         role: formData.role,
         dioceseId: formData.dioceseId || undefined,
+        parishId: formData.parishId || undefined,
+        communityId: formData.communityId || undefined,
       };
 
       if (!editingUser) {
@@ -123,6 +149,8 @@ const UsersPage: React.FC = () => {
       password: '',
       role: user.role,
       dioceseId: user.diocese?.id || '',
+      parishId: (user as any).parishId || '',
+      communityId: (user as any).communityId || '',
     });
     setShowModal(true);
   };
@@ -167,6 +195,8 @@ const UsersPage: React.FC = () => {
       password: '',
       role: 'PARISH_ADMIN',
       dioceseId: '',
+      parishId: '',
+      communityId: '',
     });
     setEditingUser(null);
   };
@@ -312,12 +342,15 @@ const UsersPage: React.FC = () => {
                 </select>
               </div>
 
-              {(formData.role === 'DIOCESAN_ADMIN' || formData.role === 'PARISH_ADMIN') && (
+              {(formData.role === 'DIOCESAN_ADMIN' || formData.role === 'PARISH_ADMIN' || formData.role === 'COMMUNITY_COORDINATOR') && (
                 <div className="form-group">
-                  <label>Diocese</label>
+                  <label>Diocese {(formData.role === 'DIOCESAN_ADMIN' || formData.role === 'PARISH_ADMIN' || formData.role === 'COMMUNITY_COORDINATOR') ? '*' : ''}</label>
                   <select
+                    required={formData.role === 'DIOCESAN_ADMIN' || formData.role === 'PARISH_ADMIN' || formData.role === 'COMMUNITY_COORDINATOR'}
                     value={formData.dioceseId}
-                    onChange={(e) => setFormData({ ...formData, dioceseId: e.target.value })}
+                    onChange={(e) => {
+                      setFormData({ ...formData, dioceseId: e.target.value, parishId: '', communityId: '' });
+                    }}
                   >
                     <option value="">Selecione uma diocese</option>
                     {dioceses.map((diocese) => (
@@ -325,6 +358,48 @@ const UsersPage: React.FC = () => {
                         {diocese.name}
                       </option>
                     ))}
+                  </select>
+                </div>
+              )}
+
+              {(formData.role === 'PARISH_ADMIN' || formData.role === 'COMMUNITY_COORDINATOR') && formData.dioceseId && (
+                <div className="form-group">
+                  <label>Paróquia *</label>
+                  <select
+                    required
+                    value={formData.parishId}
+                    onChange={(e) => {
+                      setFormData({ ...formData, parishId: e.target.value, communityId: '' });
+                    }}
+                  >
+                    <option value="">Selecione uma paróquia</option>
+                    {parishes
+                      .filter(p => p.dioceseId === formData.dioceseId)
+                      .map((parish) => (
+                        <option key={parish.id} value={parish.id}>
+                          {parish.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
+              {formData.role === 'COMMUNITY_COORDINATOR' && formData.parishId && (
+                <div className="form-group">
+                  <label>Comunidade *</label>
+                  <select
+                    required
+                    value={formData.communityId}
+                    onChange={(e) => setFormData({ ...formData, communityId: e.target.value })}
+                  >
+                    <option value="">Selecione uma comunidade</option>
+                    {communities
+                      .filter(c => c.parishId === formData.parishId)
+                      .map((community) => (
+                        <option key={community.id} value={community.id}>
+                          {community.name}
+                        </option>
+                      ))}
                   </select>
                 </div>
               )}
