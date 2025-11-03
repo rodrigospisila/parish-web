@@ -102,48 +102,90 @@
 
 /* Eventos */
 .fc-event {
-  border-radius: 6px;
-  padding: 4px 8px;
+  border-radius: 8px;
+  padding: 6px 10px;
   margin: 2px 0;
   cursor: pointer;
-  transition: all 0.2s ease;
-  border-left-width: 4px !important;
+  transition: all 0.3s ease;
+  border-left-width: 5px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 100%);
 }
 
 .fc-event:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 10;
 }
 
 /* Conteúdo customizado do evento */
 .fc-event-content-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   padding: 2px 0;
 }
 
+/* Cabeçalho do card (ícone + horário) */
+.fc-event-header-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.fc-event-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
+}
+
 .fc-event-time {
-  font-size: 0.75rem;
-  font-weight: 600;
-  margin-bottom: 2px;
-}
-
-.fc-event-title-custom {
   font-size: 0.85rem;
-  margin-bottom: 2px;
-  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
+/* Título do evento */
+.fc-event-title-custom {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* Local do evento */
 .fc-event-location {
-  font-size: 0.7rem;
-  opacity: 0.9;
-  margin-top: 2px;
+  font-size: 0.75rem;
+  opacity: 0.95;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.fc-event-type {
+/* Badge do tipo */
+.fc-event-type-badge {
   font-size: 0.7rem;
-  opacity: 0.8;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background-color: rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(4px);
+  display: inline-block;
+  align-self: flex-start;
   margin-top: 2px;
-  font-style: italic;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 /* Link "mais eventos" */

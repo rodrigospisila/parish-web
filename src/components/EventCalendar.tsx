@@ -77,6 +77,23 @@ const eventTypeLabels: Record<string, string> = {
   OTHER: 'Outro',
 };
 
+// Ícones por tipo de evento
+const eventTypeIcons: Record<string, string> = {
+  MASS: '🙏',
+  BAPTISM: '💧',
+  WEDDING: '💍',
+  CATECHISM: '📖',
+  MEETING: '👥',
+  CELEBRATION: '🎉',
+  RETREAT: '⛰️',
+  FORMATION: '🎓',
+  PILGRIMAGE: '🚶',
+  ADORATION: '✨',
+  ROSARY: '📿',
+  CONFESSION: '🕊️',
+  OTHER: '📅',
+};
+
 const EventCalendar: React.FC<EventCalendarProps> = ({ events, onEventClick, onDateClick }) => {
   const calendarRef = useRef<FullCalendar>(null);
 
@@ -143,17 +160,20 @@ const EventCalendar: React.FC<EventCalendarProps> = ({ events, onEventClick, onD
           const { event } = arg;
           const typeLabel = event.extendedProps.typeLabel;
           const location = event.extendedProps.location;
+          const type = event.extendedProps.type;
+          const icon = eventTypeIcons[type] || eventTypeIcons.OTHER;
           
           return (
             <div className="fc-event-content-custom">
-              <div className="fc-event-time">{arg.timeText}</div>
-              <div className="fc-event-title-custom">
-                <strong>{event.title}</strong>
+              <div className="fc-event-header-custom">
+                <span className="fc-event-icon">{icon}</span>
+                <span className="fc-event-time">{arg.timeText}</span>
               </div>
+              <div className="fc-event-title-custom">{event.title}</div>
               {location && (
                 <div className="fc-event-location">📍 {location}</div>
               )}
-              <div className="fc-event-type">{typeLabel}</div>
+              <div className="fc-event-type-badge">{typeLabel}</div>
             </div>
           );
         }}
