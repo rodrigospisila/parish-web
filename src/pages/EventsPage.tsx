@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import EventCalendar from '../components/EventCalendar';
 import './EventsPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -44,8 +45,9 @@ const EventsPage: React.FC = () => {
   const [communities, setCommunities] = useState<Community[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
@@ -158,6 +160,7 @@ const EventsPage: React.FC = () => {
       communityId: event.community.id,
     });
     setShowModal(true);
+    setShowDetailModal(false);
   };
 
   const handleDelete = async (id: string) => {
@@ -169,6 +172,7 @@ const EventsPage: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       alert('Evento excluído com sucesso!');
+      setShowDetailModal(false);
       fetchData();
     } catch (error: any) {
       console.error('Erro ao excluir evento:', error);
@@ -193,12 +197,27 @@ const EventsPage: React.FC = () => {
     setEditingEvent(null);
   };
 
+  const handleEventClick = (event: Event) => {
+    setSelectedEvent(event);
+    setShowDetailModal(true);
+  };
+
+  const handleDateClick = (date: Date) => {
+    resetForm();
+    const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    const dateStr = localDate.toISOString().slice(0, 16);
+    setFormData(prev => ({
+      ...prev,
+      startDate: dateStr,
+      endDate: dateStr,
+    }));
+    setShowModal(true);
+  };
+
   const filteredEvents = events.filter((event) => {
-    const matchesSearch = event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          event.description?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesType = !filterType || event.type === filterType;
     const matchesStatus = !filterStatus || event.status === filterStatus;
-    return matchesSearch && matchesType && matchesStatus;
+    return matchesType && matchesStatus;
   });
 
   const getTypeLabel = (type: string) => {
@@ -229,7 +248,7 @@ const EventsPage: React.FC = () => {
   return (
     <div className="events-page">
       <div className="events-header">
-        <h1>Eventos</h1>
+        <h1>📅 Agenda de Eventos</h1>
         <button className="btn-new-event" onClick={() => {
           resetForm();
           setShowModal(true);
@@ -239,14 +258,6 @@ const EventsPage: React.FC = () => {
       </div>
 
       <div className="events-filters">
-        <input
-          type="text"
-          placeholder="Buscar por título ou descrição..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="search-input"
-        />
-
         <select
           value={filterType}
           onChange={(e) => setFilterType(e.target.value)}
@@ -274,94 +285,119 @@ const EventsPage: React.FC = () => {
         </select>
       </div>
 
-      <div className="events-grid">
-        {filteredEvents.map((event) => (
-          <div key={event.id} className="event-card">
-            <div className="event-card-header">
-              <h3>{event.title}</h3>
+      <EventCalendar
+        events={filteredEvents}
+        onEventClick={handleEventClick}
+        onDateClick={handleDateClick}
+      />
+
+      {/* Modal de Detalhes do Evento */}
+      {showDetailModal && selectedEvent && (
+        <div className="modal-overlay" onClick={() => setShowDetailModal(false)}>
+          <div className="modal-content event-detail-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setShowDetailModal(false)}>×</button>
+            
+            <div className="event-detail-header">
+              <h2>{selectedEvent.title}</h2>
               <span
                 className="event-status-badge"
-                style={{ backgroundColor: getStatusColor(event.status) }}
+                style={{ backgroundColor: getStatusColor(selectedEvent.status) }}
               >
-                {getStatusLabel(event.status)}
+                {getStatusLabel(selectedEvent.status)}
               </span>
             </div>
 
-            <div className="event-card-body">
-              <p className="event-type">
-                <strong>Tipo:</strong> {getTypeLabel(event.type)}
-              </p>
+            <div className="event-detail-body">
+              <div className="detail-row">
+                <strong>📌 Tipo:</strong>
+                <span>{getTypeLabel(selectedEvent.type)}</span>
+              </div>
 
-              {event.description && (
-                <p className="event-description">{event.description}</p>
+              {selectedEvent.description && (
+                <div className="detail-row">
+                  <strong>📝 Descrição:</strong>
+                  <p>{selectedEvent.description}</p>
+                </div>
               )}
 
-              <p className="event-date">
-                <strong>Início:</strong> {formatDate(event.startDate)}
-              </p>
+              <div className="detail-row">
+                <strong>🕐 Início:</strong>
+                <span>{formatDate(selectedEvent.startDate)}</span>
+              </div>
 
-              {event.endDate && (
-                <p className="event-date">
-                  <strong>Fim:</strong> {formatDate(event.endDate)}
-                </p>
+              {selectedEvent.endDate && (
+                <div className="detail-row">
+                  <strong>🕐 Fim:</strong>
+                  <span>{formatDate(selectedEvent.endDate)}</span>
+                </div>
               )}
 
-              {event.location && (
-                <p className="event-location">
-                  <strong>Local:</strong> {event.location}
-                </p>
+              {selectedEvent.location && (
+                <div className="detail-row">
+                  <strong>📍 Local:</strong>
+                  <span>{selectedEvent.location}</span>
+                </div>
               )}
 
-              <p className="event-community">
-                <strong>Comunidade:</strong> {event.community.name}
-                {event.community.parish && ` - ${event.community.parish.name}`}
-              </p>
+              <div className="detail-row">
+                <strong>🏘️ Comunidade:</strong>
+                <span>
+                  {selectedEvent.community.name}
+                  {selectedEvent.community.parish && ` - ${selectedEvent.community.parish.name}`}
+                </span>
+              </div>
 
-              {event.maxParticipants && (
-                <p className="event-participants">
-                  <strong>Inscritos:</strong> {event._count.participants} / {event.maxParticipants}
-                </p>
+              {selectedEvent.maxParticipants && (
+                <div className="detail-row">
+                  <strong>👥 Participantes:</strong>
+                  <span>
+                    {selectedEvent._count.participants} / {selectedEvent.maxParticipants} inscritos
+                  </span>
+                </div>
               )}
 
-              {event.isRecurring && (
-                <span className="event-recurring-badge">🔄 Recorrente</span>
+              {selectedEvent.isRecurring && (
+                <div className="detail-row">
+                  <strong>🔄 Recorrência:</strong>
+                  <span>Evento recorrente</span>
+                </div>
               )}
+
+              <div className="detail-row">
+                <strong>👁️ Visibilidade:</strong>
+                <span>{selectedEvent.isPublic ? 'Público' : 'Privado'}</span>
+              </div>
             </div>
 
-            <div className="event-card-actions">
-              <button className="btn-edit" onClick={() => handleEdit(event)}>
-                Editar
+            <div className="event-detail-actions">
+              <button className="btn-edit" onClick={() => handleEdit(selectedEvent)}>
+                ✏️ Editar
               </button>
-              <button className="btn-delete" onClick={() => handleDelete(event.id)}>
-                Excluir
+              <button className="btn-delete" onClick={() => handleDelete(selectedEvent.id)}>
+                🗑️ Excluir
               </button>
             </div>
           </div>
-        ))}
-      </div>
-
-      {filteredEvents.length === 0 && (
-        <p className="no-events">Nenhum evento encontrado.</p>
+        </div>
       )}
 
+      {/* Modal de Criação/Edição */}
       {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+        <div className="modal-overlay" onClick={() => { setShowModal(false); resetForm(); }}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>{editingEvent ? 'Editar Evento' : 'Novo Evento'}</h2>
-              <button className="modal-close" onClick={() => setShowModal(false)}>
-                ×
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="event-form">
+            <button className="modal-close" onClick={() => { setShowModal(false); resetForm(); }}>×</button>
+            
+            <h2>{editingEvent ? 'Editar Evento' : 'Novo Evento'}</h2>
+            
+            <form onSubmit={handleSubmit}>
               <div className="form-group">
                 <label>Título *</label>
                 <input
                   type="text"
+                  required
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  required
+                  placeholder="Nome do evento"
                 />
               </div>
 
@@ -370,6 +406,7 @@ const EventsPage: React.FC = () => {
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Detalhes sobre o evento"
                   rows={3}
                 />
               </div>
@@ -378,9 +415,9 @@ const EventsPage: React.FC = () => {
                 <div className="form-group">
                   <label>Tipo *</label>
                   <select
+                    required
                     value={formData.type}
                     onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                    required
                   >
                     {eventTypes.map((type) => (
                       <option key={type.value} value={type.value}>
@@ -393,9 +430,9 @@ const EventsPage: React.FC = () => {
                 <div className="form-group">
                   <label>Status *</label>
                   <select
+                    required
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                    required
                   >
                     {eventStatuses.map((status) => (
                       <option key={status.value} value={status.value}>
@@ -411,9 +448,9 @@ const EventsPage: React.FC = () => {
                   <label>Data/Hora Início *</label>
                   <input
                     type="datetime-local"
+                    required
                     value={formData.startDate}
                     onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                    required
                   />
                 </div>
 
@@ -433,20 +470,21 @@ const EventsPage: React.FC = () => {
                   type="text"
                   value={formData.location}
                   onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  placeholder="Local do evento"
                 />
               </div>
 
               <div className="form-group">
                 <label>Comunidade *</label>
                 <select
+                  required
                   value={formData.communityId}
                   onChange={(e) => setFormData({ ...formData, communityId: e.target.value })}
-                  required
                 >
-                  <option value="">Selecione</option>
+                  <option value="">Selecione uma comunidade</option>
                   {communities.map((community) => (
                     <option key={community.id} value={community.id}>
-                      {community.name} {community.parish && `- ${community.parish.name}`}
+                      {community.name} - {community.parish?.name}
                     </option>
                   ))}
                 </select>
@@ -463,28 +501,28 @@ const EventsPage: React.FC = () => {
                 />
               </div>
 
-              <div className="form-checkbox-group">
-                <label>
+              <div className="form-checkboxes">
+                <label className="checkbox-label">
                   <input
                     type="checkbox"
                     checked={formData.isRecurring}
                     onChange={(e) => setFormData({ ...formData, isRecurring: e.target.checked })}
                   />
-                  Evento recorrente
+                  <span>Evento recorrente</span>
                 </label>
 
-                <label>
+                <label className="checkbox-label">
                   <input
                     type="checkbox"
                     checked={formData.isPublic}
                     onChange={(e) => setFormData({ ...formData, isPublic: e.target.checked })}
                   />
-                  Evento público
+                  <span>Evento público</span>
                 </label>
               </div>
 
               <div className="modal-actions">
-                <button type="button" className="btn-cancel" onClick={() => setShowModal(false)}>
+                <button type="button" className="btn-cancel" onClick={() => { setShowModal(false); resetForm(); }}>
                   Cancelar
                 </button>
                 <button type="submit" className="btn-submit">
