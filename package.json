@@ -26,8 +26,10 @@
     "@fullcalendar/list": "^6.1.19",
     "@fullcalendar/react": "^6.1.19",
     "@fullcalendar/timegrid": "^6.1.19",
+    "@types/react-calendar": "^4.1.0",
     "axios": "^1.13.1",
     "react": "^19.2.0",
+    "react-calendar": "^6.0.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.9.5"
   }

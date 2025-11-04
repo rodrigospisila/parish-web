@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import Calendar from 'react-calendar';
 import EventCalendar from '../components/EventCalendar';
 import RecurrenceForm from '../components/RecurrenceForm';
 import { generateRecurrenceDates, getEventDuration, applyDuration } from '../utils/recurrenceHelper';
+import 'react-calendar/dist/Calendar.css';
 import './EventsPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -281,36 +283,36 @@ const EventsPage: React.FC = () => {
     setShowDuplicateModal(true);
   };
 
-  const handleAddDate = () => {
-    const dateInput = prompt('Digite a data e hora (formato: DD/MM/AAAA HH:mm):');
-    if (!dateInput) return;
+  const handleCalendarSelect = (date: Date) => {
+    if (!selectedEvent) return;
 
-    try {
-      // Parse DD/MM/AAAA HH:mm
-      const [datePart, timePart] = dateInput.split(' ');
-      const [day, month, year] = datePart.split('/');
-      const [hour, minute] = timePart.split(':');
-      
-      const date = new Date(
-        parseInt(year),
-        parseInt(month) - 1,
-        parseInt(day),
-        parseInt(hour),
-        parseInt(minute)
-      );
+    // Usar horário do evento original
+    const originalDate = new Date(selectedEvent.startDate);
+    const newDate = new Date(date);
+    newDate.setHours(originalDate.getHours());
+    newDate.setMinutes(originalDate.getMinutes());
 
-      if (isNaN(date.getTime())) {
-        alert('Data inválida!');
-        return;
-      }
-
-      const dateStr = date.toISOString().slice(0, 16);
-      if (!selectedDates.includes(dateStr)) {
-        setSelectedDates([...selectedDates, dateStr].sort());
-      }
-    } catch (error) {
-      alert('Formato inválido! Use: DD/MM/AAAA HH:mm');
+    const dateStr = newDate.toISOString().slice(0, 16);
+    
+    // Verificar se já existe
+    if (selectedDates.includes(dateStr)) {
+      // Se já existe, remover (toggle)
+      setSelectedDates(selectedDates.filter(d => d !== dateStr));
+    } else {
+      // Adicionar nova data
+      setSelectedDates([...selectedDates, dateStr].sort());
     }
+  };
+
+  const handleTimeChange = (oldDate: string, newTime: string) => {
+    const [hours, minutes] = newTime.split(':');
+    const date = new Date(oldDate);
+    date.setHours(parseInt(hours));
+    date.setMinutes(parseInt(minutes));
+    
+    const newDateStr = date.toISOString().slice(0, 16);
+    
+    setSelectedDates(selectedDates.map(d => d === oldDate ? newDateStr : d).sort());
   };
 
   const handleRemoveDate = (date: string) => {
@@ -682,29 +684,59 @@ const EventsPage: React.FC = () => {
             </p>
 
             <div className="duplicate-content">
-              <div className="date-input-section">
-                <button type="button" className="btn-add-date" onClick={handleAddDate}>
-                  + Adicionar Data
-                </button>
-                <small className="form-hint">Formato: DD/MM/AAAA HH:mm (ex: 15/11/2025 16:00)</small>
+              <div className="calendar-section">
+                <Calendar
+                  onChange={(value: any) => {
+                    if (value instanceof Date) {
+                      handleCalendarSelect(value);
+                    }
+                  }}
+                  value={null}
+                  minDate={new Date()}
+                  locale="pt-BR"
+                  tileClassName={({ date }) => {
+                    const dateStr = new Date(
+                      date.getFullYear(),
+                      date.getMonth(),
+                      date.getDate(),
+                      new Date(selectedEvent.startDate).getHours(),
+                      new Date(selectedEvent.startDate).getMinutes()
+                    ).toISOString().slice(0, 16);
+                    return selectedDates.includes(dateStr) ? 'selected-date' : '';
+                  }}
+                />
               </div>
 
               {selectedDates.length > 0 && (
                 <div className="selected-dates-list">
                   <h4>Datas Selecionadas ({selectedDates.length})</h4>
                   <ul>
-                    {selectedDates.map((date) => (
-                      <li key={date}>
-                        <span>{formatDate(date)}</span>
-                        <button
-                          type="button"
-                          className="btn-remove-date"
-                          onClick={() => handleRemoveDate(date)}
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    ))}
+                    {selectedDates.map((date) => {
+                      const dateObj = new Date(date);
+                      const dateStr = dateObj.toLocaleDateString('pt-BR');
+                      const timeStr = dateObj.toTimeString().slice(0, 5);
+                      
+                      return (
+                        <li key={date}>
+                          <div className="date-item">
+                            <span className="date-text">{dateStr}</span>
+                            <input
+                              type="time"
+                              value={timeStr}
+                              onChange={(e) => handleTimeChange(date, e.target.value)}
+                              className="time-input"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-remove-date"
+                            onClick={() => handleRemoveDate(date)}
+                          >
+                            ✕
+                          </button>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}
@@ -712,7 +744,7 @@ const EventsPage: React.FC = () => {
               {selectedDates.length === 0 && (
                 <div className="empty-dates">
                   <p>📅 Nenhuma data selecionada</p>
-                  <small>Clique em "Adicionar Data" para começar</small>
+                  <small>Clique nas datas do calendário para selecionar</small>
                 </div>
               )}
             </div>

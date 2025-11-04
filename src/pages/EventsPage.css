@@ -566,3 +566,114 @@
   font-size: 13px;
   color: #aaa;
 }
+
+/* Calendário no modal de duplicação */
+.calendar-section {
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: center;
+}
+
+.calendar-section .react-calendar {
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  font-family: inherit;
+}
+
+.calendar-section .react-calendar__tile {
+  padding: 12px 6px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.calendar-section .react-calendar__tile:hover {
+  background: #f0f0f0;
+}
+
+.calendar-section .react-calendar__tile--active {
+  background: #3498db;
+  color: white;
+}
+
+.calendar-section .react-calendar__tile.selected-date {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: 600;
+}
+
+.calendar-section .react-calendar__tile.selected-date:hover {
+  background: linear-gradient(135deg, #5568d3 0%, #653a8a 100%);
+}
+
+.calendar-section .react-calendar__navigation button {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.calendar-section .react-calendar__navigation button:hover {
+  background: #f0f0f0;
+}
+
+/* Lista de datas com inputs de horário */
+.selected-dates-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  background: white;
+  border-radius: 6px;
+  border: 1px solid #e0e0e0;
+  transition: all 0.2s ease;
+}
+
+.selected-dates-list li:hover {
+  border-color: #667eea;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+}
+
+.date-item {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  flex: 1;
+}
+
+.date-text {
+  color: #333;
+  font-size: 14px;
+  font-weight: 500;
+  min-width: 100px;
+}
+
+.time-input {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.time-input:hover {
+  border-color: #667eea;
+}
+
+.time-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* Ajuste no modal de duplicação */
+.duplicate-modal {
+  max-width: 700px;
+}
+
+.duplicate-content {
+  margin: 20px 0;
+}
