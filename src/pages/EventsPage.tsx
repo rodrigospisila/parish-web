@@ -714,7 +714,11 @@ const EventsPage: React.FC = () => {
                     {selectedDates.map((date) => {
                       const dateObj = new Date(date);
                       const dateStr = dateObj.toLocaleDateString('pt-BR');
-                      const timeStr = dateObj.toTimeString().slice(0, 5);
+                      
+                      // Formato 24h: HH:mm
+                      const hours = dateObj.getHours().toString().padStart(2, '0');
+                      const minutes = dateObj.getMinutes().toString().padStart(2, '0');
+                      const timeStr = `${hours}:${minutes}`;
                       
                       return (
                         <li key={date}>
