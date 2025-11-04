@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './PastoralsPage.css';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
 interface GlobalPastoral {
   id: string;
   name: string;
@@ -59,11 +61,11 @@ const CommunityPastoralsPage: React.FC = () => {
 
       const [pastoralsRes, globalRes, communitiesRes] = await Promise.all([
         axios.get(
-          `http://localhost:3000/pastorals/community${filterCommunity ? `?communityId=${filterCommunity}` : ''}`,
+          `${API_URL}/pastorals/community${filterCommunity ? `?communityId=${filterCommunity}` : ''}`,
           { headers }
         ),
-        axios.get('http://localhost:3000/pastorals/global', { headers }),
-        axios.get('http://localhost:3000/communities', { headers }),
+        axios.get(`${API_URL}/pastorals/global`, { headers }),
+        axios.get(`${API_URL}/communities`, { headers }),
       ]);
 
       setPastorals(pastoralsRes.data);
@@ -82,8 +84,8 @@ const CommunityPastoralsPage: React.FC = () => {
     try {
       const token = localStorage.getItem('token');
       const url = editingPastoral
-        ? `http://localhost:3000/pastorals/community/${editingPastoral.id}`
-        : 'http://localhost:3000/pastorals/community';
+        ? `${API_URL}/pastorals/community/${editingPastoral.id}`
+        : `${API_URL}/pastorals/community`;
 
       const method = editingPastoral ? 'patch' : 'post';
 
@@ -121,7 +123,7 @@ const CommunityPastoralsPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:3000/pastorals/community/${id}`, {
+      await axios.delete(`${API_URL}/pastorals/community/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       alert('Pastoral excluída!');

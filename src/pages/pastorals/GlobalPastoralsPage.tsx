@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './PastoralsPage.css';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
 interface GlobalPastoral {
   id: string;
   name: string;
@@ -36,7 +38,7 @@ const GlobalPastoralsPage: React.FC = () => {
   const fetchPastorals = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:3000/pastorals/global', {
+      const response = await axios.get(`${API_URL}/pastorals/global`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setPastorals(response.data);
@@ -53,8 +55,8 @@ const GlobalPastoralsPage: React.FC = () => {
     try {
       const token = localStorage.getItem('token');
       const url = editingPastoral
-        ? `http://localhost:3000/pastorals/global/${editingPastoral.id}`
-        : 'http://localhost:3000/pastorals/global';
+        ? `${API_URL}/pastorals/global/${editingPastoral.id}`
+        : `${API_URL}/pastorals/global`;
       
       const method = editingPastoral ? 'patch' : 'post';
 
@@ -90,7 +92,7 @@ const GlobalPastoralsPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:3000/pastorals/global/${id}`, {
+      await axios.delete(`${API_URL}/pastorals/global/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       alert('Pastoral excluída com sucesso!');
