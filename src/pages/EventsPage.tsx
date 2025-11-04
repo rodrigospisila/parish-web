@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import EventCalendar from '../components/EventCalendar';
+import RecurrenceForm from '../components/RecurrenceForm';
+import { generateRecurrenceDates, getEventDuration, applyDuration } from '../utils/recurrenceHelper';
 import './EventsPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -46,8 +48,10 @@ const EventsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
@@ -59,6 +63,10 @@ const EventsPage: React.FC = () => {
     endDate: '',
     location: '',
     isRecurring: false,
+    recurrenceType: '',
+    recurrenceInterval: 1,
+    recurrenceDays: '[]',
+    recurrenceEndDate: '',
     maxParticipants: '',
     isPublic: true,
     status: 'DRAFT',
@@ -116,19 +124,65 @@ const EventsPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('token');
-      const payload = {
-        ...formData,
-        maxParticipants: formData.maxParticipants ? parseInt(formData.maxParticipants) : undefined,
-      };
-
+      
       if (editingEvent) {
+        // Editar evento existente
+        const payload = {
+          ...formData,
+          maxParticipants: formData.maxParticipants ? parseInt(formData.maxParticipants) : undefined,
+        };
+        
         await axios.patch(
           `${API_URL}/events/${editingEvent.id}`,
           payload,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         alert('Evento atualizado com sucesso!');
+      } else if (formData.isRecurring && formData.recurrenceType) {
+        // Criar eventos recorrentes
+        const duration = getEventDuration(formData.startDate, formData.endDate);
+        const days = formData.recurrenceDays ? JSON.parse(formData.recurrenceDays) : [];
+        
+        const dates = generateRecurrenceDates(
+          formData.startDate,
+          {
+            type: formData.recurrenceType as any,
+            interval: formData.recurrenceInterval,
+            days,
+            endDate: formData.recurrenceEndDate || undefined,
+          }
+        );
+        
+        let createdCount = 0;
+        for (const date of dates) {
+          const payload = {
+            title: formData.title,
+            description: formData.description,
+            type: formData.type,
+            startDate: date,
+            endDate: applyDuration(date, duration),
+            location: formData.location,
+            isRecurring: false,
+            maxParticipants: formData.maxParticipants ? parseInt(formData.maxParticipants) : undefined,
+            isPublic: formData.isPublic,
+            status: formData.status,
+            communityId: formData.communityId,
+          };
+          
+          await axios.post(`${API_URL}/events`, payload, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          createdCount++;
+        }
+        
+        alert(`${createdCount} eventos criados com sucesso!`);
       } else {
+        // Criar evento único
+        const payload = {
+          ...formData,
+          maxParticipants: formData.maxParticipants ? parseInt(formData.maxParticipants) : undefined,
+        };
+        
         await axios.post(`${API_URL}/events`, payload, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -154,6 +208,10 @@ const EventsPage: React.FC = () => {
       endDate: event.endDate ? event.endDate.slice(0, 16) : '',
       location: event.location || '',
       isRecurring: event.isRecurring,
+      recurrenceType: '',
+      recurrenceInterval: 1,
+      recurrenceDays: '[]',
+      recurrenceEndDate: '',
       maxParticipants: event.maxParticipants?.toString() || '',
       isPublic: event.isPublic,
       status: event.status,
@@ -189,6 +247,10 @@ const EventsPage: React.FC = () => {
       endDate: '',
       location: '',
       isRecurring: false,
+      recurrenceType: '',
+      recurrenceInterval: 1,
+      recurrenceDays: '[]',
+      recurrenceEndDate: '',
       maxParticipants: '',
       isPublic: true,
       status: 'DRAFT',
@@ -212,6 +274,68 @@ const EventsPage: React.FC = () => {
       endDate: dateStr,
     }));
     setShowModal(true);
+  };
+
+  const handleDuplicateClick = () => {
+    setShowDetailModal(false);
+    setShowDuplicateModal(true);
+  };
+
+  const handleAddDate = () => {
+    const dateInput = prompt('Digite a data e hora (formato: DD/MM/AAAA HH:mm):');
+    if (!dateInput) return;
+
+    try {
+      // Parse DD/MM/AAAA HH:mm
+      const [datePart, timePart] = dateInput.split(' ');
+      const [day, month, year] = datePart.split('/');
+      const [hour, minute] = timePart.split(':');
+      
+      const date = new Date(
+        parseInt(year),
+        parseInt(month) - 1,
+        parseInt(day),
+        parseInt(hour),
+        parseInt(minute)
+      );
+
+      if (isNaN(date.getTime())) {
+        alert('Data inválida!');
+        return;
+      }
+
+      const dateStr = date.toISOString().slice(0, 16);
+      if (!selectedDates.includes(dateStr)) {
+        setSelectedDates([...selectedDates, dateStr].sort());
+      }
+    } catch (error) {
+      alert('Formato inválido! Use: DD/MM/AAAA HH:mm');
+    }
+  };
+
+  const handleRemoveDate = (date: string) => {
+    setSelectedDates(selectedDates.filter(d => d !== date));
+  };
+
+  const handleDuplicate = async () => {
+    if (!selectedEvent || selectedDates.length === 0) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post(
+        `${API_URL}/events/${selectedEvent.id}/duplicate`,
+        { dates: selectedDates },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      alert(response.data.message);
+      setShowDuplicateModal(false);
+      setSelectedDates([]);
+      fetchData();
+    } catch (error: any) {
+      console.error('Erro ao duplicar evento:', error);
+      alert(error.response?.data?.message || 'Erro ao duplicar evento');
+    }
   };
 
   const filteredEvents = events.filter((event) => {
@@ -373,6 +497,9 @@ const EventsPage: React.FC = () => {
               <button className="btn-edit" onClick={() => handleEdit(selectedEvent)}>
                 ✏️ Editar
               </button>
+              <button className="btn-duplicate" onClick={handleDuplicateClick}>
+                📋 Duplicar
+              </button>
               <button className="btn-delete" onClick={() => handleDelete(selectedEvent.id)}>
                 🗑️ Excluir
               </button>
@@ -521,6 +648,15 @@ const EventsPage: React.FC = () => {
                 </label>
               </div>
 
+              <RecurrenceForm
+                isRecurring={formData.isRecurring}
+                recurrenceType={formData.recurrenceType}
+                recurrenceInterval={formData.recurrenceInterval}
+                recurrenceDays={formData.recurrenceDays}
+                recurrenceEndDate={formData.recurrenceEndDate}
+                onChange={(field, value) => setFormData({ ...formData, [field]: value })}
+              />
+
               <div className="modal-actions">
                 <button type="button" className="btn-cancel" onClick={() => { setShowModal(false); resetForm(); }}>
                   Cancelar
@@ -530,6 +666,74 @@ const EventsPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Duplicação */}
+      {showDuplicateModal && selectedEvent && (
+        <div className="modal-overlay" onClick={() => { setShowDuplicateModal(false); setSelectedDates([]); }}>
+          <div className="modal-content duplicate-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => { setShowDuplicateModal(false); setSelectedDates([]); }}>×</button>
+            
+            <h2>📋 Duplicar Evento</h2>
+            <p className="duplicate-info">
+              Selecione as datas para duplicar o evento <strong>"{selectedEvent.title}"</strong>
+            </p>
+
+            <div className="duplicate-content">
+              <div className="date-input-section">
+                <button type="button" className="btn-add-date" onClick={handleAddDate}>
+                  + Adicionar Data
+                </button>
+                <small className="form-hint">Formato: DD/MM/AAAA HH:mm (ex: 15/11/2025 16:00)</small>
+              </div>
+
+              {selectedDates.length > 0 && (
+                <div className="selected-dates-list">
+                  <h4>Datas Selecionadas ({selectedDates.length})</h4>
+                  <ul>
+                    {selectedDates.map((date) => (
+                      <li key={date}>
+                        <span>{formatDate(date)}</span>
+                        <button
+                          type="button"
+                          className="btn-remove-date"
+                          onClick={() => handleRemoveDate(date)}
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {selectedDates.length === 0 && (
+                <div className="empty-dates">
+                  <p>📅 Nenhuma data selecionada</p>
+                  <small>Clique em "Adicionar Data" para começar</small>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-cancel"
+                onClick={() => { setShowDuplicateModal(false); setSelectedDates([]); }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn-submit"
+                onClick={handleDuplicate}
+                disabled={selectedDates.length === 0}
+              >
+                Duplicar para {selectedDates.length} data(s)
+              </button>
+            </div>
           </div>
         </div>
       )}
