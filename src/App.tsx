@@ -9,6 +9,8 @@ import CommunitiesPage from './pages/CommunitiesPage';
 import MembersPage from './pages/MembersPage';
 import EventsPage from './pages/EventsPage';
 import UsersPage from './pages/UsersPage';
+import GlobalPastoralsPage from './pages/pastorals/GlobalPastoralsPage';
+import CommunityPastoralsPage from './pages/pastorals/CommunityPastoralsPage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { token, loading } = useAuth();
@@ -69,6 +71,12 @@ const App: React.FC = () => {
             <Route path="members" element={<MembersPage />} />
             <Route path="events" element={<EventsPage />} />
             <Route path="users" element={<UsersPage />} />
+            <Route path="pastorals/global" element={
+              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
+                <GlobalPastoralsPage />
+              </RoleProtectedRoute>
+            } />
+            <Route path="pastorals/community" element={<CommunityPastoralsPage />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/admin" replace />} />

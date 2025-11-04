@@ -47,6 +47,14 @@ const AdminLayout: React.FC = () => {
           <Link to="/admin/events" className="nav-link">
             📅 Eventos
           </Link>
+          {isSystemAdmin && (
+            <Link to="/admin/pastorals/global" className="nav-link">
+              📋 Pastorais Globais
+            </Link>
+          )}
+          <Link to="/admin/pastorals/community" className="nav-link">
+            🙏 Pastorais
+          </Link>
           {canManageUsers && (
             <Link to="/admin/users" className="nav-link">
               🔐 Usuários
