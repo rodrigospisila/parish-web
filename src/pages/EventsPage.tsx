@@ -3,6 +3,7 @@ import axios from 'axios';
 import Calendar from 'react-calendar';
 import EventCalendar from '../components/EventCalendar';
 import RecurrenceForm from '../components/RecurrenceForm';
+import TimeInput24h from '../components/TimeInput24h';
 import { generateRecurrenceDates, getEventDuration, applyDuration } from '../utils/recurrenceHelper';
 import 'react-calendar/dist/Calendar.css';
 import './EventsPage.css';
@@ -724,11 +725,9 @@ const EventsPage: React.FC = () => {
                         <li key={date}>
                           <div className="date-item">
                             <span className="date-text">{dateStr}</span>
-                            <input
-                              type="time"
+                            <TimeInput24h
                               value={timeStr}
-                              onChange={(e) => handleTimeChange(date, e.target.value)}
-                              className="time-input"
+                              onChange={(newTime) => handleTimeChange(date, newTime)}
                             />
                           </div>
                           <button

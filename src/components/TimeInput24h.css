@@ -1,0 +1,117 @@
+.time-input-24h {
+  position: relative;
+  display: inline-block;
+}
+
+.time-display {
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 100px;
+}
+
+.time-display:hover {
+  border-color: #667eea;
+  background: #f8f9ff;
+}
+
+.time-display:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.time-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  display: flex;
+  gap: 0;
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.time-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 70px;
+}
+
+.time-column:first-child {
+  border-right: 1px solid #e0e0e0;
+}
+
+.time-column-header {
+  padding: 10px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: 600;
+  font-size: 12px;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.time-options {
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #667eea #f0f0f0;
+}
+
+.time-options::-webkit-scrollbar {
+  width: 6px;
+}
+
+.time-options::-webkit-scrollbar-track {
+  background: #f0f0f0;
+}
+
+.time-options::-webkit-scrollbar-thumb {
+  background: #667eea;
+  border-radius: 3px;
+}
+
+.time-options::-webkit-scrollbar-thumb:hover {
+  background: #764ba2;
+}
+
+.time-option {
+  padding: 10px 16px;
+  border: none;
+  background: white;
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  width: 100%;
+  color: #333;
+}
+
+.time-option:hover {
+  background: #f8f9ff;
+  color: #667eea;
+}
+
+.time-option.selected {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: 600;
+}
+
+.time-option.selected:hover {
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+}
