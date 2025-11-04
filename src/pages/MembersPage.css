@@ -246,3 +246,58 @@
     gap: 1rem;
   }
 }
+
+/* Modal Large */
+.modal-large {
+  max-width: 800px;
+}
+
+/* Fieldsets */
+fieldset {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+fieldset legend {
+  font-weight: 600;
+  color: #4facfe;
+  padding: 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+/* Status Badges */
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.badge-active {
+  background: #d4edda;
+  color: #155724;
+}
+
+.badge-inactive {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.badge-deceased {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+/* Card Header with Status */
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.card-header > div:first-child {
+  flex: 1;
+}
