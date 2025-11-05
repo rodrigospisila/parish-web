@@ -146,21 +146,17 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
   if (loading) {
     return (
-      <AdminLayout>
-        <div className="pastorals-page">
-          <p>Carregando...</p>
-        </div>
-      </AdminLayout>
+      <div className="pastorals-page">
+        <p>Carregando...</p>
+      </div>
     );
   }
 
   if (!pastoral) {
     return (
-      <AdminLayout>
-        <div className="pastorals-page">
-          <p>Pastoral não encontrada</p>
-        </div>
-      </AdminLayout>
+      <div className="pastorals-page">
+        <p>Pastoral não encontrada</p>
+      </div>
     );
   }
 
