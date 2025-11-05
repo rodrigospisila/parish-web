@@ -552,7 +552,7 @@ const UsersPage: React.FC = () => {
                 </div>
               )}
 
-              {formData.role === 'COMMUNITY_COORDINATOR' && formData.parishId && (
+              {formData.role === 'COMMUNITY_COORDINATOR' && (formData.parishId || currentUser?.parishId) && (
                 <div className="form-group">
                   <label>Comunidade(s) Vinculada(s) *</label>
                   <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '8px', maxHeight: '150px', overflowY: 'auto' }}>
