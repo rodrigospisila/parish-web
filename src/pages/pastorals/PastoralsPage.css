@@ -423,3 +423,195 @@
     overflow-x: auto;
   }
 }
+
+/* Página de Detalhes da Pastoral */
+.back-button {
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.back-button:hover {
+  background: #5a6268;
+}
+
+.pastoral-info-card {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+}
+
+.pastoral-info-card h2 {
+  margin: 0 0 15px 0;
+  color: #333;
+  font-size: 18px;
+  border-bottom: 2px solid #e74c3c;
+  padding-bottom: 10px;
+}
+
+.pastoral-info-card p {
+  margin: 8px 0;
+  color: #555;
+}
+
+.members-section {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #e74c3c;
+  padding-bottom: 10px;
+}
+
+.section-header h2 {
+  margin: 0;
+  color: #333;
+  font-size: 18px;
+}
+
+.add-button {
+  background: #27ae60;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.add-button:hover {
+  background: #229954;
+}
+
+.members-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.member-card {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 6px;
+  border-left: 4px solid #3498db;
+}
+
+.member-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.member-header h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #333;
+}
+
+.role-badge {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.role-coordenador {
+  background: #e74c3c;
+  color: white;
+}
+
+.role-vice-coordenador {
+  background: #f39c12;
+  color: white;
+}
+
+.role-secretário,
+.role-tesoureiro {
+  background: #3498db;
+  color: white;
+}
+
+.role-membro {
+  background: #95a5a6;
+  color: white;
+}
+
+.member-card p {
+  margin: 5px 0;
+  font-size: 14px;
+  color: #555;
+}
+
+.member-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.remove-button {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.remove-button:hover {
+  background: #c0392b;
+}
+
+.submit-button {
+  flex: 1;
+  background: #27ae60;
+  color: white;
+  border: none;
+  padding: 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.submit-button:hover {
+  background: #229954;
+}
+
+.cancel-button {
+  flex: 1;
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.cancel-button:hover {
+  background: #5a6268;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}

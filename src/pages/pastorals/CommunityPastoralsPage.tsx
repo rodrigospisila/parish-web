@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import './PastoralsPage.css';
 
@@ -30,6 +31,7 @@ interface CommunityPastoral {
 }
 
 const CommunityPastoralsPage: React.FC = () => {
+  const navigate = useNavigate();
   const [pastorals, setPastorals] = useState<CommunityPastoral[]>([]);
   const [globalPastorals, setGlobalPastorals] = useState<GlobalPastoral[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -233,6 +235,9 @@ const CommunityPastoralsPage: React.FC = () => {
             )}
 
             <div className="pastoral-actions">
+              <button onClick={() => navigate(`/admin/pastorals/community/${pastoral.id}`)} className="btn-view">
+                Ver Detalhes
+              </button>
               <button onClick={() => handleEdit(pastoral)} className="btn-edit">
                 Editar
               </button>

@@ -11,6 +11,7 @@ import EventsPage from './pages/EventsPage';
 import UsersPage from './pages/UsersPage';
 import GlobalPastoralsPage from './pages/pastorals/GlobalPastoralsPage';
 import CommunityPastoralsPage from './pages/pastorals/CommunityPastoralsPage';
+import CommunityPastoralDetailsPage from './pages/pastorals/CommunityPastoralDetailsPage';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { token, loading } = useAuth();
@@ -77,6 +78,7 @@ const App: React.FC = () => {
               </RoleProtectedRoute>
             } />
             <Route path="pastorals/community" element={<CommunityPastoralsPage />} />
+            <Route path="pastorals/community/:id" element={<CommunityPastoralDetailsPage />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/admin" replace />} />
