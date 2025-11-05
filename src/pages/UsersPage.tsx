@@ -22,6 +22,11 @@ interface Community {
   parishId: string;
 }
 
+interface UserCommunity {
+  id: string;
+  community: Community;
+}
+
 interface User {
   id: string;
   name: string;
@@ -33,6 +38,7 @@ interface User {
   dioceseId?: string;
   parishId?: string;
   communityId?: string;
+  communities?: UserCommunity[];
   createdAt: string;
 }
 
@@ -56,6 +62,7 @@ const UsersPage: React.FC = () => {
     dioceseId: '',
     parishId: '',
     communityId: '',
+    communityIds: [] as string[],
   });
 
   // Definir hierarquia de roles
@@ -206,6 +213,13 @@ const UsersPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validar communityIds para COMMUNITY_COORDINATOR
+    if (formData.role === 'COMMUNITY_COORDINATOR' && formData.communityIds.length === 0) {
+      alert('Selecione pelo menos uma comunidade para o Coordenador de Comunidade');
+      return;
+    }
+
     try {
       const token = localStorage.getItem('token');
       
@@ -233,6 +247,8 @@ const UsersPage: React.FC = () => {
       
       if (formData.role === 'COMMUNITY_COORDINATOR') {
         dataToSend.communityId = formData.communityId || currentUser?.communityId || null;
+        // Adicionar array de communityIds
+        dataToSend.communityIds = formData.communityIds;
       }
 
       if (editingUser) {
@@ -268,6 +284,7 @@ const UsersPage: React.FC = () => {
       dioceseId: user.diocese?.id || '',
       parishId: '',
       communityId: '',
+      communityIds: [],
     });
     setShowModal(true);
   };
@@ -318,6 +335,7 @@ const UsersPage: React.FC = () => {
       dioceseId: '',
       parishId: '',
       communityId: '',
+      communityIds: [],
     });
     setEditingUser(null);
   };
@@ -388,6 +406,12 @@ const UsersPage: React.FC = () => {
                 <p><strong>📧 Email:</strong> {user.email}</p>
                 {user.phone && <p><strong>📞 Telefone:</strong> {user.phone}</p>}
                 {user.diocese && <p><strong>📍 Diocese:</strong> {user.diocese.name}</p>}
+                {user.communities && user.communities.length > 0 && (
+                  <p>
+                    <strong>🏘️ Comunidades:</strong>{' '}
+                    {user.communities.map(uc => uc.community.name).join(', ')}
+                  </p>
+                )}
               </div>
               <div className="card-actions">
                 <button className="btn-edit" onClick={() => handleEdit(user)}>
@@ -525,6 +549,38 @@ const UsersPage: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+
+              {formData.role === 'COMMUNITY_COORDINATOR' && formData.parishId && (
+                <div className="form-group">
+                  <label>Comunidade(s) Vinculada(s) *</label>
+                  <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '8px', maxHeight: '150px', overflowY: 'auto' }}>
+                    {availableCommunities.length === 0 ? (
+                      <p style={{ margin: 0, color: '#666' }}>Nenhuma comunidade disponível</p>
+                    ) : (
+                      availableCommunities.map((community) => (
+                        <label key={community.id} style={{ display: 'block', marginBottom: '4px', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={formData.communityIds.includes(community.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setFormData({ ...formData, communityIds: [...formData.communityIds, community.id] });
+                              } else {
+                                setFormData({ ...formData, communityIds: formData.communityIds.filter(id => id !== community.id) });
+                              }
+                            }}
+                            style={{ marginRight: '8px' }}
+                          />
+                          {community.name}
+                        </label>
+                      ))
+                    )}
+                  </div>
+                  {formData.communityIds.length === 0 && (
+                    <small style={{ color: '#e74c3c' }}>Selecione pelo menos uma comunidade</small>
+                  )}
                 </div>
               )}
 
