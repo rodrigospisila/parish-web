@@ -132,12 +132,20 @@ const UsersPage: React.FC = () => {
     
     if (currentUser.role === 'PARISH_ADMIN') {
       // Apenas comunidades da sua paróquia
-      return communities.filter(c => c.parishId === currentUser.parishId);
+      const filtered = communities.filter(c => c.parishId === currentUser.parishId);
+      console.log('DEBUG availableCommunities:', {
+        currentUserRole: currentUser.role,
+        currentUserParishId: currentUser.parishId,
+        allCommunities: communities,
+        filteredCommunities: filtered,
+        formDataRole: formData.role,
+      });
+      return filtered;
     }
     
     // COMMUNITY_COORDINATOR não vê o campo
     return [];
-  }, [currentUser, communities, formData.parishId]);
+  }, [currentUser, communities, formData.parishId, formData.role]);
 
   // Verificar se deve mostrar campo Diocese
   const shouldShowDioceseField = useMemo(() => {
