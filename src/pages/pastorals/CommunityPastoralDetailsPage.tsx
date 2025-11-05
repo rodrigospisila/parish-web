@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import AdminLayout from '../../components/AdminLayout';
 import './PastoralsPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -171,8 +170,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
   );
 
   return (
-    <AdminLayout>
-      <div className="pastorals-page">
+    <div className="pastorals-page">
         <div className="page-header">
           <div>
             <button onClick={() => navigate('/admin/pastorals/community')} className="back-button">
@@ -287,8 +285,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
             </div>
           </div>
         )}
-      </div>
-    </AdminLayout>
+    </div>
   );
 };
 
