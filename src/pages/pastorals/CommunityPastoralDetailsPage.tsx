@@ -377,7 +377,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
     }
   };
 
-  const handleToggleStatus = async () {
+  const handleToggleStatus = async () => {
     if (!pastoral) return;
 
     const confirmMessage = pastoral.isActive
@@ -403,7 +403,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
     }
   };
 
-  const handleUpdateRole = async () {
+  const handleUpdateRole = async () => {
     if (!editingMember) return;
 
     try {
@@ -425,7 +425,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
     }
   };
 
-  const handleAddMember = async () {
+  const handleAddMember = async () => {
     if (!selectedMemberId) {
       alert('Selecione um membro');
       return;
