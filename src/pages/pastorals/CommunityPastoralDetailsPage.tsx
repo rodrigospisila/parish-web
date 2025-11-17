@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { formatDateTime, formatDate } from '../../utils/dateFormat';
 import './PastoralsPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -261,29 +262,57 @@ const CommunityPastoralDetailsPage: React.FC = () => {
   const fetchMeetings = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/pastorals/meetings`, {
-        params: { communityPastoralId: id },
+      const response = await axios.get(`${API_URL}/events`, {
+        params: { 
+          type: 'PASTORAL_MEETING',
+          communityId: pastoral?.community.id 
+        },
         headers: { Authorization: `Bearer ${token}` },
       });
-      setMeetings(response.data);
+      
+      // Filtrar apenas eventos desta pastoral
+      const pastoralMeetings = response.data.filter((event: any) =>
+        event.eventPastorals?.some((ep: any) => ep.communityPastoralId === id)
+      );
+      
+      setMeetings(pastoralMeetings);
     } catch (error) {
       console.error('Erro ao carregar reuniões:', error);
     }
   };
 
   const handleAddMeeting = async () => {
-    if (!meetingFormData.title.trim() || !meetingFormData.date) {
+    if (!meetingFormData.title.trim() || !meetingFormData.date || !pastoral) {
       alert('Título e data são obrigatórios');
       return;
     }
 
     try {
       const token = localStorage.getItem('token');
-      await axios.post(
-        `${API_URL}/pastorals/meetings`,
+      
+      // Criar evento do tipo PASTORAL_MEETING
+      const eventResponse = await axios.post(
+        `${API_URL}/events`,
         {
-          ...meetingFormData,
+          title: meetingFormData.title,
+          description: meetingFormData.description,
+          type: 'PASTORAL_MEETING',
+          startDate: meetingFormData.date,
+          location: meetingFormData.location,
+          communityId: pastoral.community.id,
+          isPublic: false,
+          status: 'PUBLISHED',
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      // Vincular pastoral ao evento
+      await axios.post(
+        `${API_URL}/events/${eventResponse.data.id}/pastorals`,
+        {
           communityPastoralId: id,
+          role: 'Organizadora',
+          isLeader: true,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -301,29 +330,58 @@ const CommunityPastoralDetailsPage: React.FC = () => {
   const fetchActivities = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/pastorals/activities`, {
-        params: { communityPastoralId: id },
+      const response = await axios.get(`${API_URL}/events`, {
+        params: { 
+          type: 'PASTORAL_ACTIVITY',
+          communityId: pastoral?.community.id 
+        },
         headers: { Authorization: `Bearer ${token}` },
       });
-      setActivities(response.data);
+      
+      // Filtrar apenas eventos desta pastoral
+      const pastoralActivities = response.data.filter((event: any) =>
+        event.eventPastorals?.some((ep: any) => ep.communityPastoralId === id)
+      );
+      
+      setActivities(pastoralActivities);
     } catch (error) {
       console.error('Erro ao carregar atividades:', error);
     }
   };
 
   const handleAddActivity = async () => {
-    if (!activityFormData.title.trim() || !activityFormData.startDate) {
+    if (!activityFormData.title.trim() || !activityFormData.startDate || !pastoral) {
       alert('Título e data de início são obrigatórios');
       return;
     }
 
     try {
       const token = localStorage.getItem('token');
-      await axios.post(
-        `${API_URL}/pastorals/activities`,
+      
+      // Criar evento do tipo PASTORAL_ACTIVITY
+      const eventResponse = await axios.post(
+        `${API_URL}/events`,
         {
-          ...activityFormData,
+          title: activityFormData.title,
+          description: activityFormData.description,
+          type: 'PASTORAL_ACTIVITY',
+          startDate: activityFormData.startDate,
+          endDate: activityFormData.endDate || undefined,
+          location: activityFormData.location,
+          communityId: pastoral.community.id,
+          isPublic: false,
+          status: 'PUBLISHED',
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      // Vincular pastoral ao evento
+      await axios.post(
+        `${API_URL}/events/${eventResponse.data.id}/pastorals`,
+        {
           communityPastoralId: id,
+          role: 'Organizadora',
+          isLeader: true,
         },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -593,12 +651,12 @@ const CommunityPastoralDetailsPage: React.FC = () => {
                   <div className="member-header">
                     <h3>{meeting.title}</h3>
                   </div>
-                  <p>📅 {new Date(meeting.date).toLocaleString('pt-BR')}</p>
+                  <p>📅 {formatDateTime(meeting.startDate || meeting.date)}</p>
                   {meeting.location && <p>📍 {meeting.location}</p>}
                   {meeting.description && <p>📝 {meeting.description}</p>}
-                  {meeting.participants && (
+                  {meeting.eventPastorals?.[0]?.assignments && (
                     <p style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
-                      {meeting.participants.filter((p: any) => p.attended).length} / {meeting.participants.length} presentes
+                      {meeting.eventPastorals[0].assignments.filter((a: any) => a.checkedInAt).length} / {meeting.eventPastorals[0].assignments.length} presentes
                     </p>
                   )}
                 </div>
@@ -627,9 +685,9 @@ const CommunityPastoralDetailsPage: React.FC = () => {
                   <div className="member-header">
                     <h3>{activity.title}</h3>
                   </div>
-                  <p>📅 Início: {new Date(activity.startDate).toLocaleDateString('pt-BR')}</p>
+                  <p>📅 Início: {formatDate(activity.startDate)}</p>
                   {activity.endDate && (
-                    <p>📅 Término: {new Date(activity.endDate).toLocaleDateString('pt-BR')}</p>
+                    <p>📅 Término: {formatDate(activity.endDate)}</p>
                   )}
                   {activity.location && <p>📍 {activity.location}</p>}
                   {activity.description && <p>📝 {activity.description}</p>}
