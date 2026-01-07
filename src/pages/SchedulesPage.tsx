@@ -135,7 +135,12 @@ const SchedulesPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_URL}/schedules`, formData, {
+      // Converter a data para formato ISO-8601 completo
+      const payload = {
+        ...formData,
+        date: new Date(formData.date).toISOString(),
+      };
+      await axios.post(`${API_URL}/schedules`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
       alert('Escala criada com sucesso!');
