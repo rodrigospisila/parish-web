@@ -540,3 +540,73 @@
     gap: 1rem;
   }
 }
+
+
+/* Eligible Members Info */
+.eligible-info {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #007bff;
+}
+
+.pastoral-info .info-label {
+  margin: 0 0 0.75rem 0;
+  font-weight: 500;
+  color: #495057;
+}
+
+.pastoral-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.pastoral-badge {
+  display: inline-flex;
+  align-items: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 0.35rem 0.75rem;
+  border-radius: 16px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.pastoral-badge .leader-tag {
+  font-size: 0.75rem;
+  opacity: 0.9;
+  margin-left: 0.25rem;
+}
+
+.info-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #6c757d;
+  font-style: italic;
+}
+
+.no-pastoral-info {
+  padding: 0.5rem 0;
+}
+
+.no-members-warning {
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  background: #fff3cd;
+  border-radius: 6px;
+  color: #856404;
+  font-size: 0.85rem;
+}
+
+.btn-submit:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.btn-submit:disabled:hover {
+  opacity: 0.6;
+}

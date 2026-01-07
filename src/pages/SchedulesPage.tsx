@@ -15,6 +15,29 @@ interface Event {
   };
 }
 
+interface PastoralInfo {
+  name: string;
+  role?: string;
+}
+
+interface EligibleMember {
+  id: string;
+  fullName: string;
+  email?: string;
+  phone?: string;
+  photoUrl?: string;
+  pastorals: PastoralInfo[];
+}
+
+interface EligibleMembersResponse {
+  eventId: string;
+  eventTitle: string;
+  community: { id: string; name: string };
+  pastorals: { id: string; name: string; role?: string; isLeader: boolean }[];
+  hasPastorals: boolean;
+  members: EligibleMember[];
+}
+
 interface Member {
   id: string;
   fullName: string;
@@ -52,7 +75,10 @@ const SchedulesPage: React.FC = () => {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [eligibleMembers, setEligibleMembers] = useState<EligibleMember[]>([]);
+  const [eligibleMembersInfo, setEligibleMembersInfo] = useState<EligibleMembersResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingEligible, setLoadingEligible] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -98,6 +124,11 @@ const SchedulesPage: React.FC = () => {
     ROSARY: 'Terço',
     CONFESSION: 'Confissão',
     OTHER: 'Outro',
+    PASTORAL_MEETING: 'Reunião de Pastoral',
+    PASTORAL_ACTIVITY: 'Atividade de Pastoral',
+    SACRAMENT: 'Sacramento',
+    COMMUNITY_EVENT: 'Evento Comunitário',
+    VISITATION: 'Visitação',
   };
 
   useEffect(() => {
@@ -127,6 +158,27 @@ const SchedulesPage: React.FC = () => {
       alert('Erro ao carregar dados');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Buscar membros elegíveis quando abrir o modal de atribuição
+  const fetchEligibleMembers = async (eventId: string) => {
+    setLoadingEligible(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get<EligibleMembersResponse>(
+        `${API_URL}/schedules/events/${eventId}/eligible-members`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setEligibleMembersInfo(res.data);
+      setEligibleMembers(res.data.members);
+    } catch (error) {
+      console.error('Erro ao buscar membros elegíveis:', error);
+      // Fallback: usar todos os membros
+      setEligibleMembers(members);
+      setEligibleMembersInfo(null);
+    } finally {
+      setLoadingEligible(false);
     }
   };
 
@@ -275,6 +327,8 @@ const SchedulesPage: React.FC = () => {
       memberId: '',
       scheduleId: '',
     });
+    setEligibleMembers([]);
+    setEligibleMembersInfo(null);
   };
 
   const handleScheduleClick = async (schedule: Schedule) => {
@@ -290,11 +344,13 @@ const SchedulesPage: React.FC = () => {
     }
   };
 
-  const handleAddAssignment = (schedule: Schedule) => {
+  const handleAddAssignment = async (schedule: Schedule) => {
     setAssignmentForm({
       ...assignmentForm,
       scheduleId: schedule.id,
     });
+    // Buscar membros elegíveis baseado no evento da escala
+    await fetchEligibleMembers(schedule.event.id);
     setShowAssignmentModal(true);
   };
 
@@ -561,6 +617,35 @@ const SchedulesPage: React.FC = () => {
         <div className="modal-overlay" onClick={() => { setShowAssignmentModal(false); resetAssignmentForm(); }}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <h2>Atribuir Membro à Escala</h2>
+            
+            {/* Informação sobre pastorais vinculadas */}
+            {eligibleMembersInfo && (
+              <div className="eligible-info">
+                {eligibleMembersInfo.hasPastorals ? (
+                  <div className="pastoral-info">
+                    <p className="info-label">📋 Pastorais vinculadas ao evento:</p>
+                    <div className="pastoral-badges">
+                      {eligibleMembersInfo.pastorals.map((p) => (
+                        <span key={p.id} className="pastoral-badge">
+                          {p.name}
+                          {p.isLeader && <span className="leader-tag"> (Principal)</span>}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="info-note">
+                      ℹ️ Apenas membros destas pastorais podem ser escalados.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="no-pastoral-info">
+                    <p className="info-note">
+                      ℹ️ Este evento não tem pastorais vinculadas. Todos os membros da comunidade estão disponíveis.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
             <form onSubmit={handleAssignmentSubmit}>
               <div className="form-group">
                 <label>Função *</label>
@@ -579,26 +664,35 @@ const SchedulesPage: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label>Membro *</label>
+                <label>Membro * {loadingEligible && '(Carregando...)'}</label>
                 <select
                   required
                   value={assignmentForm.memberId}
                   onChange={(e) => setAssignmentForm({ ...assignmentForm, memberId: e.target.value })}
+                  disabled={loadingEligible}
                 >
                   <option value="">Selecione um membro</option>
-                  {members.map((member) => (
+                  {eligibleMembers.map((member) => (
                     <option key={member.id} value={member.id}>
                       {member.fullName}
+                      {member.pastorals && member.pastorals.length > 0 && 
+                        ` (${member.pastorals.map(p => p.name).join(', ')})`
+                      }
                     </option>
                   ))}
                 </select>
+                {eligibleMembers.length === 0 && !loadingEligible && (
+                  <p className="no-members-warning">
+                    ⚠️ Nenhum membro elegível encontrado. Verifique se há membros cadastrados nas pastorais vinculadas ao evento.
+                  </p>
+                )}
               </div>
 
               <div className="modal-actions">
                 <button type="button" className="btn-cancel" onClick={() => { setShowAssignmentModal(false); resetAssignmentForm(); }}>
                   Cancelar
                 </button>
-                <button type="submit" className="btn-submit">
+                <button type="submit" className="btn-submit" disabled={loadingEligible || eligibleMembers.length === 0}>
                   Atribuir
                 </button>
               </div>
