@@ -9,6 +9,7 @@ import CommunitiesPage from './pages/CommunitiesPage';
 import MembersPage from './pages/MembersPage';
 import EventsPage from './pages/EventsPage';
 import UsersPage from './pages/UsersPage';
+import SchedulesPage from './pages/SchedulesPage';
 import GlobalPastoralsPage from './pages/pastorals/GlobalPastoralsPage';
 import CommunityPastoralsPage from './pages/pastorals/CommunityPastoralsPage';
 import CommunityPastoralDetailsPage from './pages/pastorals/CommunityPastoralDetailsPage';
@@ -71,6 +72,7 @@ const App: React.FC = () => {
             <Route path="communities" element={<CommunitiesPage />} />
             <Route path="members" element={<MembersPage />} />
             <Route path="events" element={<EventsPage />} />
+            <Route path="schedules" element={<SchedulesPage />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="pastorals/global" element={
               <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>

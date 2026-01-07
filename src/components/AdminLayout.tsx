@@ -16,9 +16,11 @@ const AdminLayout: React.FC = () => {
   const isDiocesanAdmin = user?.role === 'DIOCESAN_ADMIN';
   const isParishAdmin = user?.role === 'PARISH_ADMIN';
   const isCommunityCoordinator = user?.role === 'COMMUNITY_COORDINATOR';
+  const isPastoralCoordinator = user?.role === 'PASTORAL_COORDINATOR';
   
   const canManageDioceses = isSystemAdmin || isDiocesanAdmin;
   const canManageUsers = isSystemAdmin || isDiocesanAdmin || isParishAdmin || isCommunityCoordinator;
+  const canManageSchedules = isSystemAdmin || isDiocesanAdmin || isParishAdmin || isCommunityCoordinator || isPastoralCoordinator;
 
   return (
     <div className="admin-layout">
@@ -47,6 +49,11 @@ const AdminLayout: React.FC = () => {
           <Link to="/admin/events" className="nav-link">
             📅 Eventos
           </Link>
+          {canManageSchedules && (
+            <Link to="/admin/schedules" className="nav-link">
+              📋 Escalas
+            </Link>
+          )}
           {isSystemAdmin && (
             <Link to="/admin/pastorals/global" className="nav-link">
               📋 Pastorais Globais
