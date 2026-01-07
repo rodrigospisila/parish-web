@@ -42,6 +42,10 @@ interface User {
   createdAt: string;
 }
 
+type ViewMode = 'cards' | 'table';
+type SortField = 'name' | 'email' | 'role' | 'createdAt';
+type SortDirection = 'asc' | 'desc';
+
 const UsersPage: React.FC = () => {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
@@ -52,6 +56,16 @@ const UsersPage: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Novos estados para visualização híbrida
+  const [viewMode, setViewMode] = useState<ViewMode>('cards');
+  const [sortField, setSortField] = useState<SortField>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [filterRole, setFilterRole] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -132,15 +146,7 @@ const UsersPage: React.FC = () => {
     
     if (currentUser.role === 'PARISH_ADMIN') {
       // Apenas comunidades da sua paróquia
-      const filtered = communities.filter(c => c.parishId === currentUser.parishId);
-      console.log('DEBUG availableCommunities:', {
-        currentUserRole: currentUser.role,
-        currentUserParishId: currentUser.parishId,
-        allCommunities: communities,
-        filteredCommunities: filtered,
-        formDataRole: formData.role,
-      });
-      return filtered;
+      return communities.filter(c => c.parishId === currentUser.parishId);
     }
     
     // COMMUNITY_COORDINATOR não vê o campo
@@ -189,6 +195,11 @@ const UsersPage: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Reset página quando filtros mudam
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterRole, filterStatus, sortField, sortDirection]);
 
   const fetchData = async () => {
     try {
@@ -315,25 +326,26 @@ const UsersPage: React.FC = () => {
   };
 
   const handleToggleActive = async (user: User) => {
+    const action = user.isActive ? 'desativar' : 'ativar';
+    if (!window.confirm(`Tem certeza que deseja ${action} este usuário?`)) return;
+
     try {
       const token = localStorage.getItem('token');
-      await axios.patch(
-        `${API_URL}/users/${user.id}`,
-        { isActive: !user.isActive },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      alert(`Usuário ${!user.isActive ? 'ativado' : 'desativado'} com sucesso!`);
+      const endpoint = user.isActive ? 'deactivate' : 'activate';
+      await axios.patch(`${API_URL}/users/${user.id}/${endpoint}`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      alert(`Usuário ${action === 'desativar' ? 'desativado' : 'ativado'} com sucesso!`);
       fetchData();
     } catch (error: any) {
-      console.error('Erro ao atualizar status:', error);
-      const errorMessage = error.response?.data?.message || 'Erro ao atualizar status';
+      console.error(`Erro ao ${action} usuário:`, error);
+      const errorMessage = error.response?.data?.message || `Erro ao ${action} usuário`;
       alert(errorMessage);
     }
   };
 
   const resetForm = () => {
+    setEditingUser(null);
     setFormData({
       name: '',
       email: '',
@@ -345,18 +357,145 @@ const UsersPage: React.FC = () => {
       communityId: '',
       communityIds: [],
     });
-    setEditingUser(null);
   };
 
   const getRoleLabel = (role: string) => {
     return allRoles.find(r => r.value === role)?.label || role;
   };
 
-  const filteredUsers = users.filter((user) =>
-    user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.role.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const getRoleShortLabel = (role: string) => {
+    const labels: Record<string, string> = {
+      'SYSTEM_ADMIN': 'SYS ADMIN',
+      'DIOCESAN_ADMIN': 'DIOC ADMIN',
+      'PARISH_ADMIN': 'PAR ADMIN',
+      'COMMUNITY_COORDINATOR': 'COORD COM',
+      'PASTORAL_COORDINATOR': 'COORD PAST',
+      'VOLUNTEER': 'VOLUNTÁRIO',
+      'FAITHFUL': 'FIEL',
+    };
+    return labels[role] || role;
+  };
+
+  // Ordenação
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Seleção múltipla
+  const handleSelectAll = () => {
+    if (selectedUsers.length === paginatedUsers.length) {
+      setSelectedUsers([]);
+    } else {
+      setSelectedUsers(paginatedUsers.map(u => u.id));
+    }
+  };
+
+  const handleSelectUser = (userId: string) => {
+    if (selectedUsers.includes(userId)) {
+      setSelectedUsers(selectedUsers.filter(id => id !== userId));
+    } else {
+      setSelectedUsers([...selectedUsers, userId]);
+    }
+  };
+
+  // Ações em lote
+  const handleBulkDeactivate = async () => {
+    if (selectedUsers.length === 0) return;
+    if (!window.confirm(`Deseja desativar ${selectedUsers.length} usuário(s)?`)) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      await Promise.all(
+        selectedUsers.map(id =>
+          axios.patch(`${API_URL}/users/${id}/deactivate`, {}, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        )
+      );
+      alert('Usuários desativados com sucesso!');
+      setSelectedUsers([]);
+      fetchData();
+    } catch (error) {
+      console.error('Erro ao desativar usuários:', error);
+      alert('Erro ao desativar alguns usuários');
+    }
+  };
+
+  // Exportar CSV
+  const handleExportCSV = () => {
+    const headers = ['Nome', 'Email', 'Telefone', 'Função', 'Status', 'Diocese', 'Comunidades'];
+    const rows = filteredAndSortedUsers.map(user => [
+      user.name,
+      user.email,
+      user.phone || '',
+      getRoleLabel(user.role),
+      user.isActive ? 'Ativo' : 'Inativo',
+      user.diocese?.name || '',
+      user.communities?.map(uc => uc.community.name).join('; ') || '',
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `usuarios_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  // Filtrar e ordenar usuários
+  const filteredAndSortedUsers = useMemo(() => {
+    let result = users.filter((user) => {
+      const matchesSearch = 
+        user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.role.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesRole = filterRole ? user.role === filterRole : true;
+      const matchesStatus = filterStatus 
+        ? (filterStatus === 'active' ? user.isActive : !user.isActive)
+        : true;
+
+      return matchesSearch && matchesRole && matchesStatus;
+    });
+
+    // Ordenar
+    result.sort((a, b) => {
+      let comparison = 0;
+      switch (sortField) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case 'email':
+          comparison = a.email.localeCompare(b.email);
+          break;
+        case 'role':
+          comparison = a.role.localeCompare(b.role);
+          break;
+        case 'createdAt':
+          comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          break;
+      }
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    return result;
+  }, [users, searchTerm, filterRole, filterStatus, sortField, sortDirection]);
+
+  // Paginação
+  const totalPages = Math.ceil(filteredAndSortedUsers.length / itemsPerPage);
+  const paginatedUsers = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredAndSortedUsers.slice(start, start + itemsPerPage);
+  }, [filteredAndSortedUsers, currentPage, itemsPerPage]);
 
   if (loading) return <div className="loading">Carregando...</div>;
 
@@ -380,65 +519,275 @@ const UsersPage: React.FC = () => {
     <div className="users-page">
       <div className="page-header">
         <h1>Usuários</h1>
-        <button className="btn-primary" onClick={() => setShowModal(true)}>
-          + Novo Usuário
-        </button>
+        <div className="header-actions">
+          <button className="btn-export" onClick={handleExportCSV} title="Exportar CSV">
+            📥 Exportar
+          </button>
+          <button className="btn-primary" onClick={() => setShowModal(true)}>
+            + Novo Usuário
+          </button>
+        </div>
       </div>
 
-      <div className="filters">
-        <input
-          type="text"
-          placeholder="Buscar por nome, email ou role..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="search-input"
-        />
+      {/* Filtros e Controles */}
+      <div className="filters-section">
+        <div className="filters-row">
+          <input
+            type="text"
+            placeholder="Buscar por nome, email ou role..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="search-input"
+          />
+          <select
+            value={filterRole}
+            onChange={(e) => setFilterRole(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">Todas as funções</option>
+            {allRoles.map((role) => (
+              <option key={role.value} value={role.value}>
+                {role.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">Todos os status</option>
+            <option value="active">Ativos</option>
+            <option value="inactive">Inativos</option>
+          </select>
+        </div>
+
+        <div className="view-controls">
+          <div className="view-toggle">
+            <button
+              className={`toggle-btn ${viewMode === 'cards' ? 'active' : ''}`}
+              onClick={() => setViewMode('cards')}
+              title="Visualização em Cards"
+            >
+              📊 Cards
+            </button>
+            <button
+              className={`toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
+              onClick={() => setViewMode('table')}
+              title="Visualização em Tabela"
+            >
+              📋 Tabela
+            </button>
+          </div>
+          
+          {viewMode === 'table' && (
+            <div className="items-per-page">
+              <label>Itens por página:</label>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="users-grid">
-        {filteredUsers.length === 0 ? (
-          <p className="no-results">Nenhum usuário encontrado.</p>
-        ) : (
-          filteredUsers.map((user) => (
-            <div key={user.id} className="user-card">
-              <div className="card-header">
-                <h3>{user.name}</h3>
-                <div className="badges">
-                  <span className="role-badge">{getRoleLabel(user.role)}</span>
-                  <span className={`status-badge ${user.isActive ? 'active' : 'inactive'}`}>
-                    {user.isActive ? 'Ativo' : 'Inativo'}
-                  </span>
+      {/* Ações em lote */}
+      {selectedUsers.length > 0 && (
+        <div className="bulk-actions">
+          <span>{selectedUsers.length} usuário(s) selecionado(s)</span>
+          <button className="btn-bulk-deactivate" onClick={handleBulkDeactivate}>
+            Desativar Selecionados
+          </button>
+          <button className="btn-bulk-clear" onClick={() => setSelectedUsers([])}>
+            Limpar Seleção
+          </button>
+        </div>
+      )}
+
+      {/* Contagem de resultados */}
+      <div className="results-info">
+        Mostrando {paginatedUsers.length} de {filteredAndSortedUsers.length} usuário(s)
+      </div>
+
+      {/* Visualização em Cards */}
+      {viewMode === 'cards' && (
+        <div className="users-grid">
+          {paginatedUsers.length === 0 ? (
+            <p className="no-results">Nenhum usuário encontrado.</p>
+          ) : (
+            paginatedUsers.map((user) => (
+              <div key={user.id} className="user-card">
+                <div className="card-header">
+                  <h3>{user.name}</h3>
+                  <div className="badges">
+                    <span className="role-badge">{getRoleShortLabel(user.role)}</span>
+                    <span className={`status-badge ${user.isActive ? 'active' : 'inactive'}`}>
+                      {user.isActive ? 'ATIVO' : 'INATIVO'}
+                    </span>
+                  </div>
+                </div>
+                <div className="card-body">
+                  <p><strong>📧 Email:</strong> {user.email}</p>
+                  {user.phone && <p><strong>📞 Telefone:</strong> {user.phone}</p>}
+                  {user.diocese && <p><strong>📍 Diocese:</strong> {user.diocese.name}</p>}
+                  {user.communities && user.communities.length > 0 && (
+                    <p>
+                      <strong>🏘️ Comunidades:</strong>{' '}
+                      {user.communities.map(uc => uc.community.name).join(', ')}
+                    </p>
+                  )}
+                </div>
+                <div className="card-actions">
+                  <button className="btn-edit" onClick={() => handleEdit(user)}>
+                    Editar
+                  </button>
+                  <button 
+                    className={user.isActive ? 'btn-deactivate' : 'btn-activate'}
+                    onClick={() => handleToggleActive(user)}
+                  >
+                    {user.isActive ? 'Desativar' : 'Ativar'}
+                  </button>
+                  <button className="btn-delete" onClick={() => handleDelete(user.id)}>
+                    Excluir
+                  </button>
                 </div>
               </div>
-              <div className="card-body">
-                <p><strong>📧 Email:</strong> {user.email}</p>
-                {user.phone && <p><strong>📞 Telefone:</strong> {user.phone}</p>}
-                {user.diocese && <p><strong>📍 Diocese:</strong> {user.diocese.name}</p>}
-                {user.communities && user.communities.length > 0 && (
-                  <p>
-                    <strong>🏘️ Comunidades:</strong>{' '}
-                    {user.communities.map(uc => uc.community.name).join(', ')}
-                  </p>
-                )}
-              </div>
-              <div className="card-actions">
-                <button className="btn-edit" onClick={() => handleEdit(user)}>
-                  Editar
-                </button>
-                <button 
-                  className={user.isActive ? 'btn-deactivate' : 'btn-activate'}
-                  onClick={() => handleToggleActive(user)}
-                >
-                  {user.isActive ? 'Desativar' : 'Ativar'}
-                </button>
-                <button className="btn-delete" onClick={() => handleDelete(user.id)}>
-                  Excluir
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Visualização em Tabela */}
+      {viewMode === 'table' && (
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="checkbox-col">
+                  <input
+                    type="checkbox"
+                    checked={selectedUsers.length === paginatedUsers.length && paginatedUsers.length > 0}
+                    onChange={handleSelectAll}
+                  />
+                </th>
+                <th className="sortable" onClick={() => handleSort('name')}>
+                  Nome {sortField === 'name' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th className="sortable" onClick={() => handleSort('email')}>
+                  Email {sortField === 'email' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th>Telefone</th>
+                <th className="sortable" onClick={() => handleSort('role')}>
+                  Função {sortField === 'role' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th>Status</th>
+                <th>Diocese</th>
+                <th className="sortable" onClick={() => handleSort('createdAt')}>
+                  Criado em {sortField === 'createdAt' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedUsers.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="no-results-cell">Nenhum usuário encontrado.</td>
+                </tr>
+              ) : (
+                paginatedUsers.map((user) => (
+                  <tr key={user.id} className={selectedUsers.includes(user.id) ? 'selected' : ''}>
+                    <td className="checkbox-col">
+                      <input
+                        type="checkbox"
+                        checked={selectedUsers.includes(user.id)}
+                        onChange={() => handleSelectUser(user.id)}
+                      />
+                    </td>
+                    <td className="name-cell">
+                      <strong>{user.name}</strong>
+                    </td>
+                    <td>{user.email}</td>
+                    <td>{user.phone || '-'}</td>
+                    <td>
+                      <span className="role-badge-small">{getRoleShortLabel(user.role)}</span>
+                    </td>
+                    <td>
+                      <span className={`status-badge-small ${user.isActive ? 'active' : 'inactive'}`}>
+                        {user.isActive ? 'Ativo' : 'Inativo'}
+                      </span>
+                    </td>
+                    <td>{user.diocese?.name || '-'}</td>
+                    <td>{new Date(user.createdAt).toLocaleDateString('pt-BR')}</td>
+                    <td className="actions-cell">
+                      <button className="btn-icon" onClick={() => handleEdit(user)} title="Editar">
+                        ✏️
+                      </button>
+                      <button 
+                        className="btn-icon" 
+                        onClick={() => handleToggleActive(user)}
+                        title={user.isActive ? 'Desativar' : 'Ativar'}
+                      >
+                        {user.isActive ? '🔒' : '🔓'}
+                      </button>
+                      <button className="btn-icon danger" onClick={() => handleDelete(user.id)} title="Excluir">
+                        🗑️
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Paginação */}
+      {totalPages > 1 && (
+        <div className="pagination">
+          <button
+            className="pagination-btn"
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage(1)}
+          >
+            ⏮️
+          </button>
+          <button
+            className="pagination-btn"
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage(currentPage - 1)}
+          >
+            ◀️
+          </button>
+          
+          <span className="pagination-info">
+            Página {currentPage} de {totalPages}
+          </span>
+          
+          <button
+            className="pagination-btn"
+            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage(currentPage + 1)}
+          >
+            ▶️
+          </button>
+          <button
+            className="pagination-btn"
+            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage(totalPages)}
+          >
+            ⏭️
+          </button>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={() => { setShowModal(false); resetForm(); }}>

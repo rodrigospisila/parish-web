@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import './MembersPage.css';
 
@@ -35,6 +35,10 @@ interface Member {
   createdAt: string;
 }
 
+type ViewMode = 'cards' | 'table';
+type SortField = 'fullName' | 'email' | 'community' | 'status' | 'createdAt';
+type SortDirection = 'asc' | 'desc';
+
 const MembersPage: React.FC = () => {
   const [members, setMembers] = useState<Member[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -42,6 +46,16 @@ const MembersPage: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Estados para visualização híbrida
+  const [viewMode, setViewMode] = useState<ViewMode>('cards');
+  const [sortField, setSortField] = useState<SortField>('fullName');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [filterCommunity, setFilterCommunity] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -69,6 +83,11 @@ const MembersPage: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Reset página quando filtros mudam
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterCommunity, filterStatus, sortField, sortDirection]);
 
   const fetchData = async () => {
     try {
@@ -195,16 +214,9 @@ const MembersPage: React.FC = () => {
     setEditingMember(null);
   };
 
-  const filteredMembers = members.filter((member) =>
-    member.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    member.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    member.cpf?.includes(searchTerm) ||
-    member.community.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   const getGenderLabel = (gender?: string) => {
     const labels = { MALE: 'Masculino', FEMALE: 'Feminino', OTHER: 'Outro' };
-    return gender ? labels[gender as keyof typeof labels] : '';
+    return gender ? labels[gender as keyof typeof labels] : '-';
   };
 
   const getMaritalStatusLabel = (status?: string) => {
@@ -215,18 +227,142 @@ const MembersPage: React.FC = () => {
       WIDOWED: 'Viúvo(a)',
       COMMON_LAW_MARRIAGE: 'União Estável',
     };
-    return status ? labels[status as keyof typeof labels] : '';
+    return status ? labels[status as keyof typeof labels] : '-';
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, small = false) => {
     const badges = {
-      ACTIVE: { label: 'Ativo', className: 'badge-active' },
-      INACTIVE: { label: 'Inativo', className: 'badge-inactive' },
-      DECEASED: { label: 'Falecido', className: 'badge-deceased' },
+      ACTIVE: { label: 'Ativo', className: small ? 'status-badge-small active' : 'status-badge badge-active' },
+      INACTIVE: { label: 'Inativo', className: small ? 'status-badge-small inactive' : 'status-badge badge-inactive' },
+      DECEASED: { label: 'Falecido', className: small ? 'status-badge-small deceased' : 'status-badge badge-deceased' },
     };
     const badge = badges[status as keyof typeof badges];
-    return <span className={`status-badge ${badge.className}`}>{badge.label}</span>;
+    return <span className={badge.className}>{badge.label}</span>;
   };
+
+  // Ordenação
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Seleção múltipla
+  const handleSelectAll = () => {
+    if (selectedMembers.length === paginatedMembers.length) {
+      setSelectedMembers([]);
+    } else {
+      setSelectedMembers(paginatedMembers.map(m => m.id));
+    }
+  };
+
+  const handleSelectMember = (memberId: string) => {
+    if (selectedMembers.includes(memberId)) {
+      setSelectedMembers(selectedMembers.filter(id => id !== memberId));
+    } else {
+      setSelectedMembers([...selectedMembers, memberId]);
+    }
+  };
+
+  // Ações em lote
+  const handleBulkDelete = async () => {
+    if (selectedMembers.length === 0) return;
+    if (!window.confirm(`Deseja excluir ${selectedMembers.length} membro(s)?`)) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      await Promise.all(
+        selectedMembers.map(id =>
+          axios.delete(`${API_URL}/members/${id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        )
+      );
+      alert('Membros excluídos com sucesso!');
+      setSelectedMembers([]);
+      fetchData();
+    } catch (error) {
+      console.error('Erro ao excluir membros:', error);
+      alert('Erro ao excluir alguns membros');
+    }
+  };
+
+  // Exportar CSV
+  const handleExportCSV = () => {
+    const headers = ['Nome', 'CPF', 'Email', 'Telefone', 'Comunidade', 'Status', 'Cidade', 'Estado'];
+    const rows = filteredAndSortedMembers.map(member => [
+      member.fullName,
+      member.cpf || '',
+      member.email || '',
+      member.phone || '',
+      member.community.name,
+      member.status,
+      member.city || '',
+      member.state || '',
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `membros_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  // Filtrar e ordenar membros
+  const filteredAndSortedMembers = useMemo(() => {
+    let result = members.filter((member) => {
+      const matchesSearch = 
+        member.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        member.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        member.cpf?.includes(searchTerm) ||
+        member.community.name.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesCommunity = filterCommunity ? member.community.id === filterCommunity : true;
+      const matchesStatus = filterStatus ? member.status === filterStatus : true;
+
+      return matchesSearch && matchesCommunity && matchesStatus;
+    });
+
+    // Ordenar
+    result.sort((a, b) => {
+      let comparison = 0;
+      switch (sortField) {
+        case 'fullName':
+          comparison = a.fullName.localeCompare(b.fullName);
+          break;
+        case 'email':
+          comparison = (a.email || '').localeCompare(b.email || '');
+          break;
+        case 'community':
+          comparison = a.community.name.localeCompare(b.community.name);
+          break;
+        case 'status':
+          comparison = a.status.localeCompare(b.status);
+          break;
+        case 'createdAt':
+          comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+          break;
+      }
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    return result;
+  }, [members, searchTerm, filterCommunity, filterStatus, sortField, sortDirection]);
+
+  // Paginação
+  const totalPages = Math.ceil(filteredAndSortedMembers.length / itemsPerPage);
+  const paginatedMembers = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredAndSortedMembers.slice(start, start + itemsPerPage);
+  }, [filteredAndSortedMembers, currentPage, itemsPerPage]);
 
   if (loading) return <div className="loading">Carregando...</div>;
 
@@ -234,61 +370,265 @@ const MembersPage: React.FC = () => {
     <div className="members-page">
       <div className="page-header">
         <h1>👥 Membros</h1>
-        <button className="btn-primary" onClick={() => setShowModal(true)}>
-          + Novo Membro
-        </button>
+        <div className="header-actions">
+          <button className="btn-export" onClick={handleExportCSV} title="Exportar CSV">
+            📥 Exportar
+          </button>
+          <button className="btn-primary" onClick={() => setShowModal(true)}>
+            + Novo Membro
+          </button>
+        </div>
       </div>
 
-      <div className="filters">
-        <input
-          type="text"
-          placeholder="Buscar por nome, email, CPF ou comunidade..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="search-input"
-        />
-      </div>
+      {/* Filtros e Controles */}
+      <div className="filters-section">
+        <div className="filters-row">
+          <input
+            type="text"
+            placeholder="Buscar por nome, email, CPF ou comunidade..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="search-input"
+          />
+          <select
+            value={filterCommunity}
+            onChange={(e) => setFilterCommunity(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">Todas as comunidades</option>
+            {communities.map((community) => (
+              <option key={community.id} value={community.id}>
+                {community.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">Todos os status</option>
+            <option value="ACTIVE">Ativos</option>
+            <option value="INACTIVE">Inativos</option>
+            <option value="DECEASED">Falecidos</option>
+          </select>
+        </div>
 
-      <div className="members-grid">
-        {filteredMembers.length === 0 ? (
-          <p className="no-results">Nenhum membro encontrado.</p>
-        ) : (
-          filteredMembers.map((member) => (
-            <div key={member.id} className="member-card">
-              <div className="card-header">
-                <div>
-                  <h3>{member.fullName}</h3>
-                  <span className="community-badge">{member.community.name}</span>
-                </div>
-                {getStatusBadge(member.status)}
-              </div>
-              <div className="card-body">
-                {member.cpf && <p><strong>🆔 CPF:</strong> {member.cpf}</p>}
-                {member.gender && <p><strong>👤 Sexo:</strong> {getGenderLabel(member.gender)}</p>}
-                {member.birthDate && (
-                  <p><strong>🎂 Nascimento:</strong> {new Date(member.birthDate).toLocaleDateString('pt-BR')}</p>
-                )}
-                {member.maritalStatus && <p><strong>💍 Estado Civil:</strong> {getMaritalStatusLabel(member.maritalStatus)}</p>}
-                {member.occupation && <p><strong>💼 Profissão:</strong> {member.occupation}</p>}
-                {member.email && <p><strong>📧 Email:</strong> {member.email}</p>}
-                {member.phone && <p><strong>📞 Telefone:</strong> {member.phone}</p>}
-                {member.street && (
-                  <p><strong>📍 Endereço:</strong> {member.street}, {member.number} - {member.neighborhood}</p>
-                )}
-                {member.city && <p><strong>🏙️ Cidade:</strong> {member.city} - {member.state}</p>}
-              </div>
-              <div className="card-actions">
-                <button className="btn-edit" onClick={() => handleEdit(member)}>
-                  Editar
-                </button>
-                <button className="btn-delete" onClick={() => handleDelete(member.id)}>
-                  Excluir
-                </button>
-              </div>
+        <div className="view-controls">
+          <div className="view-toggle">
+            <button
+              className={`toggle-btn ${viewMode === 'cards' ? 'active' : ''}`}
+              onClick={() => setViewMode('cards')}
+              title="Visualização em Cards"
+            >
+              📊 Cards
+            </button>
+            <button
+              className={`toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
+              onClick={() => setViewMode('table')}
+              title="Visualização em Tabela"
+            >
+              📋 Tabela
+            </button>
+          </div>
+          
+          {viewMode === 'table' && (
+            <div className="items-per-page">
+              <label>Itens por página:</label>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
             </div>
-          ))
-        )}
+          )}
+        </div>
       </div>
+
+      {/* Ações em lote */}
+      {selectedMembers.length > 0 && (
+        <div className="bulk-actions">
+          <span>{selectedMembers.length} membro(s) selecionado(s)</span>
+          <button className="btn-bulk-delete" onClick={handleBulkDelete}>
+            Excluir Selecionados
+          </button>
+          <button className="btn-bulk-clear" onClick={() => setSelectedMembers([])}>
+            Limpar Seleção
+          </button>
+        </div>
+      )}
+
+      {/* Contagem de resultados */}
+      <div className="results-info">
+        Mostrando {paginatedMembers.length} de {filteredAndSortedMembers.length} membro(s)
+      </div>
+
+      {/* Visualização em Cards */}
+      {viewMode === 'cards' && (
+        <div className="members-grid">
+          {paginatedMembers.length === 0 ? (
+            <p className="no-results">Nenhum membro encontrado.</p>
+          ) : (
+            paginatedMembers.map((member) => (
+              <div key={member.id} className="member-card">
+                <div className="card-header">
+                  <div>
+                    <h3>{member.fullName}</h3>
+                    <span className="community-badge">{member.community.name}</span>
+                  </div>
+                  {getStatusBadge(member.status)}
+                </div>
+                <div className="card-body">
+                  {member.cpf && <p><strong>🆔 CPF:</strong> {member.cpf}</p>}
+                  {member.gender && <p><strong>👤 Sexo:</strong> {getGenderLabel(member.gender)}</p>}
+                  {member.birthDate && (
+                    <p><strong>🎂 Nascimento:</strong> {new Date(member.birthDate).toLocaleDateString('pt-BR')}</p>
+                  )}
+                  {member.maritalStatus && <p><strong>💍 Estado Civil:</strong> {getMaritalStatusLabel(member.maritalStatus)}</p>}
+                  {member.occupation && <p><strong>💼 Profissão:</strong> {member.occupation}</p>}
+                  {member.email && <p><strong>📧 Email:</strong> {member.email}</p>}
+                  {member.phone && <p><strong>📞 Telefone:</strong> {member.phone}</p>}
+                  {member.street && (
+                    <p><strong>📍 Endereço:</strong> {member.street}, {member.number} - {member.neighborhood}</p>
+                  )}
+                  {member.city && <p><strong>🏙️ Cidade:</strong> {member.city} - {member.state}</p>}
+                </div>
+                <div className="card-actions">
+                  <button className="btn-edit" onClick={() => handleEdit(member)}>
+                    Editar
+                  </button>
+                  <button className="btn-delete" onClick={() => handleDelete(member.id)}>
+                    Excluir
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Visualização em Tabela */}
+      {viewMode === 'table' && (
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th className="checkbox-col">
+                  <input
+                    type="checkbox"
+                    checked={selectedMembers.length === paginatedMembers.length && paginatedMembers.length > 0}
+                    onChange={handleSelectAll}
+                  />
+                </th>
+                <th className="sortable" onClick={() => handleSort('fullName')}>
+                  Nome {sortField === 'fullName' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th>CPF</th>
+                <th className="sortable" onClick={() => handleSort('email')}>
+                  Email {sortField === 'email' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th>Telefone</th>
+                <th className="sortable" onClick={() => handleSort('community')}>
+                  Comunidade {sortField === 'community' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th className="sortable" onClick={() => handleSort('status')}>
+                  Status {sortField === 'status' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th>Cidade</th>
+                <th className="sortable" onClick={() => handleSort('createdAt')}>
+                  Criado em {sortField === 'createdAt' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedMembers.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="no-results-cell">Nenhum membro encontrado.</td>
+                </tr>
+              ) : (
+                paginatedMembers.map((member) => (
+                  <tr key={member.id} className={selectedMembers.includes(member.id) ? 'selected' : ''}>
+                    <td className="checkbox-col">
+                      <input
+                        type="checkbox"
+                        checked={selectedMembers.includes(member.id)}
+                        onChange={() => handleSelectMember(member.id)}
+                      />
+                    </td>
+                    <td className="name-cell">
+                      <strong>{member.fullName}</strong>
+                    </td>
+                    <td>{member.cpf || '-'}</td>
+                    <td>{member.email || '-'}</td>
+                    <td>{member.phone || '-'}</td>
+                    <td>
+                      <span className="community-badge-small">{member.community.name}</span>
+                    </td>
+                    <td>{getStatusBadge(member.status, true)}</td>
+                    <td>{member.city ? `${member.city}/${member.state}` : '-'}</td>
+                    <td>{new Date(member.createdAt).toLocaleDateString('pt-BR')}</td>
+                    <td className="actions-cell">
+                      <button className="btn-icon" onClick={() => handleEdit(member)} title="Editar">
+                        ✏️
+                      </button>
+                      <button className="btn-icon danger" onClick={() => handleDelete(member.id)} title="Excluir">
+                        🗑️
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Paginação */}
+      {totalPages > 1 && (
+        <div className="pagination">
+          <button
+            className="pagination-btn"
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage(1)}
+          >
+            ⏮️
+          </button>
+          <button
+            className="pagination-btn"
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage(currentPage - 1)}
+          >
+            ◀️
+          </button>
+          
+          <span className="pagination-info">
+            Página {currentPage} de {totalPages}
+          </span>
+          
+          <button
+            className="pagination-btn"
+            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage(currentPage + 1)}
+          >
+            ▶️
+          </button>
+          <button
+            className="pagination-btn"
+            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage(totalPages)}
+          >
+            ⏭️
+          </button>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={() => { setShowModal(false); resetForm(); }}>
