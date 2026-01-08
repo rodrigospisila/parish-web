@@ -564,6 +564,46 @@ const EventsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Indicador de filtros ativos */}
+      {(filterCommunity || filterType || filterStatus) && (
+        <div className="active-filters-banner">
+          <div className="active-filters-content">
+            <span className="filter-icon">🔍</span>
+            <span className="filter-label">Filtros ativos:</span>
+            {filterCommunity && (
+              <span className="filter-badge filter-badge-community">
+                📍 {communities.find(c => c.id === filterCommunity)?.parish 
+                  ? `${communities.find(c => c.id === filterCommunity)?.parish?.name} › ${communities.find(c => c.id === filterCommunity)?.name}`
+                  : communities.find(c => c.id === filterCommunity)?.name}
+                <button className="filter-remove" onClick={() => setFilterCommunity('')}>×</button>
+              </span>
+            )}
+            {filterType && (
+              <span className="filter-badge filter-badge-type">
+                📋 {eventTypes.find(t => t.value === filterType)?.label}
+                <button className="filter-remove" onClick={() => setFilterType('')}>×</button>
+              </span>
+            )}
+            {filterStatus && (
+              <span className="filter-badge filter-badge-status">
+                ⚡ {eventStatuses.find(s => s.value === filterStatus)?.label}
+                <button className="filter-remove" onClick={() => setFilterStatus('')}>×</button>
+              </span>
+            )}
+            <button className="btn-clear-all-filters" onClick={() => {
+              setFilterCommunity('');
+              setFilterType('');
+              setFilterStatus('');
+            }}>
+              Limpar todos
+            </button>
+          </div>
+          <div className="filter-results-count">
+            {filteredEvents.length} evento(s) encontrado(s)
+          </div>
+        </div>
+      )}
+
       {viewMode === 'calendar' ? (
         <EventCalendar
           events={filteredEvents}
