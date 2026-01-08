@@ -534,7 +534,8 @@ const SchedulesPage: React.FC = () => {
             .filter((event) => {
               const hasSchedule = schedules.some((s) => s.event.id === event.id);
               const isFuture = new Date(event.startDate) > new Date();
-              return !hasSchedule && isFuture;
+              const matchesCommunity = filterCommunityId ? event.community?.id === filterCommunityId : true;
+              return !hasSchedule && isFuture && matchesCommunity;
             })
             .slice(0, 5)
             .map((event) => (
@@ -543,6 +544,11 @@ const SchedulesPage: React.FC = () => {
                   <span className="event-type-badge">{eventTypeLabels[event.type] || event.type}</span>
                   <strong>{event.title}</strong>
                   <span className="event-date">{formatShortDate(event.startDate)}</span>
+                  {event.community && (
+                    <span className="event-community">
+                      {event.community.parish ? `${event.community.parish.name} › ` : ''}{event.community.name}
+                    </span>
+                  )}
                 </div>
                 <button
                   className="btn-small btn-create"
@@ -555,9 +561,14 @@ const SchedulesPage: React.FC = () => {
           {events.filter((event) => {
             const hasSchedule = schedules.some((s) => s.event.id === event.id);
             const isFuture = new Date(event.startDate) > new Date();
-            return !hasSchedule && isFuture;
+            const matchesCommunity = filterCommunityId ? event.community?.id === filterCommunityId : true;
+            return !hasSchedule && isFuture && matchesCommunity;
           }).length === 0 && (
-            <p className="no-events">Todos os eventos próximos já possuem escala.</p>
+            <p className="no-events">
+              {filterCommunityId 
+                ? 'Nenhum evento próximo sem escala para esta comunidade.' 
+                : 'Todos os eventos próximos já possuem escala.'}
+            </p>
           )}
         </div>
       </div>
