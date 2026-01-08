@@ -4,15 +4,23 @@ import './SchedulesPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
+interface Parish {
+  id: string;
+  name: string;
+}
+
+interface Community {
+  id: string;
+  name: string;
+  parish?: Parish;
+}
+
 interface Event {
   id: string;
   title: string;
   type: string;
   startDate: string;
-  community: {
-    id: string;
-    name: string;
-  };
+  community: Community;
 }
 
 interface PastoralInfo {
@@ -64,6 +72,7 @@ interface Schedule {
     id: string;
     title: string;
     type: string;
+    community?: Community;
   };
   assignments: Assignment[];
   _count: {
@@ -84,7 +93,9 @@ const SchedulesPage: React.FC = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null);
   const [filterEventId, setFilterEventId] = useState('');
+  const [filterCommunityId, setFilterCommunityId] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [communities, setCommunities] = useState<Community[]>([]);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -138,7 +149,7 @@ const SchedulesPage: React.FC = () => {
   const fetchData = async () => {
     try {
       const token = localStorage.getItem('token');
-      const [schedulesRes, eventsRes, membersRes] = await Promise.all([
+      const [schedulesRes, eventsRes, membersRes, communitiesRes] = await Promise.all([
         axios.get(`${API_URL}/schedules`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
@@ -148,11 +159,15 @@ const SchedulesPage: React.FC = () => {
         axios.get(`${API_URL}/members`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
+        axios.get(`${API_URL}/communities`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
       ]);
 
       setSchedules(schedulesRes.data);
       setEvents(eventsRes.data);
       setMembers(membersRes.data);
+      setCommunities(communitiesRes.data);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       alert('Erro ao carregar dados');
@@ -174,8 +189,8 @@ const SchedulesPage: React.FC = () => {
       setEligibleMembers(res.data.members);
     } catch (error) {
       console.error('Erro ao buscar membros elegíveis:', error);
-      // Fallback: usar todos os membros
-      setEligibleMembers(members);
+      // Fallback: usar todos os membros convertendo para EligibleMember
+      setEligibleMembers(members.map(m => ({ ...m, pastorals: [] })));
       setEligibleMembersInfo(null);
     } finally {
       setLoadingEligible(false);
@@ -367,12 +382,35 @@ const SchedulesPage: React.FC = () => {
 
   const filteredSchedules = schedules.filter((schedule) => {
     const matchesEvent = filterEventId ? schedule.event.id === filterEventId : true;
+    const matchesCommunity = filterCommunityId ? schedule.event.community?.id === filterCommunityId : true;
     const matchesSearch = searchTerm
       ? schedule.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         schedule.event.title.toLowerCase().includes(searchTerm.toLowerCase())
       : true;
-    return matchesEvent && matchesSearch;
+    return matchesEvent && matchesCommunity && matchesSearch;
   });
+
+  // Funções auxiliares para filtros
+  const hasActiveFilters = filterEventId || filterCommunityId || searchTerm;
+  
+  const clearAllFilters = () => {
+    setFilterEventId('');
+    setFilterCommunityId('');
+    setSearchTerm('');
+  };
+
+  const getSelectedCommunityName = () => {
+    const community = communities.find(c => c.id === filterCommunityId);
+    if (community) {
+      return community.parish ? `${community.parish.name} › ${community.name}` : community.name;
+    }
+    return '';
+  };
+
+  const getSelectedEventName = () => {
+    const event = events.find(e => e.id === filterEventId);
+    return event ? event.title : '';
+  };
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('pt-BR', {
@@ -426,19 +464,67 @@ const SchedulesPage: React.FC = () => {
             className="search-input"
           />
           <select
+            value={filterCommunityId}
+            onChange={(e) => setFilterCommunityId(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">Todas as comunidades</option>
+            {communities.map((community) => (
+              <option key={community.id} value={community.id}>
+                {community.parish ? `${community.parish.name} › ${community.name}` : community.name}
+              </option>
+            ))}
+          </select>
+          <select
             value={filterEventId}
             onChange={(e) => setFilterEventId(e.target.value)}
             className="filter-select"
           >
             <option value="">Todos os eventos</option>
-            {events.map((event) => (
-              <option key={event.id} value={event.id}>
-                {event.title} - {formatShortDate(event.startDate)}
-              </option>
-            ))}
+            {events
+              .filter(event => !filterCommunityId || event.community?.id === filterCommunityId)
+              .map((event) => (
+                <option key={event.id} value={event.id}>
+                  {event.title} - {formatShortDate(event.startDate)}
+                </option>
+              ))}
           </select>
         </div>
       </div>
+
+      {/* Banner de Filtros Ativos */}
+      {hasActiveFilters && (
+        <div className="active-filters-banner">
+          <div className="active-filters-info">
+            <span className="filter-count">
+              {filteredSchedules.length} escala{filteredSchedules.length !== 1 ? 's' : ''} encontrada{filteredSchedules.length !== 1 ? 's' : ''}
+            </span>
+            <div className="active-filter-tags">
+              {filterCommunityId && (
+                <span className="filter-tag">
+                  Comunidade: {getSelectedCommunityName()}
+                  <button onClick={() => setFilterCommunityId('')} className="remove-filter">×</button>
+                </span>
+              )}
+              {filterEventId && (
+                <span className="filter-tag">
+                  Evento: {getSelectedEventName()}
+                  <button onClick={() => setFilterEventId('')} className="remove-filter">×</button>
+                </span>
+              )}
+              {searchTerm && (
+                <span className="filter-tag">
+                  Busca: "{searchTerm}"
+                  <button onClick={() => setSearchTerm('')} className="remove-filter">×</button>
+                </span>
+              )}
+            </div>
+          </div>
+          <button onClick={clearAllFilters} className="btn-clear-filters">
+            Limpar todos
+          </button>
+        </div>
+      )}
 
       {/* Lista de Eventos sem Escala */}
       <div className="events-without-schedule">

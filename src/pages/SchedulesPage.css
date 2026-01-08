@@ -610,3 +610,95 @@
 .btn-submit:disabled:hover {
   opacity: 0.6;
 }
+
+/* Active Filters Banner */
+.active-filters-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 1rem 1.5rem;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.active-filters-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.filter-count {
+  font-weight: 600;
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
+.active-filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.filter-tag {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 0.35rem 0.75rem;
+  border-radius: 16px;
+  font-size: 0.85rem;
+  gap: 0.5rem;
+}
+
+.remove-filter {
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  font-size: 1.1rem;
+  padding: 0;
+  line-height: 1;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.remove-filter:hover {
+  opacity: 1;
+}
+
+.btn-clear-filters {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.3s;
+  white-space: nowrap;
+}
+
+.btn-clear-filters:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+@media (max-width: 768px) {
+  .active-filters-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .active-filters-info {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .btn-clear-filters {
+    width: 100%;
+    text-align: center;
+  }
+}
