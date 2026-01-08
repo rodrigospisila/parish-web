@@ -57,6 +57,12 @@ const EventsPage: React.FC = () => {
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [viewMode, setViewMode] = useState<'calendar' | 'table'>('calendar');
+  const [sortField, setSortField] = useState<'title' | 'startDate' | 'type' | 'status' | 'community'>('startDate');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -347,6 +353,104 @@ const EventsPage: React.FC = () => {
     return matchesType && matchesStatus;
   });
 
+  // Ordenação
+  const sortedEvents = [...filteredEvents].sort((a, b) => {
+    let comparison = 0;
+    switch (sortField) {
+      case 'title':
+        comparison = a.title.localeCompare(b.title);
+        break;
+      case 'startDate':
+        comparison = new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+        break;
+      case 'type':
+        comparison = a.type.localeCompare(b.type);
+        break;
+      case 'status':
+        comparison = a.status.localeCompare(b.status);
+        break;
+      case 'community':
+        comparison = a.community.name.localeCompare(b.community.name);
+        break;
+    }
+    return sortDirection === 'asc' ? comparison : -comparison;
+  });
+
+  // Paginação
+  const totalPages = Math.ceil(sortedEvents.length / itemsPerPage);
+  const paginatedEvents = sortedEvents.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  const handleSort = (field: typeof sortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedEvents(paginatedEvents.map((e) => e.id));
+    } else {
+      setSelectedEvents([]);
+    }
+  };
+
+  const handleSelectEvent = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedEvents([...selectedEvents, id]);
+    } else {
+      setSelectedEvents(selectedEvents.filter((eid) => eid !== id));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedEvents.length === 0) return;
+    if (!window.confirm(`Tem certeza que deseja excluir ${selectedEvents.length} evento(s)?`)) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      for (const id of selectedEvents) {
+        await axios.delete(`${API_URL}/events/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+      alert(`${selectedEvents.length} evento(s) excluído(s) com sucesso!`);
+      setSelectedEvents([]);
+      fetchData();
+    } catch (error: any) {
+      console.error('Erro ao excluir eventos:', error);
+      alert(error.response?.data?.message || 'Erro ao excluir eventos');
+    }
+  };
+
+  const exportToCSV = () => {
+    const headers = ['Título', 'Tipo', 'Data Início', 'Local', 'Comunidade', 'Status', 'Participantes'];
+    const rows = sortedEvents.map((event) => [
+      event.title,
+      getTypeLabel(event.type),
+      formatDate(event.startDate),
+      event.location || '',
+      event.community.name,
+      getStatusLabel(event.status),
+      event._count.participants.toString(),
+    ]);
+
+    const csvContent = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${cell}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `eventos_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+  };
+
   const getTypeLabel = (type: string) => {
     return eventTypes.find((t) => t.value === type)?.label || type;
   };
@@ -357,6 +461,22 @@ const EventsPage: React.FC = () => {
 
   const getStatusColor = (status: string) => {
     return eventStatuses.find((s) => s.value === status)?.color || '#6c757d';
+  };
+
+  const getTypeColor = (type: string) => {
+    const colors: { [key: string]: string } = {
+      MASS: '#9b59b6',
+      RETREAT: '#3498db',
+      FORMATION: '#27ae60',
+      MEETING: '#f39c12',
+      CELEBRATION: '#e74c3c',
+      PILGRIMAGE: '#1abc9c',
+      ADORATION: '#8e44ad',
+      ROSARY: '#2980b9',
+      CONFESSION: '#16a085',
+      OTHER: '#95a5a6',
+    };
+    return colors[type] || '#95a5a6';
   };
 
   const formatDate = (dateString: string) => {
@@ -384,39 +504,214 @@ const EventsPage: React.FC = () => {
         </button>
       </div>
 
-      <div className="events-filters">
-        <select
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
-          className="filter-select"
-        >
-          <option value="">Todos os tipos</option>
-          {eventTypes.map((type) => (
-            <option key={type.value} value={type.value}>
-              {type.label}
-            </option>
-          ))}
-        </select>
+      <div className="events-controls">
+        <div className="events-filters">
+          <select
+            value={filterType}
+            onChange={(e) => setFilterType(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">Todos os tipos</option>
+            {eventTypes.map((type) => (
+              <option key={type.value} value={type.value}>
+                {type.label}
+              </option>
+            ))}
+          </select>
 
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="filter-select"
-        >
-          <option value="">Todos os status</option>
-          {eventStatuses.map((status) => (
-            <option key={status.value} value={status.value}>
-              {status.label}
-            </option>
-          ))}
-        </select>
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">Todos os status</option>
+            {eventStatuses.map((status) => (
+              <option key={status.value} value={status.value}>
+                {status.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="view-toggle">
+          <button
+            className={`view-toggle-btn ${viewMode === 'calendar' ? 'active' : ''}`}
+            onClick={() => setViewMode('calendar')}
+          >
+            📅 Calendário
+          </button>
+          <button
+            className={`view-toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
+            onClick={() => setViewMode('table')}
+          >
+            📋 Lista
+          </button>
+        </div>
       </div>
 
-      <EventCalendar
-        events={filteredEvents}
-        onEventClick={handleEventClick}
-        onDateClick={handleDateClick}
-      />
+      {viewMode === 'calendar' ? (
+        <EventCalendar
+          events={filteredEvents}
+          onEventClick={handleEventClick}
+          onDateClick={handleDateClick}
+        />
+      ) : (
+        <div className="events-table-container">
+          {/* Ações em lote e exportação */}
+          <div className="table-actions">
+            <div className="bulk-actions">
+              {selectedEvents.length > 0 && (
+                <>
+                  <span className="selected-count">{selectedEvents.length} selecionado(s)</span>
+                  <button className="btn-bulk-delete" onClick={handleBulkDelete}>
+                    Excluir Selecionados
+                  </button>
+                  <button className="btn-clear-selection" onClick={() => setSelectedEvents([])}>
+                    Limpar Seleção
+                  </button>
+                </>
+              )}
+            </div>
+            <div className="table-controls">
+              <button className="btn-export" onClick={exportToCSV}>
+                📥 Exportar CSV
+              </button>
+              <select
+                value={itemsPerPage}
+                onChange={(e) => {
+                  setItemsPerPage(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="items-per-page"
+              >
+                <option value={10}>10 por página</option>
+                <option value={25}>25 por página</option>
+                <option value={50}>50 por página</option>
+                <option value={100}>100 por página</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Tabela */}
+          <table className="events-table">
+            <thead>
+              <tr>
+                <th className="checkbox-col">
+                  <input
+                    type="checkbox"
+                    checked={selectedEvents.length === paginatedEvents.length && paginatedEvents.length > 0}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                  />
+                </th>
+                <th className="sortable" onClick={() => handleSort('title')}>
+                  Título {sortField === 'title' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th className="sortable" onClick={() => handleSort('type')}>
+                  Tipo {sortField === 'type' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th className="sortable" onClick={() => handleSort('startDate')}>
+                  Data {sortField === 'startDate' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th>Local</th>
+                <th className="sortable" onClick={() => handleSort('community')}>
+                  Comunidade {sortField === 'community' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th className="sortable" onClick={() => handleSort('status')}>
+                  Status {sortField === 'status' && (sortDirection === 'asc' ? '↑' : '↓')}
+                </th>
+                <th>Participantes</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedEvents.map((event) => (
+                <tr key={event.id} className={selectedEvents.includes(event.id) ? 'selected' : ''}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedEvents.includes(event.id)}
+                      onChange={(e) => handleSelectEvent(event.id, e.target.checked)}
+                    />
+                  </td>
+                  <td className="title-cell">
+                    <span className="event-title-link" onClick={() => handleEventClick(event)}>
+                      {event.title}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="type-badge" style={{ backgroundColor: getTypeColor(event.type) }}>
+                      {getTypeLabel(event.type)}
+                    </span>
+                  </td>
+                  <td>{formatDate(event.startDate)}</td>
+                  <td>{event.location || '-'}</td>
+                  <td>{event.community.name}</td>
+                  <td>
+                    <span className="status-badge" style={{ backgroundColor: getStatusColor(event.status) }}>
+                      {getStatusLabel(event.status)}
+                    </span>
+                  </td>
+                  <td className="center">
+                    {event._count.participants}
+                    {event.maxParticipants && ` / ${event.maxParticipants}`}
+                  </td>
+                  <td className="actions-cell">
+                    <button className="btn-action btn-edit-small" onClick={() => handleEdit(event)} title="Editar">
+                      ✏️
+                    </button>
+                    <button className="btn-action btn-delete-small" onClick={() => handleDelete(event.id)} title="Excluir">
+                      🗑️
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Paginação */}
+          {totalPages > 1 && (
+            <div className="pagination">
+              <button
+                className="pagination-btn"
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+              >
+                «
+              </button>
+              <button
+                className="pagination-btn"
+                onClick={() => setCurrentPage(currentPage - 1)}
+                disabled={currentPage === 1}
+              >
+                ‹
+              </button>
+              <span className="pagination-info">
+                Página {currentPage} de {totalPages} ({sortedEvents.length} eventos)
+              </span>
+              <button
+                className="pagination-btn"
+                onClick={() => setCurrentPage(currentPage + 1)}
+                disabled={currentPage === totalPages}
+              >
+                ›
+              </button>
+              <button
+                className="pagination-btn"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+              >
+                »
+              </button>
+            </div>
+          )}
+
+          {paginatedEvents.length === 0 && (
+            <div className="empty-table">
+              <p>Nenhum evento encontrado</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Modal de Detalhes do Evento */}
       {showDetailModal && selectedEvent && (
