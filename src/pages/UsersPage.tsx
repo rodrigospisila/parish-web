@@ -467,9 +467,14 @@ const UsersPage: React.FC = () => {
         : true;
       
       // Filtro por comunidade - verifica se o usuário pertence à comunidade
-      const matchesCommunity = filterCommunityId 
-        ? user.communities?.some(uc => uc.community.id === filterCommunityId)
-        : true;
+      let matchesCommunity = true;
+      if (filterCommunityId === 'NO_COMMUNITY') {
+        // Filtrar usuários sem comunidade
+        matchesCommunity = !user.communities || user.communities.length === 0;
+      } else if (filterCommunityId) {
+        // Filtrar por comunidade específica
+        matchesCommunity = user.communities?.some(uc => uc.community.id === filterCommunityId) || false;
+      }
 
       return matchesSearch && matchesRole && matchesStatus && matchesCommunity;
     });
@@ -508,6 +513,9 @@ const UsersPage: React.FC = () => {
   };
 
   const getSelectedCommunityName = () => {
+    if (filterCommunityId === 'NO_COMMUNITY') {
+      return 'Sem comunidade';
+    }
     const community = communities.find(c => c.id === filterCommunityId);
     if (community) {
       const parish = parishes.find(p => p.id === community.parishId);
@@ -576,6 +584,7 @@ const UsersPage: React.FC = () => {
             className="filter-select"
           >
             <option value="">Todas as comunidades</option>
+            <option value="NO_COMMUNITY">Sem comunidade</option>
             {communities.map((community) => {
               const parish = parishes.find(p => p.id === community.parishId);
               return (
