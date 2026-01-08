@@ -20,6 +20,7 @@ interface Community {
   id: string;
   name: string;
   parishId: string;
+  parish?: Parish;
 }
 
 interface UserCommunity {
@@ -66,6 +67,7 @@ const UsersPage: React.FC = () => {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [filterRole, setFilterRole] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterCommunityId, setFilterCommunityId] = useState('');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -199,7 +201,7 @@ const UsersPage: React.FC = () => {
   // Reset página quando filtros mudam
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterRole, filterStatus, sortField, sortDirection]);
+  }, [searchTerm, filterRole, filterStatus, filterCommunityId, sortField, sortDirection]);
 
   const fetchData = async () => {
     try {
@@ -463,8 +465,13 @@ const UsersPage: React.FC = () => {
       const matchesStatus = filterStatus 
         ? (filterStatus === 'active' ? user.isActive : !user.isActive)
         : true;
+      
+      // Filtro por comunidade - verifica se o usuário pertence à comunidade
+      const matchesCommunity = filterCommunityId 
+        ? user.communities?.some(uc => uc.community.id === filterCommunityId)
+        : true;
 
-      return matchesSearch && matchesRole && matchesStatus;
+      return matchesSearch && matchesRole && matchesStatus && matchesCommunity;
     });
 
     // Ordenar
@@ -488,7 +495,31 @@ const UsersPage: React.FC = () => {
     });
 
     return result;
-  }, [users, searchTerm, filterRole, filterStatus, sortField, sortDirection]);
+  }, [users, searchTerm, filterRole, filterStatus, filterCommunityId, sortField, sortDirection]);
+
+  // Funções auxiliares para filtros ativos
+  const hasActiveFilters = searchTerm || filterRole || filterStatus || filterCommunityId;
+  
+  const clearAllFilters = () => {
+    setSearchTerm('');
+    setFilterRole('');
+    setFilterStatus('');
+    setFilterCommunityId('');
+  };
+
+  const getSelectedCommunityName = () => {
+    const community = communities.find(c => c.id === filterCommunityId);
+    if (community) {
+      const parish = parishes.find(p => p.id === community.parishId);
+      return parish ? `${parish.name} › ${community.name}` : community.name;
+    }
+    return '';
+  };
+
+  const getSelectedRoleName = () => {
+    const role = allRoles.find(r => r.value === filterRole);
+    return role ? role.label : '';
+  };
 
   // Paginação
   const totalPages = Math.ceil(filteredAndSortedUsers.length / itemsPerPage);
@@ -539,6 +570,21 @@ const UsersPage: React.FC = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="search-input"
           />
+          <select
+            value={filterCommunityId}
+            onChange={(e) => setFilterCommunityId(e.target.value)}
+            className="filter-select"
+          >
+            <option value="">Todas as comunidades</option>
+            {communities.map((community) => {
+              const parish = parishes.find(p => p.id === community.parishId);
+              return (
+                <option key={community.id} value={community.id}>
+                  {parish ? `${parish.name} › ${community.name}` : community.name}
+                </option>
+              );
+            })}
+          </select>
           <select
             value={filterRole}
             onChange={(e) => setFilterRole(e.target.value)}
@@ -599,6 +645,46 @@ const UsersPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Banner de Filtros Ativos */}
+      {hasActiveFilters && (
+        <div className="active-filters-banner">
+          <div className="active-filters-info">
+            <span className="filter-count">
+              {filteredAndSortedUsers.length} usuário{filteredAndSortedUsers.length !== 1 ? 's' : ''} encontrado{filteredAndSortedUsers.length !== 1 ? 's' : ''}
+            </span>
+            <div className="active-filter-tags">
+              {filterCommunityId && (
+                <span className="filter-tag">
+                  Comunidade: {getSelectedCommunityName()}
+                  <button onClick={() => setFilterCommunityId('')} className="remove-filter">×</button>
+                </span>
+              )}
+              {filterRole && (
+                <span className="filter-tag">
+                  Função: {getSelectedRoleName()}
+                  <button onClick={() => setFilterRole('')} className="remove-filter">×</button>
+                </span>
+              )}
+              {filterStatus && (
+                <span className="filter-tag">
+                  Status: {filterStatus === 'active' ? 'Ativos' : 'Inativos'}
+                  <button onClick={() => setFilterStatus('')} className="remove-filter">×</button>
+                </span>
+              )}
+              {searchTerm && (
+                <span className="filter-tag">
+                  Busca: "{searchTerm}"
+                  <button onClick={() => setSearchTerm('')} className="remove-filter">×</button>
+                </span>
+              )}
+            </div>
+          </div>
+          <button onClick={clearAllFilters} className="btn-clear-filters">
+            Limpar todos
+          </button>
+        </div>
+      )}
 
       {/* Ações em lote */}
       {selectedUsers.length > 0 && (
