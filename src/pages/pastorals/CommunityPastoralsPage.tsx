@@ -11,9 +11,15 @@ interface GlobalPastoral {
   colorHex?: string;
 }
 
+interface Parish {
+  id: string;
+  name: string;
+}
+
 interface Community {
   id: string;
   name: string;
+  parish?: Parish;
 }
 
 interface CommunityPastoral {
@@ -176,12 +182,12 @@ const CommunityPastoralsPage: React.FC = () => {
           value={filterCommunity}
           onChange={(e) => setFilterCommunity(e.target.value)}
           className="search-input"
-          style={{ flex: '0 0 250px' }}
+          style={{ flex: '0 0 300px' }}
         >
           <option value="">Todas as Comunidades</option>
           {communities.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name}
+              {c.parish ? `${c.parish.name} › ${c.name}` : c.name}
             </option>
           ))}
         </select>
@@ -289,7 +295,7 @@ const CommunityPastoralsPage: React.FC = () => {
                   <option value="">Selecione...</option>
                   {communities.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.name}
+                      {c.parish ? `${c.parish.name} › ${c.name}` : c.name}
                     </option>
                   ))}
                 </select>
