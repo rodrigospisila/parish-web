@@ -62,13 +62,17 @@ const App: React.FC = () => {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Navigate to="/admin/parishes" replace />} />
+            <Route index element={<Navigate to="/admin/communities" replace />} />
             <Route path="dioceses" element={
               <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN', 'DIOCESAN_ADMIN']}>
                 <DiocesesPage />
               </RoleProtectedRoute>
             } />
-            <Route path="parishes" element={<ParishesPage />} />
+            <Route path="parishes" element={
+              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN']}>
+                <ParishesPage />
+              </RoleProtectedRoute>
+            } />
             <Route path="communities" element={<CommunitiesPage />} />
             <Route path="members" element={<MembersPage />} />
             <Route path="events" element={<EventsPage />} />
