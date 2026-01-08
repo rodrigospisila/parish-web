@@ -57,6 +57,7 @@ const EventsPage: React.FC = () => {
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterCommunity, setFilterCommunity] = useState('');
   const [viewMode, setViewMode] = useState<'calendar' | 'table'>('calendar');
   const [sortField, setSortField] = useState<'title' | 'startDate' | 'type' | 'status' | 'community'>('startDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -350,7 +351,8 @@ const EventsPage: React.FC = () => {
   const filteredEvents = events.filter((event) => {
     const matchesType = !filterType || event.type === filterType;
     const matchesStatus = !filterStatus || event.status === filterStatus;
-    return matchesType && matchesStatus;
+    const matchesCommunity = !filterCommunity || event.community?.id === filterCommunity;
+    return matchesType && matchesStatus && matchesCommunity;
   });
 
   // Ordenação
@@ -528,6 +530,19 @@ const EventsPage: React.FC = () => {
             {eventStatuses.map((status) => (
               <option key={status.value} value={status.value}>
                 {status.label}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={filterCommunity}
+            onChange={(e) => setFilterCommunity(e.target.value)}
+            className="filter-select filter-community"
+          >
+            <option value="">Todas as comunidades</option>
+            {communities.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.parish ? `${c.parish.name} › ${c.name}` : c.name}
               </option>
             ))}
           </select>

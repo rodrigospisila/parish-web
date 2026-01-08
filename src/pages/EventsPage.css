@@ -1009,3 +1009,37 @@
     justify-content: center;
   }
 }
+
+
+/* Filtro de comunidade mais largo */
+.filter-community {
+  min-width: 250px;
+}
+
+/* Controles de eventos (filtros + toggle de visualização) */
+.events-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+/* Ajuste responsivo para filtros */
+@media (max-width: 992px) {
+  .events-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .events-filters {
+    margin-bottom: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .filter-community {
+    min-width: 100%;
+  }
+}
