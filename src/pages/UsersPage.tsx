@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
+import { notify, confirm } from '../services/notification.service';
 import './UsersPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -226,7 +227,7 @@ const UsersPage: React.FC = () => {
       setCommunities(communitiesRes.data);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
-      alert('Erro ao carregar dados');
+      notify.error('Erro ao carregar dados');
     } finally {
       setLoading(false);
     }
@@ -237,7 +238,7 @@ const UsersPage: React.FC = () => {
 
     // Validar communityIds para COMMUNITY_COORDINATOR
     if (formData.role === 'COMMUNITY_COORDINATOR' && formData.communityIds.length === 0) {
-      alert('Selecione pelo menos uma comunidade para o Coordenador de Comunidade');
+      notify.warning('Selecione pelo menos uma comunidade para o Coordenador de Comunidade');
       return;
     }
 
@@ -276,12 +277,12 @@ const UsersPage: React.FC = () => {
         await axios.patch(`${API_URL}/users/${editingUser.id}`, dataToSend, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        alert('Usuário atualizado com sucesso!');
+        notify.success('Usuário atualizado com sucesso!');
       } else {
         await axios.post(`${API_URL}/users`, dataToSend, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        alert('Usuário criado com sucesso!');
+        notify.success('Usuário criado com sucesso!');
       }
 
       setShowModal(false);
@@ -290,7 +291,7 @@ const UsersPage: React.FC = () => {
     } catch (error: any) {
       console.error('Erro ao salvar usuário:', error);
       const errorMessage = error.response?.data?.message || 'Erro ao salvar usuário';
-      alert(errorMessage);
+      notify.error(errorMessage);
     }
   };
 
@@ -311,25 +312,30 @@ const UsersPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir este usuário?')) return;
+    const confirmed = await confirm.delete('este usuário');
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
       await axios.delete(`${API_URL}/users/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      alert('Usuário excluído com sucesso!');
+      notify.success('Usuário excluído com sucesso!');
       fetchData();
     } catch (error: any) {
       console.error('Erro ao excluir usuário:', error);
       const errorMessage = error.response?.data?.message || 'Erro ao excluir usuário';
-      alert(errorMessage);
+      notify.error(errorMessage);
     }
   };
 
   const handleToggleActive = async (user: User) => {
     const action = user.isActive ? 'desativar' : 'ativar';
-    if (!window.confirm(`Tem certeza que deseja ${action} este usuário?`)) return;
+    const confirmed = await confirm.action(
+      `${action.charAt(0).toUpperCase() + action.slice(1)} usuário`,
+      `Tem certeza que deseja ${action} este usuário?`
+    );
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -337,12 +343,12 @@ const UsersPage: React.FC = () => {
       await axios.patch(`${API_URL}/users/${user.id}/${endpoint}`, {}, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      alert(`Usuário ${action === 'desativar' ? 'desativado' : 'ativado'} com sucesso!`);
+      notify.success(`Usuário ${action === 'desativar' ? 'desativado' : 'ativado'} com sucesso!`);
       fetchData();
     } catch (error: any) {
       console.error(`Erro ao ${action} usuário:`, error);
       const errorMessage = error.response?.data?.message || `Erro ao ${action} usuário`;
-      alert(errorMessage);
+      notify.error(errorMessage);
     }
   };
 
@@ -408,7 +414,11 @@ const UsersPage: React.FC = () => {
   // Ações em lote
   const handleBulkDeactivate = async () => {
     if (selectedUsers.length === 0) return;
-    if (!window.confirm(`Deseja desativar ${selectedUsers.length} usuário(s)?`)) return;
+    const confirmed = await confirm.action(
+      'Desativar usuários',
+      `Deseja desativar ${selectedUsers.length} usuário(s)?`
+    );
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -419,12 +429,12 @@ const UsersPage: React.FC = () => {
           })
         )
       );
-      alert('Usuários desativados com sucesso!');
+      notify.success('Usuários desativados com sucesso!');
       setSelectedUsers([]);
       fetchData();
     } catch (error) {
       console.error('Erro ao desativar usuários:', error);
-      alert('Erro ao desativar alguns usuários');
+      notify.error('Erro ao desativar alguns usuários');
     }
   };
 

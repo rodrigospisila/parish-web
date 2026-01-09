@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { notify, confirm } from '../services/notification.service';
 import Calendar from 'react-calendar';
 import EventCalendar from '../components/EventCalendar';
 import RecurrenceForm from '../components/RecurrenceForm';
@@ -123,7 +124,7 @@ const EventsPage: React.FC = () => {
       setCommunities(communitiesRes.data);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
-      alert('Erro ao carregar dados');
+      notify.error('Erro ao carregar dados');
     } finally {
       setLoading(false);
     }
@@ -147,7 +148,7 @@ const EventsPage: React.FC = () => {
           payload,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        alert('Evento atualizado com sucesso!');
+        notify.success('Evento atualizado com sucesso!');
       } else if (formData.isRecurring && formData.recurrenceType) {
         // Criar eventos recorrentes
         const duration = getEventDuration(formData.startDate, formData.endDate);
@@ -185,7 +186,7 @@ const EventsPage: React.FC = () => {
           createdCount++;
         }
         
-        alert(`${createdCount} eventos criados com sucesso!`);
+        notify.success(`${createdCount} eventos criados com sucesso!`);
       } else {
         // Criar evento único
         const payload = {
@@ -196,7 +197,7 @@ const EventsPage: React.FC = () => {
         await axios.post(`${API_URL}/events`, payload, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        alert('Evento criado com sucesso!');
+        notify.success('Evento criado com sucesso!');
       }
 
       setShowModal(false);
@@ -204,7 +205,7 @@ const EventsPage: React.FC = () => {
       fetchData();
     } catch (error: any) {
       console.error('Erro ao salvar evento:', error);
-      alert(error.response?.data?.message || 'Erro ao salvar evento');
+      notify.error(error.response?.data?.message || 'Erro ao salvar evento');
     }
   };
 
@@ -232,19 +233,20 @@ const EventsPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir este evento?')) return;
+    const confirmed = await confirm.delete('este evento');
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
       await axios.delete(`${API_URL}/events/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      alert('Evento excluído com sucesso!');
+      notify.success('Evento excluído com sucesso!');
       setShowDetailModal(false);
       fetchData();
     } catch (error: any) {
       console.error('Erro ao excluir evento:', error);
-      alert(error.response?.data?.message || 'Erro ao excluir evento');
+      notify.error(error.response?.data?.message || 'Erro ao excluir evento');
     }
   };
 
@@ -338,13 +340,13 @@ const EventsPage: React.FC = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      alert(response.data.message);
+      notify.success(response.data.message);
       setShowDuplicateModal(false);
       setSelectedDates([]);
       fetchData();
     } catch (error: any) {
       console.error('Erro ao duplicar evento:', error);
-      alert(error.response?.data?.message || 'Erro ao duplicar evento');
+      notify.error(error.response?.data?.message || 'Erro ao duplicar evento');
     }
   };
 
@@ -412,7 +414,8 @@ const EventsPage: React.FC = () => {
 
   const handleBulkDelete = async () => {
     if (selectedEvents.length === 0) return;
-    if (!window.confirm(`Tem certeza que deseja excluir ${selectedEvents.length} evento(s)?`)) return;
+    const confirmed = await confirm.delete(`${selectedEvents.length} evento(s)`);
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -421,12 +424,12 @@ const EventsPage: React.FC = () => {
           headers: { Authorization: `Bearer ${token}` },
         });
       }
-      alert(`${selectedEvents.length} evento(s) excluído(s) com sucesso!`);
+      notify.success(`${selectedEvents.length} evento(s) excluído(s) com sucesso!`);
       setSelectedEvents([]);
       fetchData();
     } catch (error: any) {
       console.error('Erro ao excluir eventos:', error);
-      alert(error.response?.data?.message || 'Erro ao excluir eventos');
+      notify.error(error.response?.data?.message || 'Erro ao excluir eventos');
     }
   };
 

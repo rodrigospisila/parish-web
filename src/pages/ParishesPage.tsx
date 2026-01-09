@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
+import { notify, confirm } from '../services/notification.service';
 import './ParishesPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -79,7 +80,7 @@ const ParishesPage: React.FC = () => {
       setDioceses(diocesesRes.data);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
-      alert('Erro ao carregar dados');
+      notify.error('Erro ao carregar dados');
     } finally {
       setLoading(false);
     }
@@ -97,12 +98,12 @@ const ParishesPage: React.FC = () => {
           formData,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        alert('Paróquia atualizada com sucesso!');
+        notify.success('Paróquia atualizada com sucesso!');
       } else {
         await axios.post(`${API_URL}/parishes`, formData, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        alert('Paróquia criada com sucesso!');
+        notify.success('Paróquia criada com sucesso!');
       }
 
       setShowModal(false);
@@ -110,7 +111,7 @@ const ParishesPage: React.FC = () => {
       fetchData();
     } catch (error: any) {
       console.error('Erro ao salvar paróquia:', error);
-      alert(error.response?.data?.message || 'Erro ao salvar paróquia');
+      notify.error(error.response?.data?.message || 'Erro ao salvar paróquia');
     }
   };
 
@@ -130,18 +131,19 @@ const ParishesPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir esta paróquia?')) return;
+    const confirmed = await confirm.delete('esta paróquia');
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
       await axios.delete(`${API_URL}/parishes/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      alert('Paróquia excluída com sucesso!');
+      notify.success('Paróquia excluída com sucesso!');
       fetchData();
     } catch (error: any) {
       console.error('Erro ao excluir paróquia:', error);
-      alert(error.response?.data?.message || 'Erro ao excluir paróquia');
+      notify.error(error.response?.data?.message || 'Erro ao excluir paróquia');
     }
   };
 
@@ -223,7 +225,8 @@ const ParishesPage: React.FC = () => {
 
   const handleBulkDelete = async () => {
     if (selectedParishes.length === 0) return;
-    if (!window.confirm(`Tem certeza que deseja excluir ${selectedParishes.length} paróquia(s)?`)) return;
+    const confirmed = await confirm.delete(`${selectedParishes.length} paróquia(s)`);
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -232,12 +235,12 @@ const ParishesPage: React.FC = () => {
           headers: { Authorization: `Bearer ${token}` },
         });
       }
-      alert(`${selectedParishes.length} paróquia(s) excluída(s) com sucesso!`);
+      notify.success(`${selectedParishes.length} paróquia(s) excluída(s) com sucesso!`);
       setSelectedParishes([]);
       fetchData();
     } catch (error: any) {
       console.error('Erro ao excluir paróquias:', error);
-      alert(error.response?.data?.message || 'Erro ao excluir paróquias');
+      notify.error(error.response?.data?.message || 'Erro ao excluir paróquias');
     }
   };
 

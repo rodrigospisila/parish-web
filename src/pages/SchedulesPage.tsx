@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { notify, confirm } from '../services/notification.service';
 import './SchedulesPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -170,7 +171,7 @@ const SchedulesPage: React.FC = () => {
       setCommunities(communitiesRes.data);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
-      alert('Erro ao carregar dados');
+      notify.error('Erro ao carregar dados');
     } finally {
       setLoading(false);
     }
@@ -210,13 +211,13 @@ const SchedulesPage: React.FC = () => {
       await axios.post(`${API_URL}/schedules`, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      alert('Escala criada com sucesso!');
+      notify.success('Escala criada com sucesso!');
       setShowModal(false);
       resetForm();
       fetchData();
     } catch (error: any) {
       console.error('Erro ao criar escala:', error);
-      alert(error.response?.data?.message || 'Erro ao criar escala');
+      notify.error(error.response?.data?.message || 'Erro ao criar escala');
     }
   };
 
@@ -228,7 +229,7 @@ const SchedulesPage: React.FC = () => {
       await axios.post(`${API_URL}/schedules/assignments`, assignmentForm, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      alert('Membro atribuído com sucesso!');
+      notify.success('Membro atribuído com sucesso!');
       setShowAssignmentModal(false);
       resetAssignmentForm();
       fetchData();
@@ -241,36 +242,38 @@ const SchedulesPage: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Erro ao atribuir membro:', error);
-      alert(error.response?.data?.message || 'Erro ao atribuir membro');
+      notify.error(error.response?.data?.message || 'Erro ao atribuir membro');
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir esta escala?')) return;
+    const confirmed = await confirm.delete('esta escala');
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
       await axios.delete(`${API_URL}/schedules/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      alert('Escala excluída com sucesso!');
+      notify.success('Escala excluída com sucesso!');
       setShowDetailModal(false);
       fetchData();
     } catch (error: any) {
       console.error('Erro ao excluir escala:', error);
-      alert(error.response?.data?.message || 'Erro ao excluir escala');
+      notify.error(error.response?.data?.message || 'Erro ao excluir escala');
     }
   };
 
   const handleRemoveAssignment = async (assignmentId: string) => {
-    if (!window.confirm('Tem certeza que deseja remover este membro da escala?')) return;
+    const confirmed = await confirm.delete('este membro da escala');
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
       await axios.delete(`${API_URL}/schedules/assignments/${assignmentId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      alert('Membro removido da escala!');
+      notify.success('Membro removido da escala!');
       fetchData();
       // Atualizar detalhes da escala selecionada
       if (selectedSchedule) {
@@ -281,7 +284,7 @@ const SchedulesPage: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Erro ao remover membro:', error);
-      alert(error.response?.data?.message || 'Erro ao remover membro');
+      notify.error(error.response?.data?.message || 'Erro ao remover membro');
     }
   };
 
@@ -291,7 +294,7 @@ const SchedulesPage: React.FC = () => {
       await axios.patch(`${API_URL}/schedules/assignments/${assignmentId}/checkin`, {}, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      alert('Check-in realizado!');
+      notify.success('Check-in realizado!');
       fetchData();
       // Atualizar detalhes da escala selecionada
       if (selectedSchedule) {
@@ -302,7 +305,7 @@ const SchedulesPage: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Erro ao fazer check-in:', error);
-      alert(error.response?.data?.message || 'Erro ao fazer check-in');
+      notify.error(error.response?.data?.message || 'Erro ao fazer check-in');
     }
   };
 
@@ -312,7 +315,7 @@ const SchedulesPage: React.FC = () => {
       await axios.patch(`${API_URL}/schedules/assignments/${assignmentId}/undo-checkin`, {}, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      alert('Check-in desfeito!');
+      notify.success('Check-in desfeito!');
       fetchData();
       // Atualizar detalhes da escala selecionada
       if (selectedSchedule) {
@@ -323,7 +326,7 @@ const SchedulesPage: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Erro ao desfazer check-in:', error);
-      alert(error.response?.data?.message || 'Erro ao desfazer check-in');
+      notify.error(error.response?.data?.message || 'Erro ao desfazer check-in');
     }
   };
 

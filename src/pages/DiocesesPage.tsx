@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { notify, confirm } from '../services/notification.service';
 import './DiocesesPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -46,7 +47,7 @@ const DiocesesPage: React.FC = () => {
       setDioceses(response.data);
     } catch (error) {
       console.error('Erro ao carregar dioceses:', error);
-      alert('Erro ao carregar dioceses');
+      notify.error('Erro ao carregar dioceses');
     } finally {
       setLoading(false);
     }
@@ -64,12 +65,12 @@ const DiocesesPage: React.FC = () => {
           formData,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        alert('Diocese atualizada com sucesso!');
+        notify.success('Diocese atualizada com sucesso!');
       } else {
         await axios.post(`${API_URL}/dioceses`, formData, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        alert('Diocese criada com sucesso!');
+        notify.success('Diocese criada com sucesso!');
       }
 
       setShowModal(false);
@@ -77,7 +78,7 @@ const DiocesesPage: React.FC = () => {
       fetchDioceses();
     } catch (error: any) {
       console.error('Erro ao salvar diocese:', error);
-      alert(error.response?.data?.message || 'Erro ao salvar diocese');
+      notify.error(error.response?.data?.message || 'Erro ao salvar diocese');
     }
   };
 
@@ -96,18 +97,19 @@ const DiocesesPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir esta diocese?')) return;
+    const confirmed = await confirm.delete('esta diocese');
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
       await axios.delete(`${API_URL}/dioceses/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      alert('Diocese excluída com sucesso!');
+      notify.success('Diocese excluída com sucesso!');
       fetchDioceses();
     } catch (error: any) {
       console.error('Erro ao excluir diocese:', error);
-      alert(error.response?.data?.message || 'Erro ao excluir diocese');
+      notify.error(error.response?.data?.message || 'Erro ao excluir diocese');
     }
   };
 

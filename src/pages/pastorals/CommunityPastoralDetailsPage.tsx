@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { formatDateTime, formatDate } from '../../utils/dateFormat';
+import { notify, confirm as confirmDialog } from '../../services/notification.service';
 import './PastoralsPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -147,7 +148,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
       setMembers(membersResponse.data);
     } catch (error) {
       console.error('Erro ao carregar pastoral:', error);
-      alert('Erro ao carregar detalhes da pastoral');
+      notify.error('Erro ao carregar detalhes da pastoral');
     } finally {
       setLoading(false);
     }
@@ -180,7 +181,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
   const handleAddGroup = async () => {
     if (!groupFormData.name.trim()) {
-      alert('Nome do sub-grupo é obrigatório');
+      notify.warning('Nome do sub-grupo é obrigatório');
       return;
     }
 
@@ -196,13 +197,13 @@ const CommunityPastoralDetailsPage: React.FC = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      alert('Sub-grupo criado com sucesso!');
+      notify.success('Sub-grupo criado com sucesso!');
       setShowAddGroupModal(false);
       setGroupFormData({ name: '', description: '' });
       fetchGroups();
     } catch (error: any) {
       console.error('Erro ao criar sub-grupo:', error);
-      alert(error.response?.data?.message || 'Erro ao criar sub-grupo');
+      notify.error(error.response?.data?.message || 'Erro ao criar sub-grupo');
     }
   };
 
@@ -217,7 +218,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
   const handleUpdateGroup = async () => {
     if (!editingGroup || !groupFormData.name.trim()) {
-      alert('Nome do sub-grupo é obrigatório');
+      notify.warning('Nome do sub-grupo é obrigatório');
       return;
     }
 
@@ -229,21 +230,20 @@ const CommunityPastoralDetailsPage: React.FC = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      alert('Sub-grupo atualizado com sucesso!');
+      notify.success('Sub-grupo atualizado com sucesso!');
       setShowEditGroupModal(false);
       setEditingGroup(null);
       setGroupFormData({ name: '', description: '' });
       fetchGroups();
     } catch (error: any) {
       console.error('Erro ao atualizar sub-grupo:', error);
-      alert(error.response?.data?.message || 'Erro ao atualizar sub-grupo');
+      notify.error(error.response?.data?.message || 'Erro ao atualizar sub-grupo');
     }
   };
 
   const handleRemoveGroup = async (groupId: string, groupName: string) => {
-    if (!confirm(`Deseja remover o sub-grupo "${groupName}"?`)) {
-      return;
-    }
+    const confirmed = await confirmDialog.delete(`o sub-grupo "${groupName}"`);
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -251,11 +251,11 @@ const CommunityPastoralDetailsPage: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      alert('Sub-grupo removido com sucesso!');
+      notify.success('Sub-grupo removido com sucesso!');
       fetchGroups();
     } catch (error: any) {
       console.error('Erro ao remover sub-grupo:', error);
-      alert(error.response?.data?.message || 'Erro ao remover sub-grupo');
+      notify.error(error.response?.data?.message || 'Erro ao remover sub-grupo');
     }
   };
 
@@ -283,7 +283,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
   const handleAddMeeting = async () => {
     if (!meetingFormData.title.trim() || !meetingFormData.date || !pastoral) {
-      alert('Título e data são obrigatórios');
+      notify.warning('Título e data são obrigatórios');
       return;
     }
 
@@ -317,13 +317,13 @@ const CommunityPastoralDetailsPage: React.FC = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      alert('Reunião criada com sucesso!');
+      notify.success('Reunião criada com sucesso!');
       setShowAddMeetingModal(false);
       setMeetingFormData({ title: '', description: '', date: '', location: '' });
       fetchMeetings();
     } catch (error: any) {
       console.error('Erro ao criar reunião:', error);
-      alert(error.response?.data?.message || 'Erro ao criar reunião');
+      notify.error(error.response?.data?.message || 'Erro ao criar reunião');
     }
   };
 
@@ -351,7 +351,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
   const handleAddActivity = async () => {
     if (!activityFormData.title.trim() || !activityFormData.startDate || !pastoral) {
-      alert('Título e data de início são obrigatórios');
+      notify.warning('Título e data de início são obrigatórios');
       return;
     }
 
@@ -386,13 +386,13 @@ const CommunityPastoralDetailsPage: React.FC = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      alert('Atividade criada com sucesso!');
+      notify.success('Atividade criada com sucesso!');
       setShowAddActivityModal(false);
       setActivityFormData({ title: '', description: '', startDate: '', endDate: '', location: '' });
       fetchActivities();
     } catch (error: any) {
       console.error('Erro ao criar atividade:', error);
-      alert(error.response?.data?.message || 'Erro ao criar atividade');
+      notify.error(error.response?.data?.message || 'Erro ao criar atividade');
     }
   };
 
@@ -428,21 +428,22 @@ const CommunityPastoralDetailsPage: React.FC = () => {
       // Atualizar dados
       await fetchPastoralDetails();
       setShowEditPastoralModal(false);
-      alert('Pastoral atualizada com sucesso!');
+      notify.success('Pastoral atualizada com sucesso!');
     } catch (error: any) {
       console.error('Erro ao atualizar pastoral:', error);
-      alert(error.response?.data?.message || 'Erro ao atualizar pastoral');
+      notify.error(error.response?.data?.message || 'Erro ao atualizar pastoral');
     }
   };
 
   const handleToggleStatus = async () => {
     if (!pastoral) return;
 
-    const confirmMessage = pastoral.isActive
-      ? 'Deseja desativar esta pastoral?'
-      : 'Deseja ativar esta pastoral?';
-
-    if (!confirm(confirmMessage)) return;
+    const action = pastoral.isActive ? 'desativar' : 'ativar';
+    const confirmed = await confirmDialog.action(
+      `${action.charAt(0).toUpperCase() + action.slice(1)} pastoral`,
+      `Deseja ${action} esta pastoral?`
+    );
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -454,10 +455,10 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
       // Atualizar dados
       await fetchPastoralDetails();
-      alert(`Pastoral ${pastoral.isActive ? 'desativada' : 'ativada'} com sucesso!`);
+      notify.success(`Pastoral ${pastoral.isActive ? 'desativada' : 'ativada'} com sucesso!`);
     } catch (error: any) {
       console.error('Erro ao alterar status:', error);
-      alert(error.response?.data?.message || 'Erro ao alterar status da pastoral');
+      notify.error(error.response?.data?.message || 'Erro ao alterar status da pastoral');
     }
   };
 
@@ -476,16 +477,16 @@ const CommunityPastoralDetailsPage: React.FC = () => {
       await fetchPastoralDetails();
       setShowEditRoleModal(false);
       setEditingMember(null);
-      alert('Função atualizada com sucesso!');
+      notify.success('Função atualizada com sucesso!');
     } catch (error: any) {
       console.error('Erro ao atualizar função:', error);
-      alert(error.response?.data?.message || 'Erro ao atualizar função');
+      notify.error(error.response?.data?.message || 'Erro ao atualizar função');
     }
   };
 
   const handleAddMember = async () => {
     if (!selectedMemberId) {
-      alert('Selecione um membro');
+      notify.warning('Selecione um membro');
       return;
     }
 
@@ -502,21 +503,20 @@ const CommunityPastoralDetailsPage: React.FC = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      alert('Membro adicionado com sucesso!');
+      notify.success('Membro adicionado com sucesso!');
       setShowAddMemberModal(false);
       setSelectedMemberId('');
       setMemberRole('Membro');
       fetchPastoralDetails();
     } catch (error: any) {
       console.error('Erro ao adicionar membro:', error);
-      alert(error.response?.data?.message || 'Erro ao adicionar membro');
+      notify.error(error.response?.data?.message || 'Erro ao adicionar membro');
     }
   };
 
   const handleRemoveMember = async (memberId: string, memberName: string) => {
-    if (!confirm(`Deseja remover ${memberName} da pastoral?`)) {
-      return;
-    }
+    const confirmed = await confirmDialog.delete(`${memberName} da pastoral`);
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -524,11 +524,11 @@ const CommunityPastoralDetailsPage: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      alert('Membro removido com sucesso!');
+      notify.success('Membro removido com sucesso!');
       fetchPastoralDetails();
     } catch (error: any) {
       console.error('Erro ao remover membro:', error);
-      alert(error.response?.data?.message || 'Erro ao remover membro');
+      notify.error(error.response?.data?.message || 'Erro ao remover membro');
     }
   };
 

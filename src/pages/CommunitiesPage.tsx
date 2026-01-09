@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { notify, confirm } from '../services/notification.service';
 import './CommunitiesPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -75,7 +76,7 @@ const CommunitiesPage: React.FC = () => {
       setParishes(parishesRes.data);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
-      alert('Erro ao carregar dados');
+      notify.error('Erro ao carregar dados');
     } finally {
       setLoading(false);
     }
@@ -93,12 +94,12 @@ const CommunitiesPage: React.FC = () => {
           formData,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        alert('Comunidade atualizada com sucesso!');
+        notify.success('Comunidade atualizada com sucesso!');
       } else {
         await axios.post(`${API_URL}/communities`, formData, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        alert('Comunidade criada com sucesso!');
+        notify.success('Comunidade criada com sucesso!');
       }
 
       setShowModal(false);
@@ -106,7 +107,7 @@ const CommunitiesPage: React.FC = () => {
       fetchData();
     } catch (error: any) {
       console.error('Erro ao salvar comunidade:', error);
-      alert(error.response?.data?.message || 'Erro ao salvar comunidade');
+      notify.error(error.response?.data?.message || 'Erro ao salvar comunidade');
     }
   };
 
@@ -126,18 +127,19 @@ const CommunitiesPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir esta comunidade?')) return;
+    const confirmed = await confirm.delete('esta comunidade');
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
       await axios.delete(`${API_URL}/communities/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      alert('Comunidade excluída com sucesso!');
+      notify.success('Comunidade excluída com sucesso!');
       fetchData();
     } catch (error: any) {
       console.error('Erro ao excluir comunidade:', error);
-      alert(error.response?.data?.message || 'Erro ao excluir comunidade');
+      notify.error(error.response?.data?.message || 'Erro ao excluir comunidade');
     }
   };
 
@@ -219,7 +221,8 @@ const CommunitiesPage: React.FC = () => {
 
   const handleBulkDelete = async () => {
     if (selectedCommunities.length === 0) return;
-    if (!window.confirm(`Tem certeza que deseja excluir ${selectedCommunities.length} comunidade(s)?`)) return;
+    const confirmed = await confirm.delete(`${selectedCommunities.length} comunidade(s)`);
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -228,12 +231,12 @@ const CommunitiesPage: React.FC = () => {
           headers: { Authorization: `Bearer ${token}` },
         });
       }
-      alert(`${selectedCommunities.length} comunidade(s) excluída(s) com sucesso!`);
+      notify.success(`${selectedCommunities.length} comunidade(s) excluída(s) com sucesso!`);
       setSelectedCommunities([]);
       fetchData();
     } catch (error: any) {
       console.error('Erro ao excluir comunidades:', error);
-      alert(error.response?.data?.message || 'Erro ao excluir comunidades');
+      notify.error(error.response?.data?.message || 'Erro ao excluir comunidades');
     }
   };
 

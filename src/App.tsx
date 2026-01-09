@@ -1,5 +1,6 @@
-import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AdminLayout from './components/AdminLayout';
 import LoginPage from './pages/LoginPage';
@@ -90,6 +91,20 @@ const App: React.FC = () => {
           <Route path="/" element={<Navigate to="/admin" replace />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
+        
+        {/* Toast Container para notificações */}
+        <ToastContainer
+          position="top-right"
+          autoClose={3000}
+          hideProgressBar={false}
+          newestOnTop
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+          theme="colored"
+        />
       </BrowserRouter>
     </AuthProvider>
   );

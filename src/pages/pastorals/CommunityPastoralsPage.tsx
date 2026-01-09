@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { notify, confirm } from '../../services/notification.service';
 import './PastoralsPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -81,7 +82,7 @@ const CommunityPastoralsPage: React.FC = () => {
       setCommunities(communitiesRes.data);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
-      alert('Erro ao carregar dados');
+      notify.error('Erro ao carregar dados');
     } finally {
       setLoading(false);
     }
@@ -101,13 +102,13 @@ const CommunityPastoralsPage: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      alert(editingPastoral ? 'Pastoral atualizada!' : 'Pastoral criada!');
+      notify.success(editingPastoral ? 'Pastoral atualizada!' : 'Pastoral criada!');
       setShowModal(false);
       resetForm();
       fetchData();
     } catch (error: any) {
       console.error('Erro ao salvar pastoral:', error);
-      alert(error.response?.data?.message || 'Erro ao salvar pastoral');
+      notify.error(error.response?.data?.message || 'Erro ao salvar pastoral');
     }
   };
 
@@ -127,18 +128,19 @@ const CommunityPastoralsPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir esta pastoral?')) return;
+    const confirmed = await confirm.delete('esta pastoral');
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
       await axios.delete(`${API_URL}/pastorals/community/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      alert('Pastoral excluída!');
+      notify.success('Pastoral excluída!');
       fetchData();
     } catch (error: any) {
       console.error('Erro ao excluir pastoral:', error);
-      alert(error.response?.data?.message || 'Erro ao excluir pastoral');
+      notify.error(error.response?.data?.message || 'Erro ao excluir pastoral');
     }
   };
 

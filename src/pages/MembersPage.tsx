@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
+import { notify, confirm } from '../services/notification.service';
 import './MembersPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -104,7 +105,7 @@ const MembersPage: React.FC = () => {
       setCommunities(communitiesRes.data);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
-      alert('Erro ao carregar dados');
+      notify.error('Erro ao carregar dados');
     } finally {
       setLoading(false);
     }
@@ -128,12 +129,12 @@ const MembersPage: React.FC = () => {
           payload,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        alert('Membro atualizado com sucesso!');
+        notify.success('Membro atualizado com sucesso!');
       } else {
         await axios.post(`${API_URL}/members`, payload, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        alert('Membro criado com sucesso!');
+        notify.success('Membro criado com sucesso!');
       }
 
       setShowModal(false);
@@ -141,7 +142,7 @@ const MembersPage: React.FC = () => {
       fetchData();
     } catch (error: any) {
       console.error('Erro ao salvar membro:', error);
-      alert(error.response?.data?.message || 'Erro ao salvar membro');
+      notify.error(error.response?.data?.message || 'Erro ao salvar membro');
     }
   };
 
@@ -173,18 +174,19 @@ const MembersPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir este membro?')) return;
+    const confirmed = await confirm.delete('este membro');
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
       await axios.delete(`${API_URL}/members/${id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      alert('Membro excluído com sucesso!');
+      notify.success('Membro excluído com sucesso!');
       fetchData();
     } catch (error: any) {
       console.error('Erro ao excluir membro:', error);
-      alert(error.response?.data?.message || 'Erro ao excluir membro');
+      notify.error(error.response?.data?.message || 'Erro ao excluir membro');
     }
   };
 
@@ -270,7 +272,8 @@ const MembersPage: React.FC = () => {
   // Ações em lote
   const handleBulkDelete = async () => {
     if (selectedMembers.length === 0) return;
-    if (!window.confirm(`Deseja excluir ${selectedMembers.length} membro(s)?`)) return;
+    const confirmed = await confirm.delete(`${selectedMembers.length} membro(s)`);
+    if (!confirmed) return;
 
     try {
       const token = localStorage.getItem('token');
@@ -281,12 +284,12 @@ const MembersPage: React.FC = () => {
           })
         )
       );
-      alert('Membros excluídos com sucesso!');
+      notify.success('Membros excluídos com sucesso!');
       setSelectedMembers([]);
       fetchData();
     } catch (error) {
       console.error('Erro ao excluir membros:', error);
-      alert('Erro ao excluir alguns membros');
+      notify.error('Erro ao excluir alguns membros');
     }
   };
 

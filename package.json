@@ -31,6 +31,8 @@
     "react": "^19.2.0",
     "react-calendar": "^6.0.0",
     "react-dom": "^19.2.0",
-    "react-router-dom": "^7.9.5"
+    "react-router-dom": "^7.9.5",
+    "react-toastify": "^11.0.5",
+    "sweetalert2": "^11.26.17"
   }
 }
