@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { notify, confirm } from '../services/notification.service';
+import PatronSaintsManager, { usePatronSaints, PatronSaintsBadge } from '../components/PatronSaintsManager';
+import { avatarColor, initials } from '../components/SaintAvatar';
 import './DiocesesPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -23,6 +25,10 @@ const DiocesesPage: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingDiocese, setEditingDiocese] = useState<Diocese | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Santos padroeiros (vínculo por diocese)
+  const { patronsByEntity, refresh: refreshPatrons } = usePatronSaints('diocese');
+  const [patronTarget, setPatronTarget] = useState<Diocese | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -158,22 +164,49 @@ const DiocesesPage: React.FC = () => {
           <p className="no-results">Nenhuma diocese encontrada.</p>
         ) : (
           filteredDioceses.map((diocese) => (
-            <div key={diocese.id} className="diocese-card">
-              <div className="card-header">
-                <h3>{diocese.name}</h3>
+            <div key={diocese.id} className="entity-card">
+              <div className="entity-card-header">
+                <div className="entity-monogram" style={{ background: avatarColor(diocese.name) }}>
+                  {initials(diocese.name)}
+                </div>
+                <div className="entity-heading">
+                  <h3 className="entity-title">{diocese.name}</h3>
+                  <div className="entity-chips">
+                    <span className="entity-chip">{diocese.city} - {diocese.state}</span>
+                  </div>
+                </div>
               </div>
-              <div className="card-body">
-                <p><strong>📍 Cidade:</strong> {diocese.city} - {diocese.state}</p>
-                <p><strong>🏠 Endereço:</strong> {diocese.address}</p>
-                <p><strong>📮 CEP:</strong> {diocese.zipCode}</p>
-                {diocese.phone && <p><strong>📞 Telefone:</strong> {diocese.phone}</p>}
-                {diocese.email && <p><strong>📧 Email:</strong> {diocese.email}</p>}
+              <div className="entity-card-body">
+                <div className="entity-field">
+                  <span className="entity-field-label">Endereço</span>
+                  <span className="entity-field-value">{diocese.address}</span>
+                </div>
+                <div className="entity-field">
+                  <span className="entity-field-label">CEP</span>
+                  <span className="entity-field-value">{diocese.zipCode}</span>
+                </div>
+                {diocese.phone && (
+                  <div className="entity-field">
+                    <span className="entity-field-label">Telefone</span>
+                    <span className="entity-field-value">{diocese.phone}</span>
+                  </div>
+                )}
+                {diocese.email && (
+                  <div className="entity-field">
+                    <span className="entity-field-label">Email</span>
+                    <span className="entity-field-value">{diocese.email}</span>
+                  </div>
+                )}
+                <PatronSaintsBadge patrons={patronsByEntity[diocese.id]} />
               </div>
-              <div className="card-actions">
-                <button className="btn-edit" onClick={() => handleEdit(diocese)}>
+              <div className="entity-card-footer">
+                <button className="entity-btn primary" onClick={() => handleEdit(diocese)}>
                   Editar
                 </button>
-                <button className="btn-delete" onClick={() => handleDelete(diocese.id)}>
+                <button className="entity-btn accent" onClick={() => setPatronTarget(diocese)}>
+                  🕊️ Padroeiro
+                </button>
+                <button className="entity-btn danger" onClick={() => handleDelete(diocese.id)}>
                   Excluir
                 </button>
               </div>
@@ -269,6 +302,18 @@ const DiocesesPage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {patronTarget && (
+        <PatronSaintsManager
+          level="diocese"
+          entityId={patronTarget.id}
+          entityName={patronTarget.name}
+          onClose={(changed) => {
+            setPatronTarget(null);
+            if (changed) refreshPatrons();
+          }}
+        />
       )}
     </div>
   );

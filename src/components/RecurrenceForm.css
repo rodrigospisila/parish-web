@@ -1,26 +1,22 @@
 .recurrence-form {
-  background: #f8f9fa;
-  border: 2px dashed #3498db;
-  border-radius: 12px;
-  padding: 20px;
-  margin: 20px 0;
+  padding: 16px;
+  margin: 18px 0 0;
+  border: 1px dashed #93c5fd;
+  border-radius: 8px;
+  background: #f8fafc;
 }
 
 .recurrence-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 20px;
-}
-
-.recurrence-icon {
-  font-size: 1.5rem;
+  margin-bottom: 16px;
 }
 
 .recurrence-header h4 {
   margin: 0;
-  color: #2c3e50;
-  font-size: 1.1rem;
+  color: #1f2937;
+  font-size: 1rem;
+  font-weight: 700;
 }
 
 .weekday-selector {
@@ -30,24 +26,26 @@
 }
 
 .weekday-btn {
-  padding: 10px 16px;
-  border: 2px solid #dee2e6;
+  min-width: 48px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
   background: white;
-  border-radius: 8px;
+  border-radius: 7px;
   cursor: pointer;
   font-weight: 600;
   transition: all 0.2s ease;
-  color: #6c757d;
+  color: #475569;
 }
 
 .weekday-btn:hover {
-  border-color: #3498db;
-  color: #3498db;
+  border-color: #2563eb;
+  color: #1d4ed8;
 }
 
 .weekday-btn.selected {
-  background: #3498db;
-  border-color: #3498db;
+  background: #2563eb;
+  border-color: #2563eb;
   color: white;
 }
 
@@ -60,15 +58,15 @@
 }
 
 .recurrence-summary {
-  background: white;
-  padding: 12px 16px;
-  border-radius: 8px;
+  padding: 11px 13px;
   margin-top: 16px;
-  border-left: 4px solid #3498db;
+  border-left: 4px solid #2563eb;
+  border-radius: 7px;
+  background: white;
   font-size: 0.9rem;
-  color: #2c3e50;
+  color: #1f2937;
 }
 
 .recurrence-summary strong {
-  color: #3498db;
+  color: #1d4ed8;
 }

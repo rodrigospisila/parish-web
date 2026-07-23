@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { notify, confirm } from '../services/notification.service';
+import SacramentsModal from '../components/SacramentsModal';
+import SaintAvatar, { avatarColor, initials } from '../components/SaintAvatar';
+import SearchSelect from '../components/SearchSelect';
+import { usePatronSaints } from '../components/PatronSaintsManager';
 import './MembersPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -8,6 +12,9 @@ const API_URL = import.meta.env.VITE_API_URL;
 interface Community {
   id: string;
   name: string;
+  city?: string;
+  state?: string;
+  parish?: { id: string; name: string };
 }
 
 interface Member {
@@ -31,10 +38,73 @@ interface Member {
   fatherName?: string;
   motherName?: string;
   photoUrl?: string;
-  status: 'ACTIVE' | 'INACTIVE' | 'DECEASED';
+  memberType?: MemberType;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  emergencyContactRelation?: string;
+  status: MemberStatus;
   community: Community;
   createdAt: string;
 }
+
+type MemberStatus =
+  | 'ACTIVE'
+  | 'INACTIVE'
+  | 'DECEASED'
+  | 'ANONYMIZED'
+  | 'AWAY'
+  | 'IN_FORMATION'
+  | 'TRANSFERRED'
+  | 'DISENGAGED';
+
+type MemberType =
+  | 'MEMBER'
+  | 'AGENT'
+  | 'COORDINATOR'
+  | 'CATECHIST'
+  | 'MINISTER'
+  | 'VOLUNTEER'
+  | 'FAMILY_RESPONSIBLE'
+  | 'CANDIDATE';
+
+const MEMBER_STATUS_LABELS: Record<MemberStatus, string> = {
+  ACTIVE: 'Ativo',
+  INACTIVE: 'Inativo',
+  DECEASED: 'Falecido',
+  ANONYMIZED: 'Anonimizado',
+  AWAY: 'Afastado',
+  IN_FORMATION: 'Em formação',
+  TRANSFERRED: 'Transferido',
+  DISENGAGED: 'Desligado',
+};
+
+const STATUS_CHIP_COLORS: Record<MemberStatus, string> = {
+  ACTIVE: 'green',
+  INACTIVE: 'gray',
+  DECEASED: 'gray',
+  ANONYMIZED: 'gray',
+  AWAY: 'yellow',
+  IN_FORMATION: 'blue',
+  TRANSFERRED: 'blue',
+  DISENGAGED: 'red',
+};
+
+const statusChip = (status: MemberStatus) => (
+  <span className={`status-badge ${STATUS_CHIP_COLORS[status] ?? 'gray'}`}>
+    {MEMBER_STATUS_LABELS[status] ?? status}
+  </span>
+);
+
+const MEMBER_TYPE_LABELS: Record<MemberType, string> = {
+  MEMBER: 'Membro',
+  AGENT: 'Agente de pastoral',
+  COORDINATOR: 'Coordenador',
+  CATECHIST: 'Catequista',
+  MINISTER: 'Ministro',
+  VOLUNTEER: 'Voluntário',
+  FAMILY_RESPONSIBLE: 'Responsável familiar',
+  CANDIDATE: 'Candidato/formando',
+};
 
 type ViewMode = 'cards' | 'table';
 type SortField = 'fullName' | 'email' | 'community' | 'status' | 'createdAt';
@@ -46,10 +116,17 @@ const MembersPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [sacramentsFor, setSacramentsFor] = useState<Member | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Estados para visualização híbrida
-  const [viewMode, setViewMode] = useState<ViewMode>('cards');
+  // Estados para visualização híbrida (preferência persistida por página)
+  const [viewMode, setViewModeState] = useState<ViewMode>(
+    () => (localStorage.getItem('parish:viewMode:members') === 'table' ? 'table' : 'cards'),
+  );
+  const setViewMode = (mode: ViewMode) => {
+    setViewModeState(mode);
+    localStorage.setItem('parish:viewMode:members', mode);
+  };
   const [sortField, setSortField] = useState<SortField>('fullName');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [currentPage, setCurrentPage] = useState(1);
@@ -57,6 +134,25 @@ const MembersPage: React.FC = () => {
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [filterCommunity, setFilterCommunity] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+
+  // Padroeiros das comunidades — avatar nas opções do seletor de comunidade
+  const { patronsByEntity: communityPatrons } = usePatronSaints('community');
+  const communityOptions = communities.map((community) => {
+    const patron = communityPatrons[community.id]?.[0];
+    return {
+      value: community.id,
+      label: community.name,
+      sublabel: [community.parish?.name, community.city ? `${community.city}${community.state ? ` - ${community.state}` : ''}` : null]
+        .filter(Boolean)
+        .join(' · ') || undefined,
+      icon: patron ? <SaintAvatar saint={patron.saint} small /> : undefined,
+    };
+  });
+
+  const statusOptions = (Object.keys(MEMBER_STATUS_LABELS) as MemberStatus[]).map((status) => ({
+    value: status,
+    label: MEMBER_STATUS_LABELS[status],
+  }));
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -78,7 +174,11 @@ const MembersPage: React.FC = () => {
     fatherName: '',
     motherName: '',
     communityId: '',
-    status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'DECEASED',
+    status: 'ACTIVE' as MemberStatus,
+    memberType: '' as '' | MemberType,
+    emergencyContactName: '',
+    emergencyContactPhone: '',
+    emergencyContactRelation: '',
   });
 
   useEffect(() => {
@@ -113,6 +213,10 @@ const MembersPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.communityId) {
+      notify.warning('Selecione a comunidade do membro.');
+      return;
+    }
 
     try {
       const token = localStorage.getItem('token');
@@ -120,6 +224,7 @@ const MembersPage: React.FC = () => {
         ...formData,
         gender: formData.gender || undefined,
         maritalStatus: formData.maritalStatus || undefined,
+        memberType: formData.memberType || undefined,
         birthDate: formData.birthDate ? new Date(formData.birthDate).toISOString() : undefined,
       };
 
@@ -169,6 +274,10 @@ const MembersPage: React.FC = () => {
       motherName: member.motherName || '',
       communityId: member.community.id,
       status: member.status,
+      memberType: member.memberType || '',
+      emergencyContactName: member.emergencyContactName || '',
+      emergencyContactPhone: member.emergencyContactPhone || '',
+      emergencyContactRelation: member.emergencyContactRelation || '',
     });
     setShowModal(true);
   };
@@ -212,13 +321,12 @@ const MembersPage: React.FC = () => {
       motherName: '',
       communityId: '',
       status: 'ACTIVE',
+      memberType: '',
+      emergencyContactName: '',
+      emergencyContactPhone: '',
+      emergencyContactRelation: '',
     });
     setEditingMember(null);
-  };
-
-  const getGenderLabel = (gender?: string) => {
-    const labels = { MALE: 'Masculino', FEMALE: 'Feminino', OTHER: 'Outro' };
-    return gender ? labels[gender as keyof typeof labels] : '-';
   };
 
   const getMaritalStatusLabel = (status?: string) => {
@@ -230,16 +338,6 @@ const MembersPage: React.FC = () => {
       COMMON_LAW_MARRIAGE: 'União Estável',
     };
     return status ? labels[status as keyof typeof labels] : '-';
-  };
-
-  const getStatusBadge = (status: string, small = false) => {
-    const badges = {
-      ACTIVE: { label: 'Ativo', className: small ? 'status-badge-small active' : 'status-badge badge-active' },
-      INACTIVE: { label: 'Inativo', className: small ? 'status-badge-small inactive' : 'status-badge badge-inactive' },
-      DECEASED: { label: 'Falecido', className: small ? 'status-badge-small deceased' : 'status-badge badge-deceased' },
-    };
-    const badge = badges[status as keyof typeof badges];
-    return <span className={badge.className}>{badge.label}</span>;
   };
 
   // Ordenação
@@ -393,28 +491,22 @@ const MembersPage: React.FC = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="search-input"
           />
-          <select
+          <SearchSelect
+            options={communityOptions}
             value={filterCommunity}
-            onChange={(e) => setFilterCommunity(e.target.value)}
-            className="filter-select"
-          >
-            <option value="">Todas as comunidades</option>
-            {communities.map((community) => (
-              <option key={community.id} value={community.id}>
-                {community.name}
-              </option>
-            ))}
-          </select>
-          <select
+            onChange={setFilterCommunity}
+            placeholder="Todas as comunidades"
+            allOption
+            searchPlaceholder="Buscar comunidade ou paróquia..."
+          />
+          <SearchSelect
+            options={statusOptions}
             value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="filter-select"
-          >
-            <option value="">Todos os status</option>
-            <option value="ACTIVE">Ativos</option>
-            <option value="INACTIVE">Inativos</option>
-            <option value="DECEASED">Falecidos</option>
-          </select>
+            onChange={setFilterStatus}
+            placeholder="Todos os status"
+            allOption
+            searchPlaceholder="Buscar status..."
+          />
         </div>
 
         <div className="view-controls">
@@ -480,34 +572,71 @@ const MembersPage: React.FC = () => {
             <p className="no-results">Nenhum membro encontrado.</p>
           ) : (
             paginatedMembers.map((member) => (
-              <div key={member.id} className="member-card">
-                <div className="card-header">
-                  <div>
-                    <h3>{member.fullName}</h3>
-                    <span className="community-badge">{member.community.name}</span>
+              <div key={member.id} className="entity-card">
+                <div className="entity-card-header">
+                  <div className="entity-monogram" style={{ background: avatarColor(member.fullName) }}>
+                    {initials(member.fullName)}
                   </div>
-                  {getStatusBadge(member.status)}
+                  <div className="entity-heading">
+                    <h3 className="entity-title">{member.fullName}</h3>
+                    <div className="entity-chips">
+                      <span className="entity-chip soft-blue">{member.community.name}</span>
+                      {statusChip(member.status)}
+                    </div>
+                  </div>
                 </div>
-                <div className="card-body">
-                  {member.cpf && <p><strong>🆔 CPF:</strong> {member.cpf}</p>}
-                  {member.gender && <p><strong>👤 Sexo:</strong> {getGenderLabel(member.gender)}</p>}
+                <div className="entity-card-body">
+                  {member.cpf && (
+                    <div className="entity-field">
+                      <span className="entity-field-label">CPF</span>
+                      <span className="entity-field-value">{member.cpf}</span>
+                    </div>
+                  )}
                   {member.birthDate && (
-                    <p><strong>🎂 Nascimento:</strong> {new Date(member.birthDate).toLocaleDateString('pt-BR')}</p>
+                    <div className="entity-field">
+                      <span className="entity-field-label">Nascimento</span>
+                      <span className="entity-field-value">{new Date(member.birthDate).toLocaleDateString('pt-BR')}</span>
+                    </div>
                   )}
-                  {member.maritalStatus && <p><strong>💍 Estado Civil:</strong> {getMaritalStatusLabel(member.maritalStatus)}</p>}
-                  {member.occupation && <p><strong>💼 Profissão:</strong> {member.occupation}</p>}
-                  {member.email && <p><strong>📧 Email:</strong> {member.email}</p>}
-                  {member.phone && <p><strong>📞 Telefone:</strong> {member.phone}</p>}
-                  {member.street && (
-                    <p><strong>📍 Endereço:</strong> {member.street}, {member.number} - {member.neighborhood}</p>
+                  {member.maritalStatus && (
+                    <div className="entity-field">
+                      <span className="entity-field-label">Est. civil</span>
+                      <span className="entity-field-value">{getMaritalStatusLabel(member.maritalStatus)}</span>
+                    </div>
                   )}
-                  {member.city && <p><strong>🏙️ Cidade:</strong> {member.city} - {member.state}</p>}
+                  {member.occupation && (
+                    <div className="entity-field">
+                      <span className="entity-field-label">Profissão</span>
+                      <span className="entity-field-value">{member.occupation}</span>
+                    </div>
+                  )}
+                  {member.email && (
+                    <div className="entity-field">
+                      <span className="entity-field-label">Email</span>
+                      <span className="entity-field-value">{member.email}</span>
+                    </div>
+                  )}
+                  {member.phone && (
+                    <div className="entity-field">
+                      <span className="entity-field-label">Telefone</span>
+                      <span className="entity-field-value">{member.phone}</span>
+                    </div>
+                  )}
+                  {member.city && (
+                    <div className="entity-field">
+                      <span className="entity-field-label">Cidade</span>
+                      <span className="entity-field-value">{member.city} - {member.state}</span>
+                    </div>
+                  )}
                 </div>
-                <div className="card-actions">
-                  <button className="btn-edit" onClick={() => handleEdit(member)}>
+                <div className="entity-card-footer">
+                  <button className="entity-btn primary" onClick={() => handleEdit(member)}>
                     Editar
                   </button>
-                  <button className="btn-delete" onClick={() => handleDelete(member.id)}>
+                  <button className="entity-btn accent" onClick={() => setSacramentsFor(member)}>
+                    Sacramentos
+                  </button>
+                  <button className="entity-btn danger" onClick={() => handleDelete(member.id)}>
                     Excluir
                   </button>
                 </div>
@@ -519,7 +648,7 @@ const MembersPage: React.FC = () => {
 
       {/* Visualização em Tabela */}
       {viewMode === 'table' && (
-        <div className="table-container">
+        <div className="table-container entity-table">
           <table className="data-table">
             <thead>
               <tr>
@@ -573,16 +702,19 @@ const MembersPage: React.FC = () => {
                     <td>{member.email || '-'}</td>
                     <td>{member.phone || '-'}</td>
                     <td>
-                      <span className="community-badge-small">{member.community.name}</span>
+                      <span className="entity-chip soft-blue">{member.community.name}</span>
                     </td>
-                    <td>{getStatusBadge(member.status, true)}</td>
+                    <td>{statusChip(member.status)}</td>
                     <td>{member.city ? `${member.city}/${member.state}` : '-'}</td>
                     <td>{new Date(member.createdAt).toLocaleDateString('pt-BR')}</td>
                     <td className="actions-cell">
-                      <button className="btn-icon" onClick={() => handleEdit(member)} title="Editar">
+                      <button className="entity-icon-btn" onClick={() => handleEdit(member)} title="Editar">
                         ✏️
                       </button>
-                      <button className="btn-icon danger" onClick={() => handleDelete(member.id)} title="Excluir">
+                      <button className="entity-icon-btn" onClick={() => setSacramentsFor(member)} title="Sacramentos">
+                        ✝️
+                      </button>
+                      <button className="entity-icon-btn danger" onClick={() => handleDelete(member.id)} title="Excluir">
                         🗑️
                       </button>
                     </td>
@@ -862,30 +994,85 @@ const MembersPage: React.FC = () => {
                 <div className="form-row">
                   <div className="form-group">
                     <label>Comunidade *</label>
-                    <select
-                      required
+                    <SearchSelect
+                      options={communityOptions}
                       value={formData.communityId}
-                      onChange={(e) => setFormData({ ...formData, communityId: e.target.value })}
+                      onChange={(communityId) => setFormData({ ...formData, communityId })}
+                      placeholder="Selecione uma comunidade"
+                      searchPlaceholder="Buscar comunidade..."
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="member-status">Status</label>
+                    <select
+                      id="member-status"
+                      value={formData.status}
+                      onChange={(e) => setFormData({ ...formData, status: e.target.value as MemberStatus })}
                     >
-                      <option value="">Selecione uma comunidade</option>
-                      {communities.map((community) => (
-                        <option key={community.id} value={community.id}>
-                          {community.name}
-                        </option>
-                      ))}
+                      {(Object.keys(MEMBER_STATUS_LABELS) as MemberStatus[])
+                        .filter((s) => s !== 'ANONYMIZED') // anonimização é ação LGPD dedicada
+                        .map((s) => (
+                          <option key={s} value={s}>
+                            {MEMBER_STATUS_LABELS[s]}
+                          </option>
+                        ))}
                     </select>
                   </div>
 
                   <div className="form-group">
-                    <label>Status</label>
+                    <label htmlFor="member-type">Tipo de agente</label>
                     <select
-                      value={formData.status}
-                      onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                      id="member-type"
+                      value={formData.memberType}
+                      onChange={(e) =>
+                        setFormData({ ...formData, memberType: e.target.value as '' | MemberType })
+                      }
                     >
-                      <option value="ACTIVE">Ativo</option>
-                      <option value="INACTIVE">Inativo</option>
-                      <option value="DECEASED">Falecido</option>
+                      <option value="">Não classificado</option>
+                      {(Object.keys(MEMBER_TYPE_LABELS) as MemberType[]).map((t) => (
+                        <option key={t} value={t}>
+                          {MEMBER_TYPE_LABELS[t]}
+                        </option>
+                      ))}
                     </select>
+                  </div>
+                </div>
+
+                <legend style={{ marginTop: '1rem', fontWeight: 600 }}>Contato de emergência</legend>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label htmlFor="emg-name">Nome</label>
+                    <input
+                      id="emg-name"
+                      type="text"
+                      value={formData.emergencyContactName}
+                      onChange={(e) =>
+                        setFormData({ ...formData, emergencyContactName: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="emg-phone">Telefone</label>
+                    <input
+                      id="emg-phone"
+                      type="tel"
+                      value={formData.emergencyContactPhone}
+                      onChange={(e) =>
+                        setFormData({ ...formData, emergencyContactPhone: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="emg-relation">Parentesco/relação</label>
+                    <input
+                      id="emg-relation"
+                      type="text"
+                      value={formData.emergencyContactRelation}
+                      onChange={(e) =>
+                        setFormData({ ...formData, emergencyContactRelation: e.target.value })
+                      }
+                    />
                   </div>
                 </div>
               </fieldset>
@@ -901,6 +1088,14 @@ const MembersPage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {sacramentsFor && (
+        <SacramentsModal
+          memberId={sacramentsFor.id}
+          memberName={sacramentsFor.fullName}
+          onClose={() => setSacramentsFor(null)}
+        />
       )}
     </div>
   );

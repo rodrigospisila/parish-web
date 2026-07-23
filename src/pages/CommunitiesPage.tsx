@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { notify, confirm } from '../services/notification.service';
+import PatronSaintsManager, { usePatronSaints, PatronSaintsBadge } from '../components/PatronSaintsManager';
+import SearchSelect from '../components/SearchSelect';
+import SaintAvatar, { avatarColor, initials } from '../components/SaintAvatar';
+import MapPicker from '../components/MapPicker';
 import './CommunitiesPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -13,8 +17,16 @@ interface Diocese {
 interface Parish {
   id: string;
   name: string;
+  city?: string;
+  state?: string;
   diocese: Diocese;
 }
+
+const parishOption = (parish: Parish) => ({
+  value: parish.id,
+  label: parish.name,
+  sublabel: `${parish.diocese.name}${parish.city ? ` · ${parish.city}${parish.state ? ` - ${parish.state}` : ''}` : ''}`,
+});
 
 interface Community {
   id: string;
@@ -25,6 +37,8 @@ interface Community {
   zipCode: string;
   phone?: string;
   email?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   parish: Parish;
   createdAt: string;
 }
@@ -37,14 +51,34 @@ const CommunitiesPage: React.FC = () => {
   const [editingCommunity, setEditingCommunity] = useState<Community | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Estados para visualização híbrida
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  // Estados para visualização híbrida (preferência persistida por página)
+  const [viewMode, setViewModeState] = useState<'cards' | 'table'>(
+    () => (localStorage.getItem('parish:viewMode:communities') === 'table' ? 'table' : 'cards'),
+  );
+  const setViewMode = (mode: 'cards' | 'table') => {
+    setViewModeState(mode);
+    localStorage.setItem('parish:viewMode:communities', mode);
+  };
   const [sortField, setSortField] = useState<'name' | 'city' | 'parish' | 'createdAt'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [selectedCommunities, setSelectedCommunities] = useState<string[]>([]);
   const [filterParish, setFilterParish] = useState('');
+
+  // Santos padroeiros (vínculo por comunidade)
+  const { patronsByEntity, refresh: refreshPatrons } = usePatronSaints('community');
+  const [patronTarget, setPatronTarget] = useState<Community | null>(null);
+
+  // Padroeiros das paróquias — avatar nas opções do seletor de paróquia
+  const { patronsByEntity: parishPatrons } = usePatronSaints('parish');
+  const parishOptions = parishes.map((parish) => {
+    const patron = parishPatrons[parish.id]?.[0];
+    return {
+      ...parishOption(parish),
+      icon: patron ? <SaintAvatar saint={patron.saint} small /> : undefined,
+    };
+  });
 
   const [formData, setFormData] = useState({
     name: '',
@@ -55,7 +89,10 @@ const CommunitiesPage: React.FC = () => {
     phone: '',
     email: '',
     parishId: '',
+    latitude: null as number | null,
+    longitude: null as number | null,
   });
+  const [geocoding, setGeocoding] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -84,6 +121,10 @@ const CommunitiesPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.parishId) {
+      notify.warning('Selecione a paróquia da comunidade.');
+      return;
+    }
 
     try {
       const token = localStorage.getItem('token');
@@ -122,6 +163,8 @@ const CommunitiesPage: React.FC = () => {
       phone: community.phone || '',
       email: community.email || '',
       parishId: community.parish.id,
+      latitude: community.latitude ?? null,
+      longitude: community.longitude ?? null,
     });
     setShowModal(true);
   };
@@ -153,8 +196,42 @@ const CommunitiesPage: React.FC = () => {
       phone: '',
       email: '',
       parishId: '',
+      latitude: null,
+      longitude: null,
     });
     setEditingCommunity(null);
+  };
+
+  // Endereço → coordenadas (Nominatim via backend). Posiciona o pino no mapa.
+  const geocodeFromAddress = async () => {
+    const query = [formData.address, formData.city, formData.state, formData.zipCode]
+      .filter(Boolean)
+      .join(', ')
+      .trim();
+    if (query.length < 3) {
+      notify.warning('Preencha o endereço (rua, cidade, estado) para localizar no mapa.');
+      return;
+    }
+    setGeocoding(true);
+    try {
+      const token = localStorage.getItem('token');
+      const { data } = await axios.get(`${API_URL}/geocoding/search`, {
+        params: { q: query },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (Array.isArray(data) && data.length > 0) {
+        const best = data[0];
+        setFormData((prev) => ({ ...prev, latitude: best.latitude, longitude: best.longitude }));
+        notify.success('Local encontrado! Ajuste o pino se necessário.');
+      } else {
+        notify.warning('Endereço não localizado. Posicione o pino manualmente no mapa.');
+      }
+    } catch (error: any) {
+      console.error('Erro ao geocodificar:', error);
+      notify.error('Não foi possível localizar o endereço.');
+    } finally {
+      setGeocoding(false);
+    }
   };
 
   // Filtros
@@ -289,18 +366,14 @@ const CommunitiesPage: React.FC = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="search-input"
           />
-          <select
+          <SearchSelect
+            options={parishOptions}
             value={filterParish}
-            onChange={(e) => setFilterParish(e.target.value)}
-            className="filter-select"
-          >
-            <option value="">Todas as paróquias</option>
-            {parishes.map((parish) => (
-              <option key={parish.id} value={parish.id}>
-                {parish.name}
-              </option>
-            ))}
-          </select>
+            onChange={setFilterParish}
+            placeholder="Todas as paróquias"
+            allOption
+            searchPlaceholder="Buscar paróquia ou diocese..."
+          />
         </div>
 
         <div className="view-toggle">
@@ -325,26 +398,54 @@ const CommunitiesPage: React.FC = () => {
             <p className="no-results">Nenhuma comunidade encontrada.</p>
           ) : (
             paginatedCommunities.map((community) => (
-              <div key={community.id} className="community-card">
-                <div className="card-header">
-                  <h3>{community.name}</h3>
-                  <div className="badges">
-                    <span className="parish-badge">{community.parish.name}</span>
-                    <span className="diocese-badge">{community.parish.diocese.name}</span>
+              <div key={community.id} className="entity-card">
+                <div className="entity-card-header">
+                  <div className="entity-monogram" style={{ background: avatarColor(community.name) }}>
+                    {initials(community.name)}
+                  </div>
+                  <div className="entity-heading">
+                    <h3 className="entity-title">{community.name}</h3>
+                    <div className="entity-chips">
+                      <span className="entity-chip soft-blue">{community.parish.name}</span>
+                      <span className="entity-chip">{community.parish.diocese.name}</span>
+                    </div>
                   </div>
                 </div>
-                <div className="card-body">
-                  <p><strong>📍 Cidade:</strong> {community.city} - {community.state}</p>
-                  <p><strong>🏠 Endereço:</strong> {community.address}</p>
-                  <p><strong>📮 CEP:</strong> {community.zipCode}</p>
-                  {community.phone && <p><strong>📞 Telefone:</strong> {community.phone}</p>}
-                  {community.email && <p><strong>📧 Email:</strong> {community.email}</p>}
+                <div className="entity-card-body">
+                  <div className="entity-field">
+                    <span className="entity-field-label">Cidade</span>
+                    <span className="entity-field-value">{community.city} - {community.state}</span>
+                  </div>
+                  <div className="entity-field">
+                    <span className="entity-field-label">Endereço</span>
+                    <span className="entity-field-value">{community.address}</span>
+                  </div>
+                  <div className="entity-field">
+                    <span className="entity-field-label">CEP</span>
+                    <span className="entity-field-value">{community.zipCode}</span>
+                  </div>
+                  {community.phone && (
+                    <div className="entity-field">
+                      <span className="entity-field-label">Telefone</span>
+                      <span className="entity-field-value">{community.phone}</span>
+                    </div>
+                  )}
+                  {community.email && (
+                    <div className="entity-field">
+                      <span className="entity-field-label">Email</span>
+                      <span className="entity-field-value">{community.email}</span>
+                    </div>
+                  )}
+                  <PatronSaintsBadge patrons={patronsByEntity[community.id]} />
                 </div>
-                <div className="card-actions">
-                  <button className="btn-edit" onClick={() => handleEdit(community)}>
+                <div className="entity-card-footer">
+                  <button className="entity-btn primary" onClick={() => handleEdit(community)}>
                     Editar
                   </button>
-                  <button className="btn-delete" onClick={() => handleDelete(community.id)}>
+                  <button className="entity-btn accent" onClick={() => setPatronTarget(community)}>
+                    🕊️ Padroeiro
+                  </button>
+                  <button className="entity-btn danger" onClick={() => handleDelete(community.id)}>
                     Excluir
                   </button>
                 </div>
@@ -353,10 +454,10 @@ const CommunitiesPage: React.FC = () => {
           )}
         </div>
       ) : (
-        <div className="table-container">
+        <div className="table-container entity-table">
           {/* Ações em lote */}
           <div className="table-actions">
-            <div className="bulk-actions">
+            <div className="bulk-actions" style={selectedCommunities.length === 0 ? { display: 'none' } : undefined}>
               {selectedCommunities.length > 0 && (
                 <>
                   <span className="selected-count">{selectedCommunities.length} selecionada(s)</span>
@@ -412,6 +513,7 @@ const CommunitiesPage: React.FC = () => {
                 </th>
                 <th>Telefone</th>
                 <th>Email</th>
+                <th>Padroeiro</th>
                 <th className="sortable" onClick={() => handleSort('createdAt')}>
                   Criado em {sortField === 'createdAt' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
@@ -432,18 +534,31 @@ const CommunitiesPage: React.FC = () => {
                     <strong>{community.name}</strong>
                   </td>
                   <td>
-                    <span className="parish-badge-small">{community.parish.name}</span>
+                    <span className="entity-chip soft-blue">{community.parish.name}</span>
                   </td>
                   <td>{community.parish.diocese.name}</td>
                   <td>{community.city} - {community.state}</td>
                   <td>{community.phone || '-'}</td>
                   <td>{community.email || '-'}</td>
+                  <td>
+                    {patronsByEntity[community.id]?.[0] ? (
+                      <span className="patron-cell">
+                        <SaintAvatar saint={patronsByEntity[community.id][0].saint} small />
+                        {patronsByEntity[community.id][0].saint.name}
+                      </span>
+                    ) : (
+                      '-'
+                    )}
+                  </td>
                   <td>{formatDate(community.createdAt)}</td>
                   <td className="actions-cell">
-                    <button className="btn-action btn-edit-small" onClick={() => handleEdit(community)} title="Editar">
+                    <button className="entity-icon-btn" onClick={() => handleEdit(community)} title="Editar">
                       ✏️
                     </button>
-                    <button className="btn-action btn-delete-small" onClick={() => handleDelete(community.id)} title="Excluir">
+                    <button className="entity-icon-btn" onClick={() => setPatronTarget(community)} title="Padroeiro">
+                      🕊️
+                    </button>
+                    <button className="entity-icon-btn danger" onClick={() => handleDelete(community.id)} title="Excluir">
                       🗑️
                     </button>
                   </td>
@@ -514,18 +629,13 @@ const CommunitiesPage: React.FC = () => {
 
               <div className="form-group">
                 <label>Paróquia *</label>
-                <select
-                  required
+                <SearchSelect
+                  options={parishOptions}
                   value={formData.parishId}
-                  onChange={(e) => setFormData({ ...formData, parishId: e.target.value })}
-                >
-                  <option value="">Selecione uma paróquia</option>
-                  {parishes.map((parish) => (
-                    <option key={parish.id} value={parish.id}>
-                      {parish.name} - {parish.diocese.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(parishId) => setFormData({ ...formData, parishId })}
+                  placeholder="Selecione uma paróquia"
+                  searchPlaceholder="Buscar paróquia ou diocese..."
+                />
               </div>
 
               <div className="form-group">
@@ -589,6 +699,49 @@ const CommunitiesPage: React.FC = () => {
                 />
               </div>
 
+              <div className="form-group">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                  <label style={{ margin: 0 }}>📍 Localização no mapa</label>
+                  <button
+                    type="button"
+                    className="btn-cancel"
+                    style={{ padding: '6px 12px', fontSize: 13 }}
+                    onClick={geocodeFromAddress}
+                    disabled={geocoding}
+                  >
+                    {geocoding ? 'Localizando…' : '🔎 Localizar pelo endereço'}
+                  </button>
+                </div>
+                <p style={{ fontSize: 12, color: '#888', margin: '4px 0 8px' }}>
+                  Usado para encontrar as missas mais próximas. Clique no mapa ou arraste o pino para ajustar.
+                </p>
+                <MapPicker
+                  value={
+                    formData.latitude != null && formData.longitude != null
+                      ? { lat: formData.latitude, lng: formData.longitude }
+                      : null
+                  }
+                  onChange={(lat, lng) => setFormData((prev) => ({ ...prev, latitude: lat, longitude: lng }))}
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, color: '#666' }}>
+                    {formData.latitude != null && formData.longitude != null
+                      ? `Lat ${formData.latitude.toFixed(6)}, Long ${formData.longitude.toFixed(6)}`
+                      : 'Nenhuma coordenada definida'}
+                  </span>
+                  {formData.latitude != null && (
+                    <button
+                      type="button"
+                      className="btn-cancel"
+                      style={{ padding: '4px 10px', fontSize: 12 }}
+                      onClick={() => setFormData((prev) => ({ ...prev, latitude: null, longitude: null }))}
+                    >
+                      Limpar
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div className="modal-actions">
                 <button type="button" className="btn-cancel" onClick={() => { setShowModal(false); resetForm(); }}>
                   Cancelar
@@ -600,6 +753,18 @@ const CommunitiesPage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {patronTarget && (
+        <PatronSaintsManager
+          level="community"
+          entityId={patronTarget.id}
+          entityName={patronTarget.name}
+          onClose={(changed) => {
+            setPatronTarget(null);
+            if (changed) refreshPatrons();
+          }}
+        />
       )}
     </div>
   );

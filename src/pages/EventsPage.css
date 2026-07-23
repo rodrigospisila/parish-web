@@ -454,6 +454,21 @@
   margin: 20px 0;
 }
 
+.duplicate-copy-team {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 16px 0;
+  font-size: 0.9rem;
+  color: #444;
+  cursor: pointer;
+}
+
+.duplicate-copy-team input[type='checkbox'] {
+  margin-top: 3px;
+  cursor: pointer;
+}
+
 .date-input-section {
   display: flex;
   flex-direction: column;
@@ -903,6 +918,9 @@
 }
 
 .actions-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   white-space: nowrap;
 }
 
@@ -910,10 +928,11 @@
   background: none;
   border: none;
   cursor: pointer;
-  padding: 6px;
+  padding: 6px 10px;
   border-radius: 4px;
   transition: background 0.2s;
-  font-size: 1rem;
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .btn-action:hover {
@@ -1159,4 +1178,39 @@
   .filter-results-count {
     align-self: flex-end;
   }
+}
+
+/* Segmentado de período na visão Lista (Próximos / Anteriores / Todos) */
+.period-toggle {
+  display: inline-flex;
+  border: 1px solid #d9e0e8;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+
+.period-toggle-btn {
+  border: none;
+  background: transparent;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #46566a;
+  cursor: pointer;
+  font-family: inherit;
+  border-right: 1px solid #eceff3;
+  transition: background 0.15s, color 0.15s;
+}
+
+.period-toggle-btn:last-child {
+  border-right: none;
+}
+
+.period-toggle-btn:hover {
+  background: #f4f8ff;
+}
+
+.period-toggle-btn.active {
+  background: #0d6efd;
+  color: white;
 }

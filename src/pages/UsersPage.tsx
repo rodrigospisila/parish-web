@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { notify, confirm } from '../services/notification.service';
+import { avatarColor, initials } from '../components/SaintAvatar';
 import './UsersPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -29,18 +30,29 @@ interface UserCommunity {
   community: Community;
 }
 
+interface Pastoral {
+  id: string;
+  name: string;
+  communityId: string;
+  communityName?: string;
+  membershipRole?: string;
+}
+
 interface User {
   id: string;
   name: string;
   email: string;
   phone?: string;
   role: string;
+  clergyTitle?: 'BISHOP' | 'PRIEST' | 'DEACON' | null;
   isActive: boolean;
   diocese?: Diocese;
   dioceseId?: string;
   parishId?: string;
   communityId?: string;
   communities?: UserCommunity[];
+  pastoralIds?: string[];
+  pastorals?: Pastoral[];
   createdAt: string;
 }
 
@@ -54,13 +66,21 @@ const UsersPage: React.FC = () => {
   const [dioceses, setDioceses] = useState<Diocese[]>([]);
   const [parishes, setParishes] = useState<Parish[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
+  const [pastorals, setPastorals] = useState<Pastoral[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Novos estados para visualização híbrida
-  const [viewMode, setViewMode] = useState<ViewMode>('cards');
+  // Preferência de visualização persistida por página
+  const [viewMode, setViewModeState] = useState<ViewMode>(
+    () => (localStorage.getItem('parish:viewMode:users') === 'table' ? 'table' : 'cards'),
+  );
+  const setViewMode = (mode: ViewMode) => {
+    setViewModeState(mode);
+    localStorage.setItem('parish:viewMode:users', mode);
+  };
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [currentPage, setCurrentPage] = useState(1);
@@ -76,11 +96,18 @@ const UsersPage: React.FC = () => {
     phone: '',
     password: '',
     role: 'FAITHFUL',
+    clergyTitle: '' as '' | 'BISHOP' | 'PRIEST' | 'DEACON',
     dioceseId: '',
     parishId: '',
     communityId: '',
     communityIds: [] as string[],
+    pastoralIds: [] as string[],
+    consentGiven: false,
   });
+
+  // Busca local para filtrar as listas de selecao (uteis quando ha muitas pastorais/comunidades)
+  const [pastoralSearch, setPastoralSearch] = useState('');
+  const [communitySearch, setCommunitySearch] = useState('');
 
   // Definir hierarquia de roles
   const allRoles = [
@@ -156,6 +183,35 @@ const UsersPage: React.FC = () => {
     return [];
   }, [currentUser, communities, formData.parishId, formData.role]);
 
+  const availablePastorals = useMemo(() => {
+    if (formData.role !== 'PASTORAL_COORDINATOR' || !currentUser) {
+      return [];
+    }
+
+    if (currentUser.role === 'COMMUNITY_COORDINATOR') {
+      return pastorals.filter((pastoral) => pastoral.communityId === currentUser.communityId);
+    }
+
+    const selectedCommunityId = formData.communityId || currentUser.communityId;
+    if (!selectedCommunityId) {
+      return [];
+    }
+
+    return pastorals.filter((pastoral) => pastoral.communityId === selectedCommunityId);
+  }, [currentUser, formData.role, formData.communityId, pastorals]);
+
+  const filteredAvailablePastorals = useMemo(() => {
+    const term = pastoralSearch.trim().toLowerCase();
+    if (!term) return availablePastorals;
+    return availablePastorals.filter((pastoral) => pastoral.name.toLowerCase().includes(term));
+  }, [availablePastorals, pastoralSearch]);
+
+  const filteredAvailableCommunities = useMemo(() => {
+    const term = communitySearch.trim().toLowerCase();
+    if (!term) return availableCommunities;
+    return availableCommunities.filter((community) => community.name.toLowerCase().includes(term));
+  }, [availableCommunities, communitySearch]);
+
   // Verificar se deve mostrar campo Diocese
   const shouldShowDioceseField = useMemo(() => {
     if (!currentUser) return false;
@@ -166,7 +222,7 @@ const UsersPage: React.FC = () => {
     }
     
     // E só quando o role selecionado precisa de diocese
-    return ['DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(formData.role);
+    return ['DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR'].includes(formData.role);
   }, [currentUser, formData.role]);
 
   // Verificar se deve mostrar campo Paróquia
@@ -179,22 +235,36 @@ const UsersPage: React.FC = () => {
     }
     
     // E só quando o role selecionado precisa de paróquia
-    return ['PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(formData.role);
+    return ['PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR'].includes(formData.role);
   }, [currentUser, formData.role]);
 
-  // Verificar se deve mostrar campo Comunidade
+  // Verificar se deve mostrar campo Comunidade (seletor unico)
+  // Só se aplica a PASTORAL_COORDINATOR: serve apenas para filtrar quais pastorais
+  // aparecem na lista abaixo. Para COMMUNITY_COORDINATOR o campo correto e o
+  // multi-select "Comunidade(s) Vinculada(s)" - o backend ignora communityId
+  // single para esse role (deriva sempre de communityIds[0]).
   const shouldShowCommunityField = useMemo(() => {
     if (!currentUser) return false;
-    
+
     // Só mostra para SYSTEM_ADMIN, DIOCESAN_ADMIN e PARISH_ADMIN
     if (!['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN'].includes(currentUser.role)) {
       return false;
     }
-    
-    // E só quando o role selecionado é COMMUNITY_COORDINATOR
-    return formData.role === 'COMMUNITY_COORDINATOR';
+
+    return formData.role === 'PASTORAL_COORDINATOR';
   }, [currentUser, formData.role]);
 
+
+  const shouldShowPastoralField = useMemo(
+    () => formData.role === 'PASTORAL_COORDINATOR',
+    [formData.role],
+  );
+
+  // Consentimento LGPD só se aplica a roles que ganham um Member (perfil de fiel/voluntario)
+  const shouldShowConsentField = useMemo(
+    () => ['COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR'].includes(formData.role),
+    [formData.role],
+  );
   useEffect(() => {
     fetchData();
   }, []);
@@ -207,7 +277,7 @@ const UsersPage: React.FC = () => {
   const fetchData = async () => {
     try {
       const token = localStorage.getItem('token');
-      const [usersRes, diocesesRes, parishesRes, communitiesRes] = await Promise.all([
+      const [usersRes, diocesesRes, parishesRes, communitiesRes, pastoralsRes] = await Promise.all([
         axios.get(`${API_URL}/users`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
@@ -220,11 +290,22 @@ const UsersPage: React.FC = () => {
         axios.get(`${API_URL}/communities`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
+        axios.get(`${API_URL}/pastorals/community`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
       ]);
       setUsers(usersRes.data);
       setDioceses(diocesesRes.data);
       setParishes(parishesRes.data);
       setCommunities(communitiesRes.data);
+      setPastorals(
+        pastoralsRes.data.map((pastoral: any) => ({
+          id: pastoral.id,
+          name: pastoral.globalPastoral?.name || pastoral.name,
+          communityId: pastoral.communityId,
+          communityName: pastoral.community?.name,
+        })),
+      );
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       notify.error('Erro ao carregar dados');
@@ -236,9 +317,13 @@ const UsersPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validar communityIds para COMMUNITY_COORDINATOR
     if (formData.role === 'COMMUNITY_COORDINATOR' && formData.communityIds.length === 0) {
       notify.warning('Selecione pelo menos uma comunidade para o Coordenador de Comunidade');
+      return;
+    }
+
+    if (formData.role === 'PASTORAL_COORDINATOR' && formData.pastoralIds.length === 0) {
+      notify.warning('Selecione pelo menos uma pastoral para o Coordenador de Pastoral');
       return;
     }
 
@@ -251,6 +336,8 @@ const UsersPage: React.FC = () => {
         email: formData.email,
         phone: formData.phone,
         role: formData.role,
+        // Cargo eclesiástico: valor selecionado ou null para limpar
+        clergyTitle: formData.clergyTitle || null,
       };
 
       // Adicionar senha apenas se for criação
@@ -259,18 +346,26 @@ const UsersPage: React.FC = () => {
       }
 
       // Adicionar dioceseId, parishId, communityId baseado no role
-      if (['DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(formData.role)) {
+      if (['DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR'].includes(formData.role)) {
         dataToSend.dioceseId = formData.dioceseId || currentUser?.dioceseId || null;
       }
       
-      if (['PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(formData.role)) {
+      if (['PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR'].includes(formData.role)) {
         dataToSend.parishId = formData.parishId || currentUser?.parishId || null;
       }
       
       if (formData.role === 'COMMUNITY_COORDINATOR') {
         dataToSend.communityId = formData.communityId || currentUser?.communityId || null;
-        // Adicionar array de communityIds
         dataToSend.communityIds = formData.communityIds;
+      }
+
+      if (formData.role === 'PASTORAL_COORDINATOR') {
+        dataToSend.communityId = formData.communityId || currentUser?.communityId || null;
+        dataToSend.pastoralIds = formData.pastoralIds;
+      }
+
+      if (shouldShowConsentField) {
+        dataToSend.consentGiven = formData.consentGiven;
       }
 
       if (editingUser) {
@@ -303,10 +398,15 @@ const UsersPage: React.FC = () => {
       phone: user.phone || '',
       password: '',
       role: user.role,
-      dioceseId: user.diocese?.id || '',
-      parishId: '',
-      communityId: '',
-      communityIds: [],
+      clergyTitle: user.clergyTitle || '',
+      dioceseId: user.dioceseId || user.diocese?.id || '',
+      parishId: user.parishId || '',
+      communityId: user.communityId || user.communities?.[0]?.community.id || '',
+      communityIds: user.communities?.map((community) => community.community.id) || [],
+      pastoralIds: user.pastoralIds || user.pastorals?.map((pastoral) => pastoral.id) || [],
+      // Não sabemos o consentimento atual por aqui (não é exposto pela API de usuários).
+      // Fica desmarcado por padrão; marcar concede consentimento, deixar desmarcado nunca o revoga.
+      consentGiven: false,
     });
     setShowModal(true);
   };
@@ -360,11 +460,16 @@ const UsersPage: React.FC = () => {
       phone: '',
       password: '',
       role: 'FAITHFUL',
+      clergyTitle: '',
       dioceseId: '',
       parishId: '',
       communityId: '',
       communityIds: [],
+      pastoralIds: [],
+      consentGiven: false,
     });
+    setPastoralSearch('');
+    setCommunitySearch('');
   };
 
   const getRoleLabel = (role: string) => {
@@ -529,7 +634,7 @@ const UsersPage: React.FC = () => {
     const community = communities.find(c => c.id === filterCommunityId);
     if (community) {
       const parish = parishes.find(p => p.id === community.parishId);
-      return parish ? `${parish.name} › ${community.name}` : community.name;
+      return parish ? `${parish.name} - ${community.name}` : community.name;
     }
     return '';
   };
@@ -570,7 +675,7 @@ const UsersPage: React.FC = () => {
         <h1>Usuários</h1>
         <div className="header-actions">
           <button className="btn-export" onClick={handleExportCSV} title="Exportar CSV">
-            📥 Exportar
+            Exportar
           </button>
           <button className="btn-primary" onClick={() => setShowModal(true)}>
             + Novo Usuário
@@ -599,7 +704,7 @@ const UsersPage: React.FC = () => {
               const parish = parishes.find(p => p.id === community.parishId);
               return (
                 <option key={community.id} value={community.id}>
-                  {parish ? `${parish.name} › ${community.name}` : community.name}
+                  {parish ? `${parish.name} - ${community.name}` : community.name}
                 </option>
               );
             })}
@@ -634,14 +739,14 @@ const UsersPage: React.FC = () => {
               onClick={() => setViewMode('cards')}
               title="Visualização em Cards"
             >
-              📊 Cards
+              Cards
             </button>
             <button
               className={`toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
               onClick={() => setViewMode('table')}
               title="Visualização em Tabela"
             >
-              📋 Tabela
+              Tabela
             </button>
           </div>
           
@@ -676,25 +781,25 @@ const UsersPage: React.FC = () => {
               {filterCommunityId && (
                 <span className="filter-tag">
                   Comunidade: {getSelectedCommunityName()}
-                  <button onClick={() => setFilterCommunityId('')} className="remove-filter">×</button>
+                  <button onClick={() => setFilterCommunityId('')} className="remove-filter">x</button>
                 </span>
               )}
               {filterRole && (
                 <span className="filter-tag">
                   Função: {getSelectedRoleName()}
-                  <button onClick={() => setFilterRole('')} className="remove-filter">×</button>
+                  <button onClick={() => setFilterRole('')} className="remove-filter">x</button>
                 </span>
               )}
               {filterStatus && (
                 <span className="filter-tag">
                   Status: {filterStatus === 'active' ? 'Ativos' : 'Inativos'}
-                  <button onClick={() => setFilterStatus('')} className="remove-filter">×</button>
+                  <button onClick={() => setFilterStatus('')} className="remove-filter">x</button>
                 </span>
               )}
               {searchTerm && (
                 <span className="filter-tag">
                   Busca: "{searchTerm}"
-                  <button onClick={() => setSearchTerm('')} className="remove-filter">×</button>
+                  <button onClick={() => setSearchTerm('')} className="remove-filter">x</button>
                 </span>
               )}
             </div>
@@ -730,38 +835,59 @@ const UsersPage: React.FC = () => {
             <p className="no-results">Nenhum usuário encontrado.</p>
           ) : (
             paginatedUsers.map((user) => (
-              <div key={user.id} className="user-card">
-                <div className="card-header">
-                  <h3>{user.name}</h3>
-                  <div className="badges">
-                    <span className="role-badge">{getRoleShortLabel(user.role)}</span>
-                    <span className={`status-badge ${user.isActive ? 'active' : 'inactive'}`}>
-                      {user.isActive ? 'ATIVO' : 'INATIVO'}
-                    </span>
+              <div key={user.id} className="entity-card">
+                <div className="entity-card-header">
+                  <div className="entity-monogram" style={{ background: avatarColor(user.name) }}>
+                    {initials(user.name)}
+                  </div>
+                  <div className="entity-heading">
+                    <h3 className="entity-title">{user.name}</h3>
+                    <div className="entity-chips">
+                      <span className="entity-chip soft-blue">{getRoleShortLabel(user.role)}</span>
+                      <span className={`status-badge ${user.isActive ? 'green' : 'gray'}`}>
+                        {user.isActive ? 'Ativo' : 'Inativo'}
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <div className="card-body">
-                  <p><strong>📧 Email:</strong> {user.email}</p>
-                  {user.phone && <p><strong>📞 Telefone:</strong> {user.phone}</p>}
-                  {user.diocese && <p><strong>📍 Diocese:</strong> {user.diocese.name}</p>}
+                <div className="entity-card-body">
+                  <div className="entity-field">
+                    <span className="entity-field-label">Email</span>
+                    <span className="entity-field-value">{user.email}</span>
+                  </div>
+                  {user.phone && (
+                    <div className="entity-field">
+                      <span className="entity-field-label">Telefone</span>
+                      <span className="entity-field-value">{user.phone}</span>
+                    </div>
+                  )}
+                  {user.diocese && (
+                    <div className="entity-field">
+                      <span className="entity-field-label">Diocese</span>
+                      <span className="entity-field-value">{user.diocese.name}</span>
+                    </div>
+                  )}
                   {user.communities && user.communities.length > 0 && (
-                    <p>
-                      <strong>🏘️ Comunidades:</strong>{' '}
-                      {user.communities.map(uc => uc.community.name).join(', ')}
-                    </p>
+                    <div className="entity-field">
+                      <span className="entity-field-label">Comunidades</span>
+                      <span className="entity-field-value">{user.communities.map(uc => uc.community.name).join(', ')}</span>
+                    </div>
+                  )}
+                  {user.pastorals && user.pastorals.length > 0 && (
+                    <div className="entity-field">
+                      <span className="entity-field-label">Pastorais</span>
+                      <span className="entity-field-value">{user.pastorals.map((pastoral) => pastoral.name).join(', ')}</span>
+                    </div>
                   )}
                 </div>
-                <div className="card-actions">
-                  <button className="btn-edit" onClick={() => handleEdit(user)}>
+                <div className="entity-card-footer">
+                  <button className="entity-btn primary" onClick={() => handleEdit(user)}>
                     Editar
                   </button>
-                  <button 
-                    className={user.isActive ? 'btn-deactivate' : 'btn-activate'}
-                    onClick={() => handleToggleActive(user)}
-                  >
+                  <button className="entity-btn accent" onClick={() => handleToggleActive(user)}>
                     {user.isActive ? 'Desativar' : 'Ativar'}
                   </button>
-                  <button className="btn-delete" onClick={() => handleDelete(user.id)}>
+                  <button className="entity-btn danger" onClick={() => handleDelete(user.id)}>
                     Excluir
                   </button>
                 </div>
@@ -773,7 +899,7 @@ const UsersPage: React.FC = () => {
 
       {/* Visualização em Tabela */}
       {viewMode === 'table' && (
-        <div className="table-container">
+        <div className="table-container entity-table">
           <table className="data-table">
             <thead>
               <tr>
@@ -795,6 +921,7 @@ const UsersPage: React.FC = () => {
                   Função {sortField === 'role' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
                 <th>Status</th>
+                <th>Pastorais</th>
                 <th>Diocese</th>
                 <th className="sortable" onClick={() => handleSort('createdAt')}>
                   Criado em {sortField === 'createdAt' && (sortDirection === 'asc' ? '↑' : '↓')}
@@ -805,7 +932,7 @@ const UsersPage: React.FC = () => {
             <tbody>
               {paginatedUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="no-results-cell">Nenhum usuário encontrado.</td>
+                  <td colSpan={10} className="no-results-cell">Nenhum usuário encontrado.</td>
                 </tr>
               ) : (
                 paginatedUsers.map((user) => (
@@ -823,27 +950,28 @@ const UsersPage: React.FC = () => {
                     <td>{user.email}</td>
                     <td>{user.phone || '-'}</td>
                     <td>
-                      <span className="role-badge-small">{getRoleShortLabel(user.role)}</span>
+                      <span className="entity-chip soft-blue">{getRoleShortLabel(user.role)}</span>
                     </td>
                     <td>
-                      <span className={`status-badge-small ${user.isActive ? 'active' : 'inactive'}`}>
+                      <span className={`status-badge ${user.isActive ? 'green' : 'gray'}`}>
                         {user.isActive ? 'Ativo' : 'Inativo'}
                       </span>
                     </td>
+                    <td>{user.pastorals?.map((pastoral) => pastoral.name).join(', ') || '-'}</td>
                     <td>{user.diocese?.name || '-'}</td>
                     <td>{new Date(user.createdAt).toLocaleDateString('pt-BR')}</td>
                     <td className="actions-cell">
-                      <button className="btn-icon" onClick={() => handleEdit(user)} title="Editar">
+                      <button className="entity-icon-btn" onClick={() => handleEdit(user)} title="Editar">
                         ✏️
                       </button>
-                      <button 
-                        className="btn-icon" 
+                      <button
+                        className="entity-icon-btn"
                         onClick={() => handleToggleActive(user)}
                         title={user.isActive ? 'Desativar' : 'Ativar'}
                       >
-                        {user.isActive ? '🔒' : '🔓'}
+                        {user.isActive ? '🚫' : '✅'}
                       </button>
-                      <button className="btn-icon danger" onClick={() => handleDelete(user.id)} title="Excluir">
+                      <button className="entity-icon-btn danger" onClick={() => handleDelete(user.id)} title="Excluir">
                         🗑️
                       </button>
                     </td>
@@ -863,14 +991,14 @@ const UsersPage: React.FC = () => {
             disabled={currentPage === 1}
             onClick={() => setCurrentPage(1)}
           >
-            ⏮️
+            {'<<'}
           </button>
           <button
             className="pagination-btn"
             disabled={currentPage === 1}
             onClick={() => setCurrentPage(currentPage - 1)}
           >
-            ◀️
+            {'<'}
           </button>
           
           <span className="pagination-info">
@@ -882,14 +1010,14 @@ const UsersPage: React.FC = () => {
             disabled={currentPage === totalPages}
             onClick={() => setCurrentPage(currentPage + 1)}
           >
-            ▶️
+            {'>'}
           </button>
           <button
             className="pagination-btn"
             disabled={currentPage === totalPages}
             onClick={() => setCurrentPage(totalPages)}
           >
-            ⏭️
+            {'>>'}
           </button>
         </div>
       )}
@@ -945,7 +1073,19 @@ const UsersPage: React.FC = () => {
                 <select
                   required
                   value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value, dioceseId: '', parishId: '', communityId: '' })}
+                  onChange={(e) => {
+                    setFormData({
+                      ...formData,
+                      role: e.target.value,
+                      dioceseId: '',
+                      parishId: '',
+                      communityId: '',
+                      communityIds: [],
+                      pastoralIds: [],
+                    });
+                    setPastoralSearch('');
+                    setCommunitySearch('');
+                  }}
                 >
                   <option value="">Selecione uma função</option>
                   {availableRoles.map((role) => (
@@ -956,6 +1096,22 @@ const UsersPage: React.FC = () => {
                 </select>
               </div>
 
+              <div className="form-group">
+                <label>Cargo eclesiástico</label>
+                <select
+                  value={formData.clergyTitle}
+                  onChange={(e) => setFormData({ ...formData, clergyTitle: e.target.value as typeof formData.clergyTitle })}
+                >
+                  <option value="">Nenhum (leigo / não ordenado)</option>
+                  <option value="BISHOP">Bispo</option>
+                  <option value="PRIEST">Pároco / Padre</option>
+                  <option value="DEACON">Diácono</option>
+                </select>
+                <small style={{ color: '#888', fontSize: '0.8rem' }}>
+                  Define o rótulo das mensagens: "Palavra do Bispo/Pároco/Diácono".
+                </small>
+              </div>
+
               {shouldShowDioceseField && (
                 <div className="form-group">
                   <label>Diocese *</label>
@@ -963,7 +1119,14 @@ const UsersPage: React.FC = () => {
                     required
                     value={formData.dioceseId}
                     onChange={(e) => {
-                      setFormData({ ...formData, dioceseId: e.target.value, parishId: '', communityId: '' });
+                      setFormData({
+                        ...formData,
+                        dioceseId: e.target.value,
+                        parishId: '',
+                        communityId: '',
+                        communityIds: [],
+                        pastoralIds: [],
+                      });
                     }}
                   >
                     <option value="">Selecione uma diocese</option>
@@ -983,7 +1146,13 @@ const UsersPage: React.FC = () => {
                     required
                     value={formData.parishId}
                     onChange={(e) => {
-                      setFormData({ ...formData, parishId: e.target.value, communityId: '' });
+                      setFormData({
+                        ...formData,
+                        parishId: e.target.value,
+                        communityId: '',
+                        communityIds: [],
+                        pastoralIds: [],
+                      });
                     }}
                   >
                     <option value="">Selecione uma paróquia</option>
@@ -996,13 +1165,15 @@ const UsersPage: React.FC = () => {
                 </div>
               )}
 
-              {shouldShowCommunityField && formData.parishId && (
+              {shouldShowCommunityField && (formData.parishId || currentUser?.parishId) && (
                 <div className="form-group">
                   <label>Comunidade *</label>
                   <select
                     required
                     value={formData.communityId}
-                    onChange={(e) => setFormData({ ...formData, communityId: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, communityId: e.target.value, pastoralIds: [] })
+                    }
                   >
                     <option value="">Selecione uma comunidade</option>
                     {availableCommunities.map((community) => (
@@ -1014,35 +1185,132 @@ const UsersPage: React.FC = () => {
                 </div>
               )}
 
+              {shouldShowPastoralField && (availablePastorals.length > 0 || currentUser?.communityId) && (
+                <div className="form-group">
+                  <label>Pastoral(is) Vinculada(s) *</label>
+                  {availablePastorals.length === 0 ? (
+                    <p className="checklist-empty">Selecione a comunidade para listar as pastorais</p>
+                  ) : (
+                    <>
+                      {availablePastorals.length > 6 && (
+                        <input
+                          type="text"
+                          className="checklist-search"
+                          placeholder={`Buscar entre ${availablePastorals.length} pastorais...`}
+                          value={pastoralSearch}
+                          onChange={(e) => setPastoralSearch(e.target.value)}
+                        />
+                      )}
+                      <div className="checklist-box">
+                        {filteredAvailablePastorals.length === 0 ? (
+                          <p className="checklist-empty">Nenhuma pastoral encontrada para "{pastoralSearch}"</p>
+                        ) : (
+                          filteredAvailablePastorals.map((pastoral) => (
+                            <label key={pastoral.id} className="checklist-item">
+                              <input
+                                type="checkbox"
+                                checked={formData.pastoralIds.includes(pastoral.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFormData({
+                                      ...formData,
+                                      pastoralIds: [...formData.pastoralIds, pastoral.id],
+                                      communityId: formData.communityId || pastoral.communityId,
+                                    });
+                                  } else {
+                                    setFormData({
+                                      ...formData,
+                                      pastoralIds: formData.pastoralIds.filter((id) => id !== pastoral.id),
+                                    });
+                                  }
+                                }}
+                              />
+                              <span>{pastoral.name}</span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </>
+                  )}
+                  {formData.pastoralIds.length === 0 ? (
+                    <small style={{ color: '#e74c3c' }}>Selecione pelo menos uma pastoral</small>
+                  ) : (
+                    <small className="checklist-count">{formData.pastoralIds.length} pastoral(is) selecionada(s)</small>
+                  )}
+                </div>
+              )}
+
               {formData.role === 'COMMUNITY_COORDINATOR' && (formData.parishId || currentUser?.parishId) && (
                 <div className="form-group">
                   <label>Comunidade(s) Vinculada(s) *</label>
-                  <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '8px', maxHeight: '150px', overflowY: 'auto' }}>
-                    {availableCommunities.length === 0 ? (
-                      <p style={{ margin: 0, color: '#666' }}>Nenhuma comunidade disponível</p>
-                    ) : (
-                      availableCommunities.map((community) => (
-                        <label key={community.id} style={{ display: 'block', marginBottom: '4px', cursor: 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={formData.communityIds.includes(community.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setFormData({ ...formData, communityIds: [...formData.communityIds, community.id] });
-                              } else {
-                                setFormData({ ...formData, communityIds: formData.communityIds.filter(id => id !== community.id) });
-                              }
-                            }}
-                            style={{ marginRight: '8px' }}
-                          />
-                          {community.name}
-                        </label>
-                      ))
-                    )}
-                  </div>
-                  {formData.communityIds.length === 0 && (
-                    <small style={{ color: '#e74c3c' }}>Selecione pelo menos uma comunidade</small>
+                  {availableCommunities.length === 0 ? (
+                    <p className="checklist-empty">Nenhuma comunidade disponível</p>
+                  ) : (
+                    <>
+                      {availableCommunities.length > 6 && (
+                        <input
+                          type="text"
+                          className="checklist-search"
+                          placeholder={`Buscar entre ${availableCommunities.length} comunidades...`}
+                          value={communitySearch}
+                          onChange={(e) => setCommunitySearch(e.target.value)}
+                        />
+                      )}
+                      <div className="checklist-box">
+                        {filteredAvailableCommunities.length === 0 ? (
+                          <p className="checklist-empty">Nenhuma comunidade encontrada para "{communitySearch}"</p>
+                        ) : (
+                          filteredAvailableCommunities.map((community) => (
+                            <label key={community.id} className="checklist-item">
+                              <input
+                                type="checkbox"
+                                checked={formData.communityIds.includes(community.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setFormData({ ...formData, communityIds: [...formData.communityIds, community.id] });
+                                  } else {
+                                    setFormData({ ...formData, communityIds: formData.communityIds.filter(id => id !== community.id) });
+                                  }
+                                }}
+                              />
+                              <span>{community.name}</span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                    </>
                   )}
+                  {formData.communityIds.length === 0 ? (
+                    <small style={{ color: '#e74c3c' }}>Selecione pelo menos uma comunidade</small>
+                  ) : (
+                    <small className="checklist-count">{formData.communityIds.length} comunidade(s) selecionada(s)</small>
+                  )}
+                </div>
+              )}
+
+              {shouldShowConsentField && (
+                <div className="form-group">
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '10px',
+                      cursor: 'pointer',
+                      fontWeight: 'normal',
+                      marginBottom: 0,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={formData.consentGiven}
+                      onChange={(e) => setFormData({ ...formData, consentGiven: e.target.checked })}
+                      style={{ marginTop: '2px', width: '16px', height: '16px', flexShrink: 0 }}
+                    />
+                    <span style={{ fontSize: '0.85rem', color: '#666', lineHeight: 1.4 }}>
+                      Confirmo que este usuário consentiu com o tratamento de dados pessoais (LGPD).
+                      {editingUser && ' Deixar desmarcado não revoga um consentimento já concedido.'}
+                    </span>
+                  </label>
                 </div>
               )}
 

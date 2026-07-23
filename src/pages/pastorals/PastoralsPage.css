@@ -660,3 +660,705 @@
   background-color: #95a5a6;
   color: white;
 }
+
+.community-pastoral-page {
+  max-width: 1380px;
+  padding: 28px 24px 40px;
+}
+
+.community-pastoral-page .page-header {
+  margin-bottom: 0;
+}
+
+.community-pastoral-page .back-button,
+.community-pastoral-page .edit-button,
+.community-pastoral-page .add-button,
+.community-pastoral-page .remove-button,
+.community-pastoral-page .toggle-status-button {
+  min-height: 42px;
+  border-radius: 12px;
+  padding: 0.72rem 1rem;
+  font-size: 0.94rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+.community-pastoral-page .back-button:hover,
+.community-pastoral-page .edit-button:hover,
+.community-pastoral-page .add-button:hover,
+.community-pastoral-page .remove-button:hover,
+.community-pastoral-page .toggle-status-button:hover {
+  transform: translateY(-1px);
+}
+
+.community-pastoral-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 22px;
+  padding: 28px;
+  margin-bottom: 22px;
+  border: 1px solid #e4ebf3;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #ffffff 0%, #f6f9fc 100%);
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+}
+
+.community-pastoral-hero-main h1 {
+  margin: 0;
+  font-size: 2.35rem;
+  line-height: 1.1;
+  color: #223a57;
+}
+
+.community-pastoral-context-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 18px 0 14px;
+}
+
+.community-pastoral-context-pill,
+.community-pastoral-status-badge,
+.community-pastoral-mini-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.community-pastoral-context-pill {
+  background: #e9f2fb;
+  color: #29527a;
+}
+
+.community-pastoral-status-badge.active,
+.community-pastoral-mini-badge.is-green {
+  background: #dcf4e7;
+  color: #1d6a43;
+}
+
+.community-pastoral-status-badge.inactive,
+.community-pastoral-mini-badge.is-slate {
+  background: #edf1f5;
+  color: #5f7081;
+}
+
+.community-pastoral-mini-badge.is-blue {
+  background: #dcecff;
+  color: #2457a6;
+}
+
+.community-pastoral-summary {
+  max-width: 760px;
+  margin: 14px 0 0;
+  color: #5d7185;
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.community-pastoral-hero-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-self: start;
+}
+
+.community-pastoral-hero-actions .edit-button {
+  background: #2f7fd1;
+  color: #fff;
+}
+
+.community-pastoral-hero-actions .add-button {
+  background: #1f9d61;
+  color: #fff;
+}
+
+.community-pastoral-page .toggle-status-button {
+  margin-left: 0;
+  color: #fff;
+}
+
+.community-pastoral-page .toggle-status-button--warning {
+  background: #d97706;
+}
+
+.community-pastoral-page .toggle-status-button--success {
+  background: #15803d;
+}
+
+.community-pastoral-meta-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.community-pastoral-meta-card,
+.community-pastoral-stat-card,
+.community-pastoral-section {
+  border: 1px solid #e6edf5;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.05);
+}
+
+.community-pastoral-meta-card {
+  padding: 16px 18px;
+}
+
+.community-pastoral-meta-label,
+.community-pastoral-stat-label,
+.community-pastoral-detail-label,
+.community-pastoral-section-kicker {
+  display: block;
+  color: #6b7d90;
+  letter-spacing: 0.01em;
+}
+
+.community-pastoral-meta-label,
+.community-pastoral-stat-label,
+.community-pastoral-section-kicker {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.community-pastoral-meta-value {
+  display: block;
+  margin-top: 8px;
+  color: #23364d;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.community-pastoral-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.community-pastoral-stat-card {
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.community-pastoral-stat-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  border-radius: 999px;
+}
+
+.community-pastoral-stat-card--blue::before {
+  background: #2f7fd1;
+}
+
+.community-pastoral-stat-card--violet::before {
+  background: #7c3aed;
+}
+
+.community-pastoral-stat-card--amber::before {
+  background: #d97706;
+}
+
+.community-pastoral-stat-card--green::before {
+  background: #1f9d61;
+}
+
+.community-pastoral-stat-value {
+  display: block;
+  margin-top: 12px;
+  color: #20364f;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.community-pastoral-content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.community-pastoral-section {
+  padding: 22px 24px;
+}
+
+.community-pastoral-section--members {
+  grid-row: span 3;
+}
+
+.community-pastoral-section--list {
+  grid-column: 1 / -1;
+  grid-row: auto;
+}
+
+.community-pastoral-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.community-pastoral-section-heading h2 {
+  margin: 6px 0 0;
+  color: #223a57;
+  font-size: 1.35rem;
+}
+
+.community-pastoral-section-heading p {
+  margin: 8px 0 0;
+  color: #6b7d90;
+  line-height: 1.5;
+}
+
+.community-pastoral-action-group {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.community-pastoral-member-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.community-pastoral-member-search-group,
+.community-pastoral-member-filter-group {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.community-pastoral-member-search,
+.community-pastoral-member-filter {
+  min-height: 42px;
+  border: 1px solid #d5e1ec;
+  border-radius: 12px;
+  background: #fff;
+  color: #23364d;
+  font-size: 0.94rem;
+  padding: 0 14px;
+}
+
+.community-pastoral-member-search {
+  width: 100%;
+}
+
+.community-pastoral-member-filter {
+  min-width: 190px;
+}
+
+.community-pastoral-member-search:focus,
+.community-pastoral-member-filter:focus {
+  outline: none;
+  border-color: #8bb8e8;
+  box-shadow: 0 0 0 4px rgba(47, 127, 209, 0.12);
+}
+
+.community-pastoral-member-count {
+  color: #66788b;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.community-pastoral-view-toggle {
+  display: inline-flex;
+  padding: 4px;
+  border: 1px solid #d5e1ec;
+  border-radius: 12px;
+  background: #f6f9fc;
+}
+
+.community-pastoral-view-button {
+  min-width: 78px;
+  min-height: 38px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #63778d;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.community-pastoral-view-button.is-active {
+  background: #ffffff;
+  color: #224261;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+}
+
+.community-pastoral-member-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.community-pastoral-member-list {
+  display: grid;
+  gap: 12px;
+}
+
+.community-pastoral-member-list-wrapper {
+  display: grid;
+  gap: 8px;
+}
+
+.community-pastoral-member-list-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(120px, 0.8fr) minmax(140px, 0.85fr) minmax(110px, 0.7fr) minmax(220px, 0.95fr);
+  gap: 12px;
+  padding: 0 14px;
+  color: #70849a;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.community-pastoral-member-list-head-actions {
+  text-align: center;
+}
+
+.community-pastoral-member-card,
+.community-pastoral-collection-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #dbe6f1;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbfd 100%);
+}
+
+.community-pastoral-member-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(120px, 0.8fr) minmax(140px, 0.85fr) minmax(110px, 0.7fr) minmax(220px, 0.95fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid #dbe6f1;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbfd 100%);
+}
+
+.community-pastoral-member-top,
+.community-pastoral-collection-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.community-pastoral-member-identity {
+  display: flex;
+  gap: 14px;
+  min-width: 0;
+}
+
+.community-pastoral-member-row-primary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.community-pastoral-member-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #2f7fd1 0%, #4ca1ef 100%);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.community-pastoral-member-copy,
+.community-pastoral-collection-header h3 {
+  min-width: 0;
+}
+
+.community-pastoral-member-copy h3,
+.community-pastoral-collection-header h3 {
+  margin: 0;
+  color: #23364d;
+  font-size: 1rem;
+}
+
+.community-pastoral-member-copy p,
+.community-pastoral-collection-description,
+.community-pastoral-modal-note {
+  margin: 0;
+  color: #66788b;
+  line-height: 1.55;
+}
+
+.community-pastoral-member-row .community-pastoral-member-copy p {
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.community-pastoral-modal-note {
+  margin-top: 10px;
+  font-size: 0.9rem;
+}
+
+.community-pastoral-member-row-cell {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.community-pastoral-row-label {
+  color: #70849a;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.community-pastoral-row-value {
+  color: #23364d;
+  font-size: 0.92rem;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.community-pastoral-page .role-badge {
+  flex-shrink: 0;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: none;
+}
+
+.community-pastoral-detail-list {
+  display: grid;
+  gap: 10px;
+}
+
+.community-pastoral-detail-list--compact {
+  gap: 8px;
+}
+
+.community-pastoral-detail-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.community-pastoral-detail-label {
+  flex-shrink: 0;
+  min-width: 90px;
+  font-size: 0.88rem;
+}
+
+.community-pastoral-detail-value {
+  color: #23364d;
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.community-pastoral-action-row {
+  display: flex;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.community-pastoral-action-row--inline {
+  margin-top: 0;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.community-pastoral-action-row--inline .edit-button,
+.community-pastoral-action-row--inline .remove-button {
+  min-width: 104px;
+}
+
+.community-pastoral-action-row .edit-button,
+.community-pastoral-action-row .remove-button {
+  flex: 1;
+}
+
+.community-pastoral-page .remove-button {
+  background: #d94841;
+  color: #fff;
+}
+
+.community-pastoral-page .edit-button {
+  background: #2f7fd1;
+  color: #fff;
+}
+
+.community-pastoral-page .add-button {
+  background: #1f9d61;
+  color: #fff;
+}
+
+.community-pastoral-empty-state {
+  padding: 28px 22px;
+  border: 1px dashed #d4e0ec;
+  border-radius: 18px;
+  background: #f8fbfd;
+  text-align: center;
+}
+
+.community-pastoral-empty-state strong {
+  display: block;
+  color: #2a415d;
+  font-size: 1rem;
+}
+
+.community-pastoral-empty-state p {
+  margin: 10px 0 0;
+  color: #6b7d90;
+  line-height: 1.6;
+}
+
+.community-pastoral-collection-list {
+  display: grid;
+  gap: 12px;
+}
+
+@media (max-width: 1260px) {
+  .community-pastoral-hero,
+  .community-pastoral-content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .community-pastoral-section--members {
+    grid-row: auto;
+  }
+
+  .community-pastoral-hero-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .community-pastoral-hero-actions button {
+    flex: 1 1 220px;
+  }
+
+  .community-pastoral-member-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .community-pastoral-page {
+    padding: 18px 14px 28px;
+  }
+
+  .community-pastoral-meta-grid,
+  .community-pastoral-stat-grid,
+  .community-pastoral-member-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .community-pastoral-member-list-head {
+    display: none;
+  }
+
+  .community-pastoral-member-row {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+
+  .community-pastoral-section-header,
+  .community-pastoral-member-top,
+  .community-pastoral-collection-header,
+  .community-pastoral-detail-item {
+    flex-direction: column;
+  }
+
+  .community-pastoral-detail-value {
+    text-align: left;
+  }
+
+  .community-pastoral-member-row-cell {
+    display: grid;
+    gap: 4px;
+  }
+
+  .community-pastoral-member-row-cell::before {
+    content: attr(data-label);
+    color: #70849a;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+}
+
+@media (max-width: 640px) {
+  .community-pastoral-hero {
+    padding: 20px;
+  }
+
+  .community-pastoral-hero-main h1 {
+    font-size: 1.8rem;
+  }
+
+  .community-pastoral-meta-grid,
+  .community-pastoral-stat-grid,
+  .community-pastoral-member-grid,
+  .community-pastoral-member-row {
+    grid-template-columns: 1fr;
+  }
+
+  .community-pastoral-action-row,
+  .community-pastoral-action-group,
+  .community-pastoral-hero-actions,
+  .community-pastoral-page .modal-actions {
+    flex-direction: column;
+  }
+
+  .community-pastoral-view-toggle {
+    width: 100%;
+  }
+
+  .community-pastoral-view-button {
+    flex: 1;
+  }
+
+  .community-pastoral-action-row--inline {
+    min-width: 0;
+  }
+
+  .community-pastoral-member-filter-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .community-pastoral-member-filter {
+    width: 100%;
+  }
+
+  .community-pastoral-member-row-primary {
+    align-items: flex-start;
+  }
+}

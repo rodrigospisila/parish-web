@@ -10,6 +10,32 @@ interface RecurrenceFormProps {
   onChange: (field: string, value: any) => void;
 }
 
+const recurrenceTypes = [
+  { value: 'DAILY', label: 'Diário' },
+  { value: 'WEEKLY', label: 'Semanal' },
+  { value: 'MONTHLY', label: 'Mensal' },
+  { value: 'CUSTOM', label: 'Personalizado' },
+];
+
+const weekDays = [
+  { value: 0, label: 'Dom' },
+  { value: 1, label: 'Seg' },
+  { value: 2, label: 'Ter' },
+  { value: 3, label: 'Qua' },
+  { value: 4, label: 'Qui' },
+  { value: 5, label: 'Sex' },
+  { value: 6, label: 'Sáb' },
+];
+
+const parseSelectedDays = (recurrenceDays: string) => {
+  try {
+    const days = recurrenceDays ? JSON.parse(recurrenceDays) : [];
+    return Array.isArray(days) ? days : [];
+  } catch {
+    return [];
+  }
+};
+
 const RecurrenceForm: React.FC<RecurrenceFormProps> = ({
   isRecurring,
   recurrenceType,
@@ -18,48 +44,28 @@ const RecurrenceForm: React.FC<RecurrenceFormProps> = ({
   recurrenceEndDate,
   onChange,
 }) => {
-  const recurrenceTypes = [
-    { value: 'DAILY', label: 'Diário' },
-    { value: 'WEEKLY', label: 'Semanal' },
-    { value: 'MONTHLY', label: 'Mensal' },
-    { value: 'CUSTOM', label: 'Personalizado' },
-  ];
-
-  const weekDays = [
-    { value: 0, label: 'Dom' },
-    { value: 1, label: 'Seg' },
-    { value: 2, label: 'Ter' },
-    { value: 3, label: 'Qua' },
-    { value: 4, label: 'Qui' },
-    { value: 5, label: 'Sex' },
-    { value: 6, label: 'Sáb' },
-  ];
-
-  const selectedDays = recurrenceDays ? JSON.parse(recurrenceDays) : [];
+  const selectedDays = parseSelectedDays(recurrenceDays);
 
   const toggleDay = (day: number) => {
     const days = selectedDays.includes(day)
-      ? selectedDays.filter((d: number) => d !== day)
+      ? selectedDays.filter((selectedDay: number) => selectedDay !== day)
       : [...selectedDays, day].sort((a, b) => a - b);
     onChange('recurrenceDays', JSON.stringify(days));
   };
 
-  if (!isRecurring) return null;
+  if (!isRecurring) {
+    return null;
+  }
 
   return (
     <div className="recurrence-form">
       <div className="recurrence-header">
-        <span className="recurrence-icon">🔄</span>
-        <h4>Configurar Recorrência</h4>
+        <h4>Configurar recorrência</h4>
       </div>
 
       <div className="form-group">
-        <label>Tipo de Recorrência *</label>
-        <select
-          value={recurrenceType}
-          onChange={(e) => onChange('recurrenceType', e.target.value)}
-          required
-        >
+        <label>Tipo de recorrência *</label>
+        <select value={recurrenceType} onChange={(event) => onChange('recurrenceType', event.target.value)} required>
           <option value="">Selecione o tipo</option>
           {recurrenceTypes.map((type) => (
             <option key={type.value} value={type.value}>
@@ -82,7 +88,7 @@ const RecurrenceForm: React.FC<RecurrenceFormProps> = ({
             min="1"
             max="12"
             value={recurrenceInterval}
-            onChange={(e) => onChange('recurrenceInterval', parseInt(e.target.value))}
+            onChange={(event) => onChange('recurrenceInterval', parseInt(event.target.value, 10) || 1)}
             required
           />
         </div>
@@ -90,7 +96,7 @@ const RecurrenceForm: React.FC<RecurrenceFormProps> = ({
 
       {recurrenceType === 'CUSTOM' && (
         <div className="form-group">
-          <label>Dias da Semana *</label>
+          <label>Dias da semana *</label>
           <div className="weekday-selector">
             {weekDays.map((day) => (
               <button
@@ -103,18 +109,12 @@ const RecurrenceForm: React.FC<RecurrenceFormProps> = ({
               </button>
             ))}
           </div>
-          <small className="form-hint">Selecione os dias da semana em que o evento se repete</small>
         </div>
       )}
 
       <div className="form-group">
-        <label>Data de Término</label>
-        <input
-          type="date"
-          value={recurrenceEndDate}
-          onChange={(e) => onChange('recurrenceEndDate', e.target.value)}
-        />
-        <small className="form-hint">Deixe em branco para repetir indefinidamente</small>
+        <label>Data de término</label>
+        <input type="date" value={recurrenceEndDate} onChange={(event) => onChange('recurrenceEndDate', event.target.value)} />
       </div>
 
       <div className="recurrence-summary">
@@ -122,14 +122,12 @@ const RecurrenceForm: React.FC<RecurrenceFormProps> = ({
         {recurrenceType === 'DAILY' && `Repete a cada ${recurrenceInterval} dia(s)`}
         {recurrenceType === 'WEEKLY' && `Repete a cada ${recurrenceInterval} semana(s)`}
         {recurrenceType === 'MONTHLY' && `Repete a cada ${recurrenceInterval} mês(es)`}
-        {recurrenceType === 'CUSTOM' && selectedDays.length > 0 && (
-          <>
-            Repete toda(s):{' '}
-            {selectedDays
-              .map((d: number) => weekDays.find((wd) => wd.value === d)?.label)
-              .join(', ')}
-          </>
-        )}
+        {recurrenceType === 'CUSTOM' &&
+          selectedDays.length > 0 &&
+          `Repete em: ${selectedDays
+            .map((day: number) => weekDays.find((weekDay) => weekDay.value === day)?.label)
+            .join(', ')}`}
+        {!recurrenceType && 'Selecione uma recorrência'}
         {recurrenceEndDate && ` até ${new Date(recurrenceEndDate).toLocaleDateString('pt-BR')}`}
       </div>
     </div>

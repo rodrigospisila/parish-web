@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { notify, confirm } from '../../services/notification.service';
+import { initials } from '../../components/SaintAvatar';
 import './PastoralsPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -153,31 +154,40 @@ const GlobalPastoralsPage: React.FC = () => {
         {filteredPastorals.map((pastoral) => (
           <div
             key={pastoral.id}
-            className="pastoral-card"
+            className="entity-card"
             style={{ borderLeft: `4px solid ${pastoral.colorHex || '#3498db'}` }}
           >
-            <div className="pastoral-header">
-              <h3>{pastoral.name}</h3>
-              <span className={`status-badge ${pastoral.status.toLowerCase()}`}>
-                {pastoral.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
-              </span>
+            <div className="entity-card-header">
+              <div className="entity-monogram" style={{ background: pastoral.colorHex || '#3498db' }}>
+                {initials(pastoral.name)}
+              </div>
+              <div className="entity-heading">
+                <h3 className="entity-title">{pastoral.name}</h3>
+                <div className="entity-chips">
+                  <span className={`status-badge ${pastoral.status === 'ACTIVE' ? 'green' : 'gray'}`}>
+                    {pastoral.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
+                  </span>
+                </div>
+              </div>
             </div>
 
-            {pastoral.description && (
-              <p className="pastoral-description">{pastoral.description}</p>
-            )}
+            <div className="entity-card-body">
+              {pastoral.description && (
+                <p style={{ margin: '0 0 0.5rem 0', color: '#5a6a7a', fontSize: '0.9rem' }}>{pastoral.description}</p>
+              )}
+              {pastoral.mission && (
+                <div className="entity-field">
+                  <span className="entity-field-label">Missão</span>
+                  <span className="entity-field-value">{pastoral.mission}</span>
+                </div>
+              )}
+            </div>
 
-            {pastoral.mission && (
-              <div className="pastoral-mission">
-                <strong>Missão:</strong> {pastoral.mission}
-              </div>
-            )}
-
-            <div className="pastoral-actions">
-              <button onClick={() => handleEdit(pastoral)} className="btn-edit">
+            <div className="entity-card-footer">
+              <button onClick={() => handleEdit(pastoral)} className="entity-btn primary">
                 Editar
               </button>
-              <button onClick={() => handleDelete(pastoral.id)} className="btn-delete">
+              <button onClick={() => handleDelete(pastoral.id)} className="entity-btn danger">
                 Excluir
               </button>
             </div>

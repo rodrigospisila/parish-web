@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useAuth } from '../../contexts/AuthContext';
 import { notify, confirm } from '../../services/notification.service';
+import { initials } from '../../components/SaintAvatar';
 import './PastoralsPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -39,6 +41,7 @@ interface CommunityPastoral {
 
 const CommunityPastoralsPage: React.FC = () => {
   const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
   const [pastorals, setPastorals] = useState<CommunityPastoral[]>([]);
   const [globalPastorals, setGlobalPastorals] = useState<GlobalPastoral[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -57,6 +60,31 @@ const CommunityPastoralsPage: React.FC = () => {
     notes: '',
     foundedAt: '',
     status: 'ACTIVE',
+  });
+
+  // Verificar se o usuário pode gerenciar pastorais
+  const canManagePastorals = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR'].includes(currentUser?.role || '');
+
+  // Filtrar comunidades disponíveis baseado no role
+  const scopedCommunities = communities.filter((community) => {
+    if (currentUser?.role === 'COMMUNITY_COORDINATOR') {
+      return community.id === currentUser.communityId;
+    }
+    if (currentUser?.role === 'PASTORAL_COORDINATOR') {
+      return community.id === currentUser.communityId;
+    }
+    return true;
+  });
+
+  // Filtrar pastorais disponíveis baseado no role
+  const scopedPastorals = pastorals.filter((pastoral) => {
+    if (currentUser?.role === 'PASTORAL_COORDINATOR' && currentUser.pastoralIds?.length) {
+      return currentUser.pastoralIds.includes(pastoral.id);
+    }
+    if (currentUser?.role === 'COMMUNITY_COORDINATOR') {
+      return pastoral.community.id === currentUser.communityId;
+    }
+    return true;
   });
 
   useEffect(() => {
@@ -90,6 +118,12 @@ const CommunityPastoralsPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!canManagePastorals) {
+      notify.error('Você não tem permissão para gerenciar pastorais');
+      return;
+    }
+
     try {
       const token = localStorage.getItem('token');
       const url = editingPastoral
@@ -98,7 +132,20 @@ const CommunityPastoralsPage: React.FC = () => {
 
       const method = editingPastoral ? 'patch' : 'post';
 
-      await axios[method](url, formData, {
+      // Campos opcionais vazios viram null (o backend rejeita '' em foundedAt;
+      // null passa no @IsOptional e limpa o campo na edição)
+      const payload = {
+        globalPastoralId: formData.globalPastoralId,
+        communityId: formData.communityId,
+        status: formData.status,
+        description: formData.description.trim() || null,
+        mission: formData.mission.trim() || null,
+        photoUrl: formData.photoUrl.trim() || null,
+        notes: formData.notes.trim() || null,
+        foundedAt: formData.foundedAt || null,
+      };
+
+      await axios[method](url, payload, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -158,12 +205,23 @@ const CommunityPastoralsPage: React.FC = () => {
     setEditingPastoral(null);
   };
 
-  const filteredPastorals = pastorals.filter((p) =>
+  const filteredPastorals = scopedPastorals.filter((p) =>
     p.globalPastoral.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.community.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (loading) return <div className="loading">Carregando...</div>;
+
+  if (!canManagePastorals) {
+    return (
+      <div className="pastorals-page">
+        <div style={{ padding: '2rem', textAlign: 'center' }}>
+          <h2 style={{ color: '#e74c3c' }}>Acesso Negado</h2>
+          <p>Você não tem permissão para acessar esta página.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="pastorals-page">
@@ -187,7 +245,7 @@ const CommunityPastoralsPage: React.FC = () => {
           style={{ flex: '0 0 300px' }}
         >
           <option value="">Todas as Comunidades</option>
-          {communities.map((c) => (
+          {scopedCommunities.map((c) => (
             <option key={c.id} value={c.id}>
               {c.parish ? `${c.parish.name} › ${c.name}` : c.name}
             </option>
@@ -199,6 +257,8 @@ const CommunityPastoralsPage: React.FC = () => {
             setShowModal(true);
           }}
           className="btn-primary"
+          disabled={currentUser?.role === 'PASTORAL_COORDINATOR'}
+          title={currentUser?.role === 'PASTORAL_COORDINATOR' ? 'Coordenadores de pastoral não podem criar novas pastorais' : ''}
         >
           + Nova Pastoral
         </button>
@@ -208,48 +268,64 @@ const CommunityPastoralsPage: React.FC = () => {
         {filteredPastorals.map((pastoral) => (
           <div
             key={pastoral.id}
-            className="pastoral-card"
+            className="entity-card"
             style={{ borderLeft: `4px solid ${pastoral.globalPastoral.colorHex || '#3498db'}` }}
           >
-            <div className="pastoral-header">
-              <h3>{pastoral.globalPastoral.name}</h3>
-              <span className={`status-badge ${pastoral.status.toLowerCase()}`}>
-                {pastoral.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
-              </span>
+            <div className="entity-card-header">
+              <div className="entity-monogram" style={{ background: pastoral.globalPastoral.colorHex || '#3498db' }}>
+                {initials(pastoral.globalPastoral.name)}
+              </div>
+              <div className="entity-heading">
+                <h3 className="entity-title">{pastoral.globalPastoral.name}</h3>
+                <div className="entity-chips">
+                  <span className="entity-chip soft-blue">{pastoral.community.name}</span>
+                  <span className={`status-badge ${pastoral.status === 'ACTIVE' ? 'green' : 'gray'}`}>
+                    {pastoral.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
+                  </span>
+                </div>
+              </div>
             </div>
 
-            <div className="pastoral-info">
-              <div className="pastoral-info-item">
-                <strong>⛪</strong> {pastoral.community.name}
-              </div>
-              {pastoral.foundedAt && (
-                <div className="pastoral-info-item">
-                  <strong>📅</strong> Fundada em:{' '}
-                  {new Date(pastoral.foundedAt).toLocaleDateString('pt-BR')}
-                </div>
-              )}
-              <div className="pastoral-info-item">
-                <strong>👥</strong> {pastoral.members.length} membros
+            <div className="entity-card-body">
+              <div className="entity-field">
+                <span className="entity-field-label">Membros</span>
+                <span className="entity-field-value">{pastoral.members.length}</span>
               </div>
               {pastoral.subGroups.length > 0 && (
-                <div className="pastoral-info-item">
-                  <strong>📂</strong> {pastoral.subGroups.length} sub-grupos
+                <div className="entity-field">
+                  <span className="entity-field-label">Sub-grupos</span>
+                  <span className="entity-field-value">{pastoral.subGroups.length}</span>
                 </div>
+              )}
+              {pastoral.foundedAt && (
+                <div className="entity-field">
+                  <span className="entity-field-label">Fundada em</span>
+                  <span className="entity-field-value">{new Date(pastoral.foundedAt).toLocaleDateString('pt-BR')}</span>
+                </div>
+              )}
+              {pastoral.description && (
+                <p style={{ margin: '0.5rem 0 0 0', color: '#5a6a7a', fontSize: '0.9rem' }}>{pastoral.description}</p>
               )}
             </div>
 
-            {pastoral.description && (
-              <p className="pastoral-description">{pastoral.description}</p>
-            )}
-
-            <div className="pastoral-actions">
-              <button onClick={() => navigate(`/admin/pastorals/community/${pastoral.id}`)} className="btn-view">
+            <div className="entity-card-footer">
+              <button onClick={() => navigate(`/admin/pastorals/community/${pastoral.id}`)} className="entity-btn accent">
                 Ver Detalhes
               </button>
-              <button onClick={() => handleEdit(pastoral)} className="btn-edit">
+              <button
+                onClick={() => handleEdit(pastoral)}
+                className="entity-btn primary"
+                disabled={currentUser?.role === 'PASTORAL_COORDINATOR'}
+                title={currentUser?.role === 'PASTORAL_COORDINATOR' ? 'Coordenadores de pastoral não podem editar pastorais' : ''}
+              >
                 Editar
               </button>
-              <button onClick={() => handleDelete(pastoral.id)} className="btn-delete">
+              <button
+                onClick={() => handleDelete(pastoral.id)}
+                className="entity-btn danger"
+                disabled={currentUser?.role === 'PASTORAL_COORDINATOR'}
+                title={currentUser?.role === 'PASTORAL_COORDINATOR' ? 'Coordenadores de pastoral não podem excluir pastorais' : ''}
+              >
                 Excluir
               </button>
             </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import './LoginPage.css';
 
@@ -33,13 +33,19 @@ const LoginPage: React.FC = () => {
         <h1>Sistema de Gestão Paroquial</h1>
         <p className="login-subtitle">Faça login para continuar</p>
 
-        {error && <div className="error-message">{error}</div>}
+        {error && (
+          <div className="error-message" role="alert">
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">
-            <label>Email</label>
+            <label htmlFor="login-email">Email</label>
             <input
+              id="login-email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -48,9 +54,11 @@ const LoginPage: React.FC = () => {
           </div>
 
           <div className="form-group">
-            <label>Senha</label>
+            <label htmlFor="login-password">Senha</label>
             <input
+              id="login-password"
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -58,10 +66,14 @@ const LoginPage: React.FC = () => {
             />
           </div>
 
-          <button type="submit" className="login-btn" disabled={loading}>
+          <button type="submit" className="login-btn" disabled={loading} aria-busy={loading}>
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
+
+        <p style={{ textAlign: 'center', marginTop: 16 }}>
+          <Link to="/forgot-password">Esqueci minha senha</Link>
+        </p>
       </div>
     </div>
   );

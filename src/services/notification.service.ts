@@ -149,6 +149,37 @@ export const confirm = {
     });
     return result.isConfirmed ? result.value : null;
   },
+
+  /**
+   * Exibe um diálogo de confirmação com input de texto longo (textarea)
+   */
+  withTextarea: async (
+    title: string,
+    inputLabel: string,
+    inputPlaceholder: string = '',
+    confirmButtonText: string = 'Enviar'
+  ): Promise<string | null> => {
+    const result = await Swal.fire({
+      title,
+      input: 'textarea',
+      inputLabel,
+      inputPlaceholder,
+      inputAttributes: { maxlength: '500' },
+      showCancelButton: true,
+      confirmButtonColor: '#007bff',
+      cancelButtonColor: '#6c757d',
+      confirmButtonText,
+      cancelButtonText: 'Cancelar',
+      reverseButtons: true,
+      inputValidator: (value) => {
+        if (!value || !value.trim()) {
+          return 'Este campo é obrigatório';
+        }
+        return null;
+      },
+    });
+    return result.isConfirmed ? result.value : null;
+  },
 };
 
 // Exportar também o Swal para casos especiais

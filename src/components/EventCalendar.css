@@ -336,3 +336,313 @@
 .fc-loading {
   animation: pulse 1.5s ease-in-out infinite;
 }
+
+/* ============================================================
+   Refinos de mercado (estilo Google Calendar)
+   ============================================================ */
+
+/* Visão mensal: evento em linha única compacta com barra colorida */
+.fc-daygrid-event {
+  border-radius: 6px !important;
+  border: none !important;
+  background: transparent !important;
+  margin: 1px 3px !important;
+}
+
+.fc-evt-compact {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  padding: 2px 6px 2px 4px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--evt-color, #3498db) 14%, white);
+  border-left: 3px solid var(--evt-color, #3498db);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.fc-evt-compact:hover {
+  background: color-mix(in srgb, var(--evt-color, #3498db) 26%, white);
+}
+
+.fc-evt-compact-time {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--evt-color, #3498db);
+  flex-shrink: 0;
+}
+
+.fc-evt-compact-title {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #2c3e50;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Hoje: tinta suave na célula inteira + número em destaque */
+.fc .fc-day-today {
+  background: #eef6ff !important;
+}
+
+.fc .fc-day-today .fc-daygrid-day-number {
+  background: #0d6efd;
+  color: white;
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  margin: 3px;
+}
+
+/* Fim de semana com fundo levemente diferenciado */
+.fc .fc-day-sat:not(.fc-day-today),
+.fc .fc-day-sun:not(.fc-day-today) {
+  background: #fafbfd;
+}
+
+/* Popover do "+N eventos" no padrão do sistema */
+.fc .fc-popover {
+  border: 1px solid #e8ecf1;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(16, 24, 40, 0.16);
+  overflow: hidden;
+}
+
+.fc .fc-popover-header {
+  background: #fafbfc;
+  padding: 8px 12px;
+  font-weight: 600;
+  color: #46566a;
+}
+
+/* Link "+N eventos" mais discreto e clicável */
+.fc .fc-daygrid-more-link {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #0d6efd;
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.fc .fc-daygrid-more-link:hover {
+  background: #eef6ff;
+}
+
+/* Cabeçalho dos dias em caixa alta discreta */
+.fc .fc-col-header-cell-cushion {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8a97a6;
+  padding: 8px 4px;
+}
+
+/* Legenda de tipos (acima do calendário) */
+.calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 0.75rem 0;
+}
+
+.calendar-legend .legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid #e2e8f0;
+  background: white;
+  border-radius: 999px;
+  padding: 0.28rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #46566a;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s, opacity 0.15s;
+}
+
+.calendar-legend .legend-item:hover {
+  border-color: #b8c4d0;
+}
+
+.calendar-legend .legend-item.active {
+  background: #eef6ff;
+  border-color: #9ec5fe;
+  color: #0d6efd;
+}
+
+.calendar-legend .legend-item.dimmed {
+  opacity: 0.45;
+}
+
+.calendar-legend .legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Layout com mini-calendário lateral + exportação ICS
+   ============================================================ */
+.calendar-layout {
+  display: flex;
+  gap: 1.1rem;
+  align-items: flex-start;
+}
+
+.calendar-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.calendar-side {
+  width: 272px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Mini-calendário no padrão do sistema */
+.calendar-side .react-calendar {
+  width: 100%;
+  border: 1px solid #e8ecf1;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+  font-family: inherit;
+  padding: 0.5rem;
+  background: white;
+}
+
+.calendar-side .react-calendar__navigation button {
+  font-weight: 700;
+  color: #2c3e50;
+  border-radius: 8px;
+}
+
+.calendar-side .react-calendar__navigation button:enabled:hover {
+  background: #eef6ff;
+}
+
+.calendar-side .react-calendar__month-view__weekdays {
+  font-size: 0.62rem;
+  color: #8a97a6;
+}
+
+.calendar-side .react-calendar__month-view__weekdays abbr {
+  text-decoration: none;
+}
+
+.calendar-side .react-calendar__tile {
+  border-radius: 8px;
+  font-size: 0.8rem;
+  padding: 0.45em 0.2em 0.55em;
+  position: relative;
+}
+
+.calendar-side .react-calendar__tile:enabled:hover {
+  background: #eef6ff;
+}
+
+.calendar-side .react-calendar__tile--now {
+  background: #eef6ff;
+  font-weight: 700;
+  color: #0d6efd;
+}
+
+.calendar-side .react-calendar__tile--active {
+  background: #0d6efd !important;
+  color: white !important;
+}
+
+.mini-cal-dot {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #0d6efd;
+}
+
+.calendar-side .react-calendar__tile--active .mini-cal-dot {
+  background: white;
+}
+
+.calendar-ics-btn {
+  flex: 0 0 auto;
+}
+
+.mini-cal-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #8a97a6;
+  line-height: 1.45;
+}
+
+.calendar-drag-hint {
+  margin: 0.6rem 0 0 0;
+  font-size: 0.8rem;
+  color: #8a97a6;
+}
+
+/* Em telas menores o mini-calendário sai de cena */
+@media (max-width: 1100px) {
+  .calendar-side {
+    display: none;
+  }
+}
+
+/* ============================================================
+   Agenda fixa (Missa/Confissão/Adoração/Terço) — estilo distinto
+   ============================================================ */
+.fc-evt-compact.is-fixed {
+  background: repeating-linear-gradient(
+    45deg,
+    #f1f5f9,
+    #f1f5f9 6px,
+    #e8edf3 6px,
+    #e8edf3 12px
+  );
+  border-left-style: dashed;
+  border-left-color: #64748b;
+}
+
+.fc-evt-compact.is-fixed .fc-evt-compact-time,
+.fc-evt-compact.is-fixed .fc-evt-compact-title {
+  color: #475569;
+}
+
+.fc-evt-fixed-icon {
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+/* Semana/dia: borda tracejada e fundo suave */
+.fc-fixed-occurrence {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(100, 116, 139, 0.08),
+    rgba(100, 116, 139, 0.08) 6px,
+    rgba(100, 116, 139, 0.16) 6px,
+    rgba(100, 116, 139, 0.16) 12px
+  ) !important;
+  border: 1px dashed #64748b !important;
+  cursor: default !important;
+}
+
+.fc-event-content-custom.is-fixed .fc-event-type-badge {
+  background: #64748b;
+}

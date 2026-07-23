@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { notify, confirm } from '../services/notification.service';
+import PatronSaintsManager, { usePatronSaints, PatronSaintsBadge } from '../components/PatronSaintsManager';
+import SearchSelect from '../components/SearchSelect';
+import SaintAvatar, { avatarColor, initials } from '../components/SaintAvatar';
 import './ParishesPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -9,7 +12,15 @@ const API_URL = import.meta.env.VITE_API_URL;
 interface Diocese {
   id: string;
   name: string;
+  city?: string;
+  state?: string;
 }
+
+const dioceseOption = (diocese: Diocese) => ({
+  value: diocese.id,
+  label: diocese.name,
+  sublabel: diocese.city ? `${diocese.city}${diocese.state ? ` - ${diocese.state}` : ''}` : undefined,
+});
 
 interface Parish {
   id: string;
@@ -36,8 +47,28 @@ const ParishesPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [currentUserRole, setCurrentUserRole] = useState<string>('');
 
-  // Estados para visualização híbrida
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  // Santos padroeiros (vínculo por paróquia)
+  const { patronsByEntity, refresh: refreshPatrons } = usePatronSaints('parish');
+  const [patronTarget, setPatronTarget] = useState<Parish | null>(null);
+
+  // Padroeiros das dioceses — avatar nas opções do seletor de diocese
+  const { patronsByEntity: diocesePatrons } = usePatronSaints('diocese');
+  const dioceseOptions = dioceses.map((diocese) => {
+    const patron = diocesePatrons[diocese.id]?.[0];
+    return {
+      ...dioceseOption(diocese),
+      icon: patron ? <SaintAvatar saint={patron.saint} small /> : undefined,
+    };
+  });
+
+  // Estados para visualização híbrida (preferência persistida por página)
+  const [viewMode, setViewModeState] = useState<'cards' | 'table'>(
+    () => (localStorage.getItem('parish:viewMode:parishes') === 'table' ? 'table' : 'cards'),
+  );
+  const setViewMode = (mode: 'cards' | 'table') => {
+    setViewModeState(mode);
+    localStorage.setItem('parish:viewMode:parishes', mode);
+  };
   const [sortField, setSortField] = useState<'name' | 'city' | 'diocese' | 'createdAt'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
@@ -88,6 +119,10 @@ const ParishesPage: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.dioceseId) {
+      notify.warning('Selecione a diocese da paróquia.');
+      return;
+    }
 
     try {
       const token = localStorage.getItem('token');
@@ -294,18 +329,14 @@ const ParishesPage: React.FC = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="search-input"
           />
-          <select
+          <SearchSelect
+            options={dioceseOptions}
             value={filterDiocese}
-            onChange={(e) => setFilterDiocese(e.target.value)}
-            className="filter-select"
-          >
-            <option value="">Todas as dioceses</option>
-            {dioceses.map((diocese) => (
-              <option key={diocese.id} value={diocese.id}>
-                {diocese.name}
-              </option>
-            ))}
-          </select>
+            onChange={setFilterDiocese}
+            placeholder="Todas as dioceses"
+            allOption
+            searchPlaceholder="Buscar diocese..."
+          />
         </div>
 
         <div className="view-toggle">
@@ -330,24 +361,54 @@ const ParishesPage: React.FC = () => {
             <p className="no-results">Nenhuma paróquia encontrada.</p>
           ) : (
             paginatedParishes.map((parish) => (
-              <div key={parish.id} className="parish-card">
-                <div className="card-header">
-                  <h3>{parish.name}</h3>
-                  <span className="diocese-badge">{parish.diocese.name}</span>
+              <div key={parish.id} className="entity-card">
+                <div className="entity-card-header">
+                  <div className="entity-monogram" style={{ background: avatarColor(parish.name) }}>
+                    {initials(parish.name)}
+                  </div>
+                  <div className="entity-heading">
+                    <h3 className="entity-title">{parish.name}</h3>
+                    <div className="entity-chips">
+                      <span className="entity-chip soft-blue">{parish.diocese.name}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="card-body">
-                  <p><strong>📍 Cidade:</strong> {parish.city} - {parish.state}</p>
-                  <p><strong>🏠 Endereço:</strong> {parish.address}</p>
-                  <p><strong>📮 CEP:</strong> {parish.zipCode}</p>
-                  {parish.phone && <p><strong>📞 Telefone:</strong> {parish.phone}</p>}
-                  {parish.email && <p><strong>📧 Email:</strong> {parish.email}</p>}
+                <div className="entity-card-body">
+                  <div className="entity-field">
+                    <span className="entity-field-label">Cidade</span>
+                    <span className="entity-field-value">{parish.city} - {parish.state}</span>
+                  </div>
+                  <div className="entity-field">
+                    <span className="entity-field-label">Endereço</span>
+                    <span className="entity-field-value">{parish.address}</span>
+                  </div>
+                  <div className="entity-field">
+                    <span className="entity-field-label">CEP</span>
+                    <span className="entity-field-value">{parish.zipCode}</span>
+                  </div>
+                  {parish.phone && (
+                    <div className="entity-field">
+                      <span className="entity-field-label">Telefone</span>
+                      <span className="entity-field-value">{parish.phone}</span>
+                    </div>
+                  )}
+                  {parish.email && (
+                    <div className="entity-field">
+                      <span className="entity-field-label">Email</span>
+                      <span className="entity-field-value">{parish.email}</span>
+                    </div>
+                  )}
+                  <PatronSaintsBadge patrons={patronsByEntity[parish.id]} />
                 </div>
-                <div className="card-actions">
-                  <button className="btn-edit" onClick={() => handleEdit(parish)}>
+                <div className="entity-card-footer">
+                  <button className="entity-btn primary" onClick={() => handleEdit(parish)}>
                     Editar
                   </button>
+                  <button className="entity-btn accent" onClick={() => setPatronTarget(parish)}>
+                    🕊️ Padroeiro
+                  </button>
                   {canDelete && (
-                    <button className="btn-delete" onClick={() => handleDelete(parish.id)}>
+                    <button className="entity-btn danger" onClick={() => handleDelete(parish.id)}>
                       Excluir
                     </button>
                   )}
@@ -357,10 +418,10 @@ const ParishesPage: React.FC = () => {
           )}
         </div>
       ) : (
-        <div className="table-container">
+        <div className="table-container entity-table">
           {/* Ações em lote */}
           <div className="table-actions">
-            <div className="bulk-actions">
+            <div className="bulk-actions" style={selectedParishes.length === 0 ? { display: 'none' } : undefined}>
               {selectedParishes.length > 0 && canDelete && (
                 <>
                   <span className="selected-count">{selectedParishes.length} selecionada(s)</span>
@@ -418,6 +479,7 @@ const ParishesPage: React.FC = () => {
                 <th>Endereço</th>
                 <th>Telefone</th>
                 <th>Email</th>
+                <th>Padroeiro</th>
                 <th className="sortable" onClick={() => handleSort('createdAt')}>
                   Criado em {sortField === 'createdAt' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
@@ -440,19 +502,32 @@ const ParishesPage: React.FC = () => {
                     <strong>{parish.name}</strong>
                   </td>
                   <td>
-                    <span className="diocese-badge-small">{parish.diocese.name}</span>
+                    <span className="entity-chip soft-blue">{parish.diocese.name}</span>
                   </td>
                   <td>{parish.city} - {parish.state}</td>
                   <td>{parish.address}</td>
                   <td>{parish.phone || '-'}</td>
                   <td>{parish.email || '-'}</td>
+                  <td>
+                    {patronsByEntity[parish.id]?.[0] ? (
+                      <span className="patron-cell">
+                        <SaintAvatar saint={patronsByEntity[parish.id][0].saint} small />
+                        {patronsByEntity[parish.id][0].saint.name}
+                      </span>
+                    ) : (
+                      '-'
+                    )}
+                  </td>
                   <td>{formatDate(parish.createdAt)}</td>
                   <td className="actions-cell">
-                    <button className="btn-action btn-edit-small" onClick={() => handleEdit(parish)} title="Editar">
+                    <button className="entity-icon-btn" onClick={() => handleEdit(parish)} title="Editar">
                       ✏️
                     </button>
+                    <button className="entity-icon-btn" onClick={() => setPatronTarget(parish)} title="Padroeiro">
+                      🕊️
+                    </button>
                     {canDelete && (
-                      <button className="btn-action btn-delete-small" onClick={() => handleDelete(parish.id)} title="Excluir">
+                      <button className="entity-icon-btn danger" onClick={() => handleDelete(parish.id)} title="Excluir">
                         🗑️
                       </button>
                     )}
@@ -524,18 +599,13 @@ const ParishesPage: React.FC = () => {
 
               <div className="form-group">
                 <label>Diocese *</label>
-                <select
-                  required
+                <SearchSelect
+                  options={dioceseOptions}
                   value={formData.dioceseId}
-                  onChange={(e) => setFormData({ ...formData, dioceseId: e.target.value })}
-                >
-                  <option value="">Selecione uma diocese</option>
-                  {dioceses.map((diocese) => (
-                    <option key={diocese.id} value={diocese.id}>
-                      {diocese.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(dioceseId) => setFormData({ ...formData, dioceseId })}
+                  placeholder="Selecione uma diocese"
+                  searchPlaceholder="Buscar diocese..."
+                />
               </div>
 
               <div className="form-row">
@@ -610,6 +680,18 @@ const ParishesPage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {patronTarget && (
+        <PatronSaintsManager
+          level="parish"
+          entityId={patronTarget.id}
+          entityName={patronTarget.name}
+          onClose={(changed) => {
+            setPatronTarget(null);
+            if (changed) refreshPatrons();
+          }}
+        />
       )}
     </div>
   );

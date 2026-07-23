@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+﻿import React, { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
-import { formatDateTime, formatDate } from '../../utils/dateFormat';
+import { formatDate, formatDateTime } from '../../utils/dateFormat';
 import { notify, confirm as confirmDialog } from '../../services/notification.service';
 import './PastoralsPage.css';
 
@@ -9,8 +9,8 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 interface Member {
   id: string;
-  name: string;
-  email: string;
+  fullName: string;
+  email?: string;
   phone?: string;
 }
 
@@ -50,9 +50,11 @@ interface Meeting {
   title: string;
   description?: string;
   date: string;
+  startDate?: string;
   location?: string;
   notes?: string;
   participants?: any[];
+  eventPastorals?: any[];
 }
 
 interface Activity {
@@ -67,15 +69,70 @@ interface Activity {
 interface CommunityPastoral {
   id: string;
   description?: string;
+  mission?: string;
+  notes?: string;
   meetingDay?: string;
   meetingTime?: string;
-  isActive: boolean;
+  status: string;
   createdAt: string;
   globalPastoral: GlobalPastoral;
   community: Community;
   members: PastoralMember[];
   groups?: PastoralGroup[];
 }
+
+type MemberViewMode = 'cards' | 'list';
+
+const MEMBER_VIEW_STORAGE_KEY = 'community-pastoral-members-view-mode';
+
+// 'COORDINATOR' (em ingles) e o valor gravado pelo backend quando o vinculo de
+// coordenador vem do cadastro de Usuario (role PASTORAL_COORDINATOR) - e o valor
+// que o controle de acesso (hierarchy.service.ts) realmente verifica. 'Coordenador'
+// e o rotulo em portugues usado quando o vinculo e criado manualmente nesta tela.
+// As duas formas precisam ser tratadas como equivalentes na exibicao/ordenacao.
+const ROLE_PRIORITY: Record<string, number> = {
+  Coordenador: 0,
+  COORDINATOR: 0,
+  'Vice-Coordenador': 1,
+  Secretario: 2,
+  'Secretário': 2,
+  Tesoureiro: 3,
+  Membro: 4,
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  COORDINATOR: 'Coordenador',
+};
+
+const formatRoleLabel = (role: string) => ROLE_LABELS[role] || role;
+
+const getRoleClassName = (role: string) => {
+  switch (role) {
+    case 'Coordenador':
+    case 'COORDINATOR':
+      return 'role-coordenador';
+    case 'Vice-Coordenador':
+      return 'role-vice-coordenador';
+    case 'Secretario':
+    case 'Secretário':
+      return 'role-secretario';
+    case 'Tesoureiro':
+      return 'role-tesoureiro';
+    default:
+      return 'role-membro';
+  }
+};
+
+const getInitials = (name: string) =>
+  name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('');
+
+const compareTextValues = (left?: string | null, right?: string | null) =>
+  (left || '').localeCompare(right || '', 'pt-BR');
 
 const CommunityPastoralDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -123,14 +180,40 @@ const CommunityPastoralDetailsPage: React.FC = () => {
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [memberRole, setMemberRole] = useState('Membro');
   const [editRole, setEditRole] = useState('');
+  const [memberSearchTerm, setMemberSearchTerm] = useState('');
+  const [memberRoleFilter, setMemberRoleFilter] = useState('all');
+  const [memberViewMode, setMemberViewMode] = useState<MemberViewMode>(() => {
+    if (typeof window === 'undefined') {
+      return 'cards';
+    }
+
+    return window.localStorage.getItem(MEMBER_VIEW_STORAGE_KEY) === 'list'
+      ? 'list'
+      : 'cards';
+  });
 
   useEffect(() => {
     fetchPastoralDetails();
     fetchAllMembers();
     fetchGroups();
-    fetchMeetings();
-    fetchActivities();
   }, [id]);
+
+  useEffect(() => {
+    if (!pastoral?.community.id) {
+      return;
+    }
+
+    fetchMeetings(pastoral.community.id);
+    fetchActivities(pastoral.community.id);
+  }, [id, pastoral?.community.id]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(MEMBER_VIEW_STORAGE_KEY, memberViewMode);
+  }, [memberViewMode]);
 
   const fetchPastoralDetails = async () => {
     try {
@@ -139,8 +222,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       setPastoral(response.data);
-      
-      // Buscar membros da pastoral
+
       const membersResponse = await axios.get(`${API_URL}/pastorals/members`, {
         params: { communityPastoralId: id },
         headers: { Authorization: `Bearer ${token}` },
@@ -157,10 +239,17 @@ const CommunityPastoralDetailsPage: React.FC = () => {
   const fetchAllMembers = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/members`, {
+      const response = await axios.get(`${API_URL}/pastorals/community/${id}/available-members`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setAllMembers(response.data);
+      setAllMembers(
+        response.data.map((member: any) => ({
+          id: member.id,
+          fullName: member.fullName || 'Membro sem nome',
+          email: member.email || '',
+          phone: member.phone || '',
+        })),
+      );
     } catch (error) {
       console.error('Erro ao carregar membros:', error);
     }
@@ -194,7 +283,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
           communityPastoralId: id,
           status: 'ACTIVE',
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       notify.success('Sub-grupo criado com sucesso!');
@@ -227,7 +316,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
       await axios.patch(
         `${API_URL}/pastorals/groups/${editingGroup.id}`,
         groupFormData,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       notify.success('Sub-grupo atualizado com sucesso!');
@@ -259,22 +348,27 @@ const CommunityPastoralDetailsPage: React.FC = () => {
     }
   };
 
-  const fetchMeetings = async () => {
+  const fetchMeetings = async (communityId?: string) => {
+    if (!communityId) {
+      return;
+    }
+
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`${API_URL}/events`, {
-        params: { 
+        params: {
           type: 'PASTORAL_MEETING',
-          communityId: pastoral?.community.id 
+          communityId,
         },
         headers: { Authorization: `Bearer ${token}` },
       });
-      
-      // Filtrar apenas eventos desta pastoral
+
       const pastoralMeetings = response.data.filter((event: any) =>
-        event.eventPastorals?.some((ep: any) => ep.communityPastoralId === id)
+        event.eventPastorals?.some(
+          (eventPastoral: any) => eventPastoral.communityPastoralId === id,
+        ),
       );
-      
+
       setMeetings(pastoralMeetings);
     } catch (error) {
       console.error('Erro ao carregar reuniões:', error);
@@ -289,8 +383,6 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('token');
-      
-      // Criar evento do tipo PASTORAL_MEETING
       const eventResponse = await axios.post(
         `${API_URL}/events`,
         {
@@ -303,10 +395,9 @@ const CommunityPastoralDetailsPage: React.FC = () => {
           isPublic: false,
           status: 'PUBLISHED',
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
-      // Vincular pastoral ao evento
       await axios.post(
         `${API_URL}/events/${eventResponse.data.id}/pastorals`,
         {
@@ -314,35 +405,40 @@ const CommunityPastoralDetailsPage: React.FC = () => {
           role: 'Organizadora',
           isLeader: true,
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       notify.success('Reunião criada com sucesso!');
       setShowAddMeetingModal(false);
       setMeetingFormData({ title: '', description: '', date: '', location: '' });
-      fetchMeetings();
+      fetchMeetings(pastoral.community.id);
     } catch (error: any) {
       console.error('Erro ao criar reunião:', error);
       notify.error(error.response?.data?.message || 'Erro ao criar reunião');
     }
   };
 
-  const fetchActivities = async () => {
+  const fetchActivities = async (communityId?: string) => {
+    if (!communityId) {
+      return;
+    }
+
     try {
       const token = localStorage.getItem('token');
       const response = await axios.get(`${API_URL}/events`, {
-        params: { 
+        params: {
           type: 'PASTORAL_ACTIVITY',
-          communityId: pastoral?.community.id 
+          communityId,
         },
         headers: { Authorization: `Bearer ${token}` },
       });
-      
-      // Filtrar apenas eventos desta pastoral
+
       const pastoralActivities = response.data.filter((event: any) =>
-        event.eventPastorals?.some((ep: any) => ep.communityPastoralId === id)
+        event.eventPastorals?.some(
+          (eventPastoral: any) => eventPastoral.communityPastoralId === id,
+        ),
       );
-      
+
       setActivities(pastoralActivities);
     } catch (error) {
       console.error('Erro ao carregar atividades:', error);
@@ -357,8 +453,6 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('token');
-      
-      // Criar evento do tipo PASTORAL_ACTIVITY
       const eventResponse = await axios.post(
         `${API_URL}/events`,
         {
@@ -372,10 +466,9 @@ const CommunityPastoralDetailsPage: React.FC = () => {
           isPublic: false,
           status: 'PUBLISHED',
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
-      // Vincular pastoral ao evento
       await axios.post(
         `${API_URL}/events/${eventResponse.data.id}/pastorals`,
         {
@@ -383,13 +476,19 @@ const CommunityPastoralDetailsPage: React.FC = () => {
           role: 'Organizadora',
           isLeader: true,
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       notify.success('Atividade criada com sucesso!');
       setShowAddActivityModal(false);
-      setActivityFormData({ title: '', description: '', startDate: '', endDate: '', location: '' });
-      fetchActivities();
+      setActivityFormData({
+        title: '',
+        description: '',
+        startDate: '',
+        endDate: '',
+        location: '',
+      });
+      fetchActivities(pastoral.community.id);
     } catch (error: any) {
       console.error('Erro ao criar atividade:', error);
       notify.error(error.response?.data?.message || 'Erro ao criar atividade');
@@ -404,12 +503,13 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
   const handleOpenEditPastoral = () => {
     if (!pastoral) return;
+
     setEditFormData({
       description: pastoral.description || '',
-      mission: '', // Adicionar ao schema se necessário
+      mission: pastoral.mission || '',
       meetingDay: pastoral.meetingDay || '',
       meetingTime: pastoral.meetingTime || '',
-      notes: '', // Adicionar ao schema se necessário
+      notes: pastoral.notes || '',
     });
     setShowEditPastoralModal(true);
   };
@@ -422,10 +522,9 @@ const CommunityPastoralDetailsPage: React.FC = () => {
       await axios.patch(
         `${API_URL}/pastorals/community/${pastoral.id}`,
         editFormData,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
-      // Atualizar dados
       await fetchPastoralDetails();
       setShowEditPastoralModal(false);
       notify.success('Pastoral atualizada com sucesso!');
@@ -438,10 +537,11 @@ const CommunityPastoralDetailsPage: React.FC = () => {
   const handleToggleStatus = async () => {
     if (!pastoral) return;
 
-    const action = pastoral.isActive ? 'desativar' : 'ativar';
+    const isCurrentlyActive = pastoral.status === 'ACTIVE';
+    const action = isCurrentlyActive ? 'desativar' : 'ativar';
     const confirmed = await confirmDialog.action(
       `${action.charAt(0).toUpperCase() + action.slice(1)} pastoral`,
-      `Deseja ${action} esta pastoral?`
+      `Deseja ${action} esta pastoral?`,
     );
     if (!confirmed) return;
 
@@ -449,13 +549,12 @@ const CommunityPastoralDetailsPage: React.FC = () => {
       const token = localStorage.getItem('token');
       await axios.patch(
         `${API_URL}/pastorals/community/${pastoral.id}`,
-        { status: pastoral.isActive ? 'INACTIVE' : 'ACTIVE' },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { status: isCurrentlyActive ? 'INACTIVE' : 'ACTIVE' },
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
-      // Atualizar dados
       await fetchPastoralDetails();
-      notify.success(`Pastoral ${pastoral.isActive ? 'desativada' : 'ativada'} com sucesso!`);
+      notify.success(`Pastoral ${isCurrentlyActive ? 'desativada' : 'ativada'} com sucesso!`);
     } catch (error: any) {
       console.error('Erro ao alterar status:', error);
       notify.error(error.response?.data?.message || 'Erro ao alterar status da pastoral');
@@ -470,10 +569,9 @@ const CommunityPastoralDetailsPage: React.FC = () => {
       await axios.patch(
         `${API_URL}/pastorals/members/${editingMember.id}`,
         { role: editRole },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
-      // Atualizar lista de membros
       await fetchPastoralDetails();
       setShowEditRoleModal(false);
       setEditingMember(null);
@@ -500,7 +598,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
           role: memberRole,
           isActive: true,
         },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       notify.success('Membro adicionado com sucesso!');
@@ -508,6 +606,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
       setSelectedMemberId('');
       setMemberRole('Membro');
       fetchPastoralDetails();
+      fetchAllMembers();
     } catch (error: any) {
       console.error('Erro ao adicionar membro:', error);
       notify.error(error.response?.data?.message || 'Erro ao adicionar membro');
@@ -526,6 +625,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
       notify.success('Membro removido com sucesso!');
       fetchPastoralDetails();
+      fetchAllMembers();
     } catch (error: any) {
       console.error('Erro ao remover membro:', error);
       notify.error(error.response?.data?.message || 'Erro ao remover membro');
@@ -534,7 +634,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="pastorals-page">
+      <div className="pastorals-page community-pastoral-page">
         <p>Carregando...</p>
       </div>
     );
@@ -542,80 +642,564 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
   if (!pastoral) {
     return (
-      <div className="pastorals-page">
+      <div className="pastorals-page community-pastoral-page">
         <p>Pastoral não encontrada</p>
       </div>
     );
   }
 
-  // Filtrar membros que já estão na pastoral
-  const availableMembers = allMembers.filter(
-    (m) => !members.some((pm) => pm.member.id === m.id)
+  const availableMembers = allMembers
+    .filter(
+      (member) => !members.some((pastoralMember) => pastoralMember.member?.id === member.id),
+    )
+    .sort((left, right) => compareTextValues(left.fullName, right.fullName));
+
+  const sortedMembers = [...members].sort((left, right) => {
+    const priorityDiff = (ROLE_PRIORITY[left.role] ?? 99) - (ROLE_PRIORITY[right.role] ?? 99);
+
+    if (priorityDiff !== 0) {
+      return priorityDiff;
+    }
+
+    return compareTextValues(left.member?.fullName, right.member?.fullName);
+  });
+
+  const sortedGroups = [...groups].sort((left, right) => {
+    if (left.status !== right.status) {
+      return left.status === 'ACTIVE' ? -1 : 1;
+    }
+
+    return compareTextValues(left.name, right.name);
+  });
+
+  const memberRoleOptions = [...new Set(sortedMembers.map((member) => member.role).filter(Boolean))]
+    .sort((left, right) => (ROLE_PRIORITY[left] ?? 99) - (ROLE_PRIORITY[right] ?? 99));
+
+  const normalizedMemberSearch = memberSearchTerm.trim().toLowerCase();
+  const filteredMembers = sortedMembers.filter((pastoralMember) => {
+    const matchesRole =
+      memberRoleFilter === 'all' || pastoralMember.role === memberRoleFilter;
+
+    const matchesSearch =
+      normalizedMemberSearch.length === 0 ||
+      [
+        pastoralMember.member?.fullName,
+        pastoralMember.member?.email,
+        pastoralMember.member?.phone,
+        pastoralMember.role,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(normalizedMemberSearch));
+
+    return matchesRole && matchesSearch;
+  });
+
+  const sortedMeetings = [...meetings].sort(
+    (left, right) =>
+      new Date(left.startDate || left.date).getTime() -
+      new Date(right.startDate || right.date).getTime(),
+  );
+
+  const sortedActivities = [...activities].sort(
+    (left, right) => new Date(left.startDate).getTime() - new Date(right.startDate).getTime(),
+  );
+
+  const pastoralSummary =
+    pastoral.description?.trim() ||
+    `Equipe pastoral vinculada à comunidade ${pastoral.community.name}.`;
+
+  const meetingSchedule =
+    pastoral.meetingDay && pastoral.meetingTime
+      ? `${pastoral.meetingDay} às ${pastoral.meetingTime}`
+      : 'Agenda recorrente não definida';
+
+  const leadershipLabel =
+    sortedMembers
+      .filter(
+        (member) =>
+          member.role === 'Coordenador' ||
+          member.role === 'COORDINATOR' ||
+          member.role === 'Vice-Coordenador',
+      )
+      .map((member) => member.member?.fullName || 'Membro sem nome')
+      .join(' • ') || 'Coordenação não definida';
+
+  const nextMeeting =
+    sortedMeetings.find(
+      (meeting) => new Date(meeting.startDate || meeting.date).getTime() >= Date.now(),
+    ) || sortedMeetings[0];
+
+  const renderEmptyState = (title: string, description: string) => (
+    <div className="community-pastoral-empty-state">
+      <strong>{title}</strong>
+      <p>{description}</p>
+    </div>
   );
 
   return (
-    <div className="pastorals-page">
-        <div className="page-header">
-          <div>
-            <button onClick={() => navigate('/admin/pastorals/community')} className="back-button">
-              ← Voltar
-            </button>
-            <h1 style={{ marginTop: '10px' }}>{pastoral.globalPastoral.name}</h1>
-            <p style={{ color: '#666', marginTop: '5px' }}>
-              {pastoral.community.name}
-            </p>
+    <div className="pastorals-page community-pastoral-page">
+      <div className="community-pastoral-hero">
+        <div className="community-pastoral-hero-main">
+          <button
+            onClick={() => navigate('/admin/pastorals/community')}
+            className="back-button"
+          >
+            ← Voltar
+          </button>
+
+          <div className="community-pastoral-context-row">
+            <span className="community-pastoral-context-pill">
+              Comunidade {pastoral.community.name}
+            </span>
+            <span
+              className={`community-pastoral-status-badge ${
+                pastoral.status === 'ACTIVE' ? 'active' : 'inactive'
+              }`}
+            >
+              {pastoral.status === 'ACTIVE' ? 'Pastoral ativa' : 'Pastoral inativa'}
+            </span>
           </div>
+
+          <h1>{pastoral.globalPastoral.name}</h1>
+          <p className="community-pastoral-summary">{pastoralSummary}</p>
         </div>
 
-        {/* Informações da Pastoral */}
-        <div className="pastoral-info-card">
-          <h2>Informações</h2>
-          <div style={{ marginTop: '15px' }}>
-            {pastoral.description && (
-              <p><strong>Descrição:</strong> {pastoral.description}</p>
-            )}
-            {pastoral.meetingDay && pastoral.meetingTime && (
-              <p><strong>Reuniões:</strong> {pastoral.meetingDay} às {pastoral.meetingTime}</p>
-            )}
-            <p>
-              <strong>Status:</strong> {pastoral.isActive ? '✅ Ativa' : '❌ Inativa'}
-              <button onClick={handleToggleStatus} className="toggle-status-button">
-                {pastoral.isActive ? 'Desativar' : 'Ativar'}
+        <div className="community-pastoral-hero-actions">
+          <button onClick={handleOpenEditPastoral} className="edit-button">
+            Editar pastoral
+          </button>
+          <button
+            onClick={handleToggleStatus}
+            className={`toggle-status-button ${
+              pastoral.status === 'ACTIVE'
+                ? 'toggle-status-button--warning'
+                : 'toggle-status-button--success'
+            }`}
+          >
+            {pastoral.status === 'ACTIVE' ? 'Desativar pastoral' : 'Ativar pastoral'}
+          </button>
+          <button onClick={() => setShowAddMemberModal(true)} className="add-button">
+            Adicionar membro
+          </button>
+        </div>
+
+        <div className="community-pastoral-meta-grid">
+          <div className="community-pastoral-meta-card">
+            <span className="community-pastoral-meta-label">Reunião recorrente</span>
+            <strong className="community-pastoral-meta-value">{meetingSchedule}</strong>
+          </div>
+          <div className="community-pastoral-meta-card">
+            <span className="community-pastoral-meta-label">Coordenação</span>
+            <strong className="community-pastoral-meta-value">{leadershipLabel}</strong>
+          </div>
+          <div className="community-pastoral-meta-card">
+            <span className="community-pastoral-meta-label">Próxima reunião</span>
+            <strong className="community-pastoral-meta-value">
+              {nextMeeting
+                ? formatDateTime(nextMeeting.startDate || nextMeeting.date)
+                : 'Nenhuma reunião agendada'}
+            </strong>
+          </div>
+          <div className="community-pastoral-meta-card">
+            <span className="community-pastoral-meta-label">Criada em</span>
+            <strong className="community-pastoral-meta-value">{formatDate(pastoral.createdAt)}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="community-pastoral-stat-grid">
+        <div className="community-pastoral-stat-card community-pastoral-stat-card--blue">
+          <span className="community-pastoral-stat-label">Membros ativos</span>
+          <strong className="community-pastoral-stat-value">{sortedMembers.length}</strong>
+        </div>
+        <div className="community-pastoral-stat-card community-pastoral-stat-card--violet">
+          <span className="community-pastoral-stat-label">Sub-grupos</span>
+          <strong className="community-pastoral-stat-value">{sortedGroups.length}</strong>
+        </div>
+        <div className="community-pastoral-stat-card community-pastoral-stat-card--amber">
+          <span className="community-pastoral-stat-label">Reuniões</span>
+          <strong className="community-pastoral-stat-value">{sortedMeetings.length}</strong>
+        </div>
+        <div className="community-pastoral-stat-card community-pastoral-stat-card--green">
+          <span className="community-pastoral-stat-label">Atividades</span>
+          <strong className="community-pastoral-stat-value">{sortedActivities.length}</strong>
+        </div>
+      </div>
+
+      <div className="community-pastoral-content-grid">
+        <section
+          className={`community-pastoral-section community-pastoral-section--members ${
+            memberViewMode === 'list' ? 'community-pastoral-section--list' : ''
+          }`}
+        >
+          <div className="community-pastoral-section-header">
+            <div className="community-pastoral-section-heading">
+              <span className="community-pastoral-section-kicker">Equipe pastoral</span>
+              <h2>Membros</h2>
+              <p>Equipe vinculada e apta a atuar nesta pastoral.</p>
+            </div>
+            <div className="community-pastoral-action-group">
+              <div className="community-pastoral-view-toggle" role="group" aria-label="Modo de exibição dos membros">
+                <button
+                  type="button"
+                  className={`community-pastoral-view-button ${
+                    memberViewMode === 'cards' ? 'is-active' : ''
+                  }`}
+                  onClick={() => setMemberViewMode('cards')}
+                >
+                  Cards
+                </button>
+                <button
+                  type="button"
+                  className={`community-pastoral-view-button ${
+                    memberViewMode === 'list' ? 'is-active' : ''
+                  }`}
+                  onClick={() => setMemberViewMode('list')}
+                >
+                  Lista
+                </button>
+              </div>
+              <button onClick={() => setShowAddMemberModal(true)} className="add-button">
+                Adicionar membro
               </button>
-            </p>
-            <p><strong>Criada em:</strong> {new Date(pastoral.createdAt).toLocaleDateString('pt-BR')}</p>
-          </div>
-        </div>
-
-        {/* Sub-grupos */}
-        <div className="members-section">
-          <div className="section-header">
-            <h2>Sub-grupos ({groups.length})</h2>
-            <button onClick={() => setShowAddGroupModal(true)} className="add-button">
-              + Adicionar Sub-grupo
-            </button>
+            </div>
           </div>
 
-          {groups.length === 0 ? (
-            <p style={{ textAlign: 'center', color: '#666', marginTop: '20px' }}>
-              Nenhum sub-grupo cadastrado
-            </p>
+          {sortedMembers.length > 0 && (
+            <div className="community-pastoral-member-toolbar">
+              <div className="community-pastoral-member-search-group">
+                <input
+                  type="text"
+                  value={memberSearchTerm}
+                  onChange={(event) => setMemberSearchTerm(event.target.value)}
+                  className="community-pastoral-member-search"
+                  placeholder="Buscar por nome, e-mail, telefone ou função"
+                />
+              </div>
+              <div className="community-pastoral-member-filter-group">
+                <select
+                  value={memberRoleFilter}
+                  onChange={(event) => setMemberRoleFilter(event.target.value)}
+                  className="community-pastoral-member-filter"
+                >
+                  <option value="all">Todas as funções</option>
+                  {memberRoleOptions.map((role) => (
+                    <option key={role} value={role}>
+                      {formatRoleLabel(role)}
+                    </option>
+                  ))}
+                </select>
+                <span className="community-pastoral-member-count">
+                  Exibindo {filteredMembers.length} de {sortedMembers.length}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {sortedMembers.length === 0 ? (
+            renderEmptyState(
+              'Nenhum membro vinculado',
+              'Adicione membros da comunidade para formar a equipe desta pastoral.',
+            )
+          ) : filteredMembers.length === 0 ? (
+            renderEmptyState(
+              'Nenhum membro encontrado',
+              'Ajuste a busca ou o filtro para localizar outro membro da equipe.',
+            )
+          ) : memberViewMode === 'list' ? (
+            <div className="community-pastoral-member-list-wrapper">
+              <div className="community-pastoral-member-list-head">
+                <span>Membro</span>
+                <span>Função</span>
+                <span>Telefone</span>
+                <span>Desde</span>
+                <span className="community-pastoral-member-list-head-actions">Ações</span>
+              </div>
+              <div className="community-pastoral-member-list">
+                {filteredMembers.map((pastoralMember) => (
+                <article key={pastoralMember.id} className="community-pastoral-member-row">
+                  <div className="community-pastoral-member-row-primary">
+                    <div className="community-pastoral-member-avatar">
+                      {getInitials(pastoralMember.member?.fullName || 'Membro')}
+                    </div>
+                    <div className="community-pastoral-member-copy">
+                      <h3>{pastoralMember.member?.fullName || 'Membro sem nome'}</h3>
+                      <p>{pastoralMember.member?.email || 'Sem e-mail cadastrado'}</p>
+                    </div>
+                  </div>
+
+                  <div className="community-pastoral-member-row-cell" data-label="Função">
+                    <span className={`role-badge ${getRoleClassName(pastoralMember.role)}`}>
+                      {formatRoleLabel(pastoralMember.role)}
+                    </span>
+                  </div>
+
+                  <div className="community-pastoral-member-row-cell" data-label="Telefone">
+                    <strong className="community-pastoral-row-value">
+                      {pastoralMember.member?.phone || 'Não informado'}
+                    </strong>
+                  </div>
+
+                  <div className="community-pastoral-member-row-cell" data-label="Desde">
+                    <strong className="community-pastoral-row-value">
+                      {formatDate(pastoralMember.joinedAt)}
+                    </strong>
+                  </div>
+
+                  <div className="community-pastoral-action-row community-pastoral-action-row--inline">
+                    <button
+                      onClick={() => handleEditRole(pastoralMember)}
+                      className="edit-button"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleRemoveMember(
+                          pastoralMember.id,
+                          pastoralMember.member?.fullName || 'Membro sem nome',
+                        )
+                      }
+                      className="remove-button"
+                    >
+                      Remover
+                    </button>
+                  </div>
+                </article>
+                ))}
+              </div>
+            </div>
           ) : (
-            <div className="members-grid">
-              {groups.map((group) => (
-                <div key={group.id} className="member-card">
-                  <div className="member-header">
+            <div className="community-pastoral-member-grid">
+              {filteredMembers.map((pastoralMember) => (
+                <article key={pastoralMember.id} className="community-pastoral-member-card">
+                  <div className="community-pastoral-member-top">
+                    <div className="community-pastoral-member-identity">
+                      <div className="community-pastoral-member-avatar">
+                        {getInitials(pastoralMember.member?.fullName || 'Membro')}
+                      </div>
+                      <div className="community-pastoral-member-copy">
+                        <h3>{pastoralMember.member?.fullName || 'Membro sem nome'}</h3>
+                        <p>{pastoralMember.member?.email || 'Sem e-mail cadastrado'}</p>
+                      </div>
+                    </div>
+                    <span className={`role-badge ${getRoleClassName(pastoralMember.role)}`}>
+                      {formatRoleLabel(pastoralMember.role)}
+                    </span>
+                  </div>
+
+                  <div className="community-pastoral-detail-list">
+                    <div className="community-pastoral-detail-item">
+                      <span className="community-pastoral-detail-label">Telefone</span>
+                      <span className="community-pastoral-detail-value">
+                        {pastoralMember.member?.phone || 'Não informado'}
+                      </span>
+                    </div>
+                    <div className="community-pastoral-detail-item">
+                      <span className="community-pastoral-detail-label">Desde</span>
+                      <span className="community-pastoral-detail-value">
+                        {formatDate(pastoralMember.joinedAt)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="community-pastoral-action-row">
+                    <button
+                      onClick={() => handleEditRole(pastoralMember)}
+                      className="edit-button"
+                    >
+                      Editar função
+                    </button>
+                    <button
+                      onClick={() =>
+                        handleRemoveMember(
+                          pastoralMember.id,
+                          pastoralMember.member?.fullName || 'Membro sem nome',
+                        )
+                      }
+                      className="remove-button"
+                    >
+                      Remover
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="community-pastoral-section">
+          <div className="community-pastoral-section-header">
+            <div className="community-pastoral-section-heading">
+              <span className="community-pastoral-section-kicker">Agenda interna</span>
+              <h2>Reuniões</h2>
+              <p>Encontros e alinhamentos desta equipe pastoral.</p>
+            </div>
+            <div className="community-pastoral-action-group">
+              <button onClick={() => setShowAddMeetingModal(true)} className="add-button">
+                Agendar reunião
+              </button>
+            </div>
+          </div>
+
+          {sortedMeetings.length === 0 ? (
+            renderEmptyState(
+              'Sem reuniões cadastradas',
+              'Cadastre os próximos encontros para organizar a rotina da equipe.',
+            )
+          ) : (
+            <div className="community-pastoral-collection-list">
+              {sortedMeetings.map((meeting) => {
+                const totalAssignments = meeting.eventPastorals?.[0]?.assignments?.length || 0;
+                const checkedInAssignments =
+                  meeting.eventPastorals?.[0]?.assignments?.filter(
+                    (assignment: any) => assignment.checkedInAt,
+                  ).length || 0;
+
+                return (
+                  <article key={meeting.id} className="community-pastoral-collection-card">
+                    <div className="community-pastoral-collection-header">
+                      <h3>{meeting.title}</h3>
+                      <span className="community-pastoral-mini-badge is-blue">Reunião</span>
+                    </div>
+
+                    <div className="community-pastoral-detail-list community-pastoral-detail-list--compact">
+                      <div className="community-pastoral-detail-item">
+                        <span className="community-pastoral-detail-label">Quando</span>
+                        <span className="community-pastoral-detail-value">
+                          {formatDateTime(meeting.startDate || meeting.date)}
+                        </span>
+                      </div>
+                      <div className="community-pastoral-detail-item">
+                        <span className="community-pastoral-detail-label">Local</span>
+                        <span className="community-pastoral-detail-value">
+                          {meeting.location || 'A definir'}
+                        </span>
+                      </div>
+                      {totalAssignments > 0 && (
+                        <div className="community-pastoral-detail-item">
+                          <span className="community-pastoral-detail-label">Presenças</span>
+                          <span className="community-pastoral-detail-value">
+                            {checkedInAssignments}/{totalAssignments}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {meeting.description && (
+                      <p className="community-pastoral-collection-description">
+                        {meeting.description}
+                      </p>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className="community-pastoral-section">
+          <div className="community-pastoral-section-header">
+            <div className="community-pastoral-section-heading">
+              <span className="community-pastoral-section-kicker">Ações pastorais</span>
+              <h2>Atividades</h2>
+              <p>Eventos, ações e iniciativas organizadas pela pastoral.</p>
+            </div>
+            <div className="community-pastoral-action-group">
+              <button onClick={() => setShowAddActivityModal(true)} className="add-button">
+                Criar atividade
+              </button>
+            </div>
+          </div>
+
+          {sortedActivities.length === 0 ? (
+            renderEmptyState(
+              'Sem atividades cadastradas',
+              'Crie ações pastorais para registrar o calendário e os compromissos da equipe.',
+            )
+          ) : (
+            <div className="community-pastoral-collection-list">
+              {sortedActivities.map((activity) => (
+                <article key={activity.id} className="community-pastoral-collection-card">
+                  <div className="community-pastoral-collection-header">
+                    <h3>{activity.title}</h3>
+                    <span className="community-pastoral-mini-badge is-green">Atividade</span>
+                  </div>
+
+                  <div className="community-pastoral-detail-list community-pastoral-detail-list--compact">
+                    <div className="community-pastoral-detail-item">
+                      <span className="community-pastoral-detail-label">Início</span>
+                      <span className="community-pastoral-detail-value">
+                        {formatDate(activity.startDate)}
+                      </span>
+                    </div>
+                    {activity.endDate && (
+                      <div className="community-pastoral-detail-item">
+                        <span className="community-pastoral-detail-label">Término</span>
+                        <span className="community-pastoral-detail-value">
+                          {formatDate(activity.endDate)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="community-pastoral-detail-item">
+                      <span className="community-pastoral-detail-label">Local</span>
+                      <span className="community-pastoral-detail-value">
+                        {activity.location || 'A definir'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {activity.description && (
+                    <p className="community-pastoral-collection-description">
+                      {activity.description}
+                    </p>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="community-pastoral-section">
+          <div className="community-pastoral-section-header">
+            <div className="community-pastoral-section-heading">
+              <span className="community-pastoral-section-kicker">Organização interna</span>
+              <h2>Sub-grupos</h2>
+              <p>Equipes auxiliares, frentes ou divisões internas da pastoral.</p>
+            </div>
+            <div className="community-pastoral-action-group">
+              <button onClick={() => setShowAddGroupModal(true)} className="add-button">
+                Adicionar sub-grupo
+              </button>
+            </div>
+          </div>
+
+          {sortedGroups.length === 0 ? (
+            renderEmptyState(
+              'Sem sub-grupos cadastrados',
+              'Use sub-grupos para organizar frentes internas ou equipes de apoio.',
+            )
+          ) : (
+            <div className="community-pastoral-collection-list">
+              {sortedGroups.map((group) => (
+                <article key={group.id} className="community-pastoral-collection-card">
+                  <div className="community-pastoral-collection-header">
                     <h3>{group.name}</h3>
-                    <span className={`role-badge ${group.status === 'ACTIVE' ? 'role-membro' : 'role-inactive'}`}>
+                    <span
+                      className={`community-pastoral-mini-badge ${
+                        group.status === 'ACTIVE' ? 'is-green' : 'is-slate'
+                      }`}
+                    >
                       {group.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
                     </span>
                   </div>
-                  {group.description && <p>📝 {group.description}</p>}
-                  <div className="member-actions">
-                    <button
-                      onClick={() => handleEditGroup(group)}
-                      className="edit-button"
-                    >
+
+                  <p className="community-pastoral-collection-description">
+                    {group.description || 'Sem descrição cadastrada para este sub-grupo.'}
+                  </p>
+
+                  <div className="community-pastoral-action-row">
+                    <button onClick={() => handleEditGroup(group)} className="edit-button">
                       Editar
                     </button>
                     <button
@@ -625,476 +1209,369 @@ const CommunityPastoralDetailsPage: React.FC = () => {
                       Remover
                     </button>
                   </div>
-                </div>
+                </article>
               ))}
             </div>
           )}
-        </div>
+        </section>
+      </div>
 
-        {/* Reuniões */}
-        <div className="members-section" style={{ marginTop: '20px' }}>
-          <div className="section-header">
-            <h2>Reuniões ({meetings.length})</h2>
-            <button onClick={() => setShowAddMeetingModal(true)} className="add-button">
-              + Agendar Reunião
-            </button>
-          </div>
-
-          {meetings.length === 0 ? (
-            <p style={{ textAlign: 'center', color: '#666', marginTop: '20px' }}>
-              Nenhuma reunião agendada
-            </p>
-          ) : (
-            <div className="members-grid">
-              {meetings.map((meeting) => (
-                <div key={meeting.id} className="member-card">
-                  <div className="member-header">
-                    <h3>{meeting.title}</h3>
-                  </div>
-                  <p>📅 {formatDateTime(meeting.startDate || meeting.date)}</p>
-                  {meeting.location && <p>📍 {meeting.location}</p>}
-                  {meeting.description && <p>📝 {meeting.description}</p>}
-                  {meeting.eventPastorals?.[0]?.assignments && (
-                    <p style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
-                      {meeting.eventPastorals[0].assignments.filter((a: any) => a.checkedInAt).length} / {meeting.eventPastorals[0].assignments.length} presentes
-                    </p>
-                  )}
-                </div>
-              ))}
+      {showAddMeetingModal && (
+        <div className="modal-overlay" onClick={() => setShowAddMeetingModal(false)}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+            <h2>Agendar reunião</h2>
+            <div className="form-group">
+              <label>Título *</label>
+              <input
+                type="text"
+                value={meetingFormData.title}
+                onChange={(event) =>
+                  setMeetingFormData({ ...meetingFormData, title: event.target.value })
+                }
+                placeholder="Ex: Reunião mensal"
+                required
+              />
             </div>
-          )}
-        </div>
-
-        {/* Atividades */}
-        <div className="members-section" style={{ marginTop: '20px' }}>
-          <div className="section-header">
-            <h2>Atividades ({activities.length})</h2>
-            <button onClick={() => setShowAddActivityModal(true)} className="add-button">
-              + Criar Atividade
-            </button>
-          </div>
-
-          {activities.length === 0 ? (
-            <p style={{ textAlign: 'center', color: '#666', marginTop: '20px' }}>
-              Nenhuma atividade cadastrada
-            </p>
-          ) : (
-            <div className="members-grid">
-              {activities.map((activity) => (
-                <div key={activity.id} className="member-card">
-                  <div className="member-header">
-                    <h3>{activity.title}</h3>
-                  </div>
-                  <p>📅 Início: {formatDate(activity.startDate)}</p>
-                  {activity.endDate && (
-                    <p>📅 Término: {formatDate(activity.endDate)}</p>
-                  )}
-                  {activity.location && <p>📍 {activity.location}</p>}
-                  {activity.description && <p>📝 {activity.description}</p>}
-                </div>
-              ))}
+            <div className="form-group">
+              <label>Data e hora *</label>
+              <input
+                type="datetime-local"
+                value={meetingFormData.date}
+                onChange={(event) =>
+                  setMeetingFormData({ ...meetingFormData, date: event.target.value })
+                }
+                required
+              />
             </div>
-          )}
-        </div>
-
-        {/* Estatísticas */}
-        <div className="members-section" style={{ marginTop: '20px' }}>
-          <div className="section-header">
-            <h2>Estatísticas</h2>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginTop: '15px' }}>
-            <div style={{ background: '#e3f2fd', padding: '20px', borderRadius: '8px', textAlign: 'center' }}>
-              <h3 style={{ margin: '0 0 10px 0', fontSize: '2rem', color: '#1976d2' }}>{members.length}</h3>
-              <p style={{ margin: 0, color: '#555' }}>Membros Ativos</p>
+            <div className="form-group">
+              <label>Local</label>
+              <input
+                type="text"
+                value={meetingFormData.location}
+                onChange={(event) =>
+                  setMeetingFormData({ ...meetingFormData, location: event.target.value })
+                }
+                placeholder="Ex: Salão paroquial"
+              />
             </div>
-            <div style={{ background: '#f3e5f5', padding: '20px', borderRadius: '8px', textAlign: 'center' }}>
-              <h3 style={{ margin: '0 0 10px 0', fontSize: '2rem', color: '#7b1fa2' }}>{groups.length}</h3>
-              <p style={{ margin: 0, color: '#555' }}>Sub-grupos</p>
+            <div className="form-group">
+              <label>Descrição</label>
+              <textarea
+                value={meetingFormData.description}
+                onChange={(event) =>
+                  setMeetingFormData({ ...meetingFormData, description: event.target.value })
+                }
+                rows={3}
+                placeholder="Descreva a pauta da reunião..."
+              />
             </div>
-            <div style={{ background: '#fff3e0', padding: '20px', borderRadius: '8px', textAlign: 'center' }}>
-              <h3 style={{ margin: '0 0 10px 0', fontSize: '2rem', color: '#f57c00' }}>{meetings.length}</h3>
-              <p style={{ margin: 0, color: '#555' }}>Reuniões</p>
-            </div>
-            <div style={{ background: '#e8f5e9', padding: '20px', borderRadius: '8px', textAlign: 'center' }}>
-              <h3 style={{ margin: '0 0 10px 0', fontSize: '2rem', color: '#388e3c' }}>{activities.length}</h3>
-              <p style={{ margin: 0, color: '#555' }}>Atividades</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Membros */}
-        <div className="members-section" style={{ marginTop: '20px' }}>
-          <div className="section-header">
-            <h2>Membros ({members.length})</h2>
-            <div>
-              <button onClick={handleOpenEditPastoral} className="edit-button" style={{ marginRight: '10px' }}>
-                ✏️ Editar Pastoral
+            <div className="modal-actions">
+              <button onClick={() => setShowAddMeetingModal(false)} className="cancel-button">
+                Cancelar
               </button>
-              <button onClick={() => setShowAddMemberModal(true)} className="add-button">
-                + Adicionar Membro
+              <button onClick={handleAddMeeting} className="submit-button">
+                Agendar
               </button>
             </div>
           </div>
-
-          {members.length === 0 ? (
-            <p style={{ textAlign: 'center', color: '#666', marginTop: '20px' }}>
-              Nenhum membro cadastrado
-            </p>
-          ) : (
-            <div className="members-grid">
-              {members.map((pm) => (
-                <div key={pm.id} className="member-card">
-                  <div className="member-header">
-                    <h3>{pm.member.name}</h3>
-                    <span className={`role-badge role-${pm.role.toLowerCase()}`}>
-                      {pm.role}
-                    </span>
-                  </div>
-                  <p>📧 {pm.member.email}</p>
-                  {pm.member.phone && <p>📞 {pm.member.phone}</p>}
-                  <p>📅 Desde: {new Date(pm.joinedAt).toLocaleDateString('pt-BR')}</p>
-                  <div className="member-actions">
-                    <button
-                      onClick={() => handleEditRole(pm)}
-                      className="edit-button"
-                    >
-                      Editar Função
-                    </button>
-                    <button
-                      onClick={() => handleRemoveMember(pm.id, pm.member.name)}
-                      className="remove-button"
-                    >
-                      Remover
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
+      )}
 
-        {/* Modal Adicionar Reunião */}
-        {showAddMeetingModal && (
-          <div className="modal-overlay" onClick={() => setShowAddMeetingModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <h2>Agendar Reunião</h2>
-              <div className="form-group">
-                <label>Título *</label>
-                <input
-                  type="text"
-                  value={meetingFormData.title}
-                  onChange={(e) => setMeetingFormData({ ...meetingFormData, title: e.target.value })}
-                  placeholder="Ex: Reunião Mensal"
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Data e Hora *</label>
-                <input
-                  type="datetime-local"
-                  value={meetingFormData.date}
-                  onChange={(e) => setMeetingFormData({ ...meetingFormData, date: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Local</label>
-                <input
-                  type="text"
-                  value={meetingFormData.location}
-                  onChange={(e) => setMeetingFormData({ ...meetingFormData, location: e.target.value })}
-                  placeholder="Ex: Salão Paroquial"
-                />
-              </div>
-              <div className="form-group">
-                <label>Descrição</label>
-                <textarea
-                  value={meetingFormData.description}
-                  onChange={(e) => setMeetingFormData({ ...meetingFormData, description: e.target.value })}
-                  rows={3}
-                  placeholder="Descreva a pauta da reunião..."
-                />
-              </div>
-              <div className="modal-actions">
-                <button onClick={() => setShowAddMeetingModal(false)} className="cancel-button">
-                  Cancelar
-                </button>
-                <button onClick={handleAddMeeting} className="submit-button">
-                  Agendar
-                </button>
-              </div>
+      {showAddActivityModal && (
+        <div className="modal-overlay" onClick={() => setShowAddActivityModal(false)}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+            <h2>Criar atividade</h2>
+            <div className="form-group">
+              <label>Título *</label>
+              <input
+                type="text"
+                value={activityFormData.title}
+                onChange={(event) =>
+                  setActivityFormData({ ...activityFormData, title: event.target.value })
+                }
+                placeholder="Ex: Visita aos enfermos"
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>Data de início *</label>
+              <input
+                type="date"
+                value={activityFormData.startDate}
+                onChange={(event) =>
+                  setActivityFormData({ ...activityFormData, startDate: event.target.value })
+                }
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>Data de término</label>
+              <input
+                type="date"
+                value={activityFormData.endDate}
+                onChange={(event) =>
+                  setActivityFormData({ ...activityFormData, endDate: event.target.value })
+                }
+              />
+            </div>
+            <div className="form-group">
+              <label>Local</label>
+              <input
+                type="text"
+                value={activityFormData.location}
+                onChange={(event) =>
+                  setActivityFormData({ ...activityFormData, location: event.target.value })
+                }
+                placeholder="Ex: Hospital Regional"
+              />
+            </div>
+            <div className="form-group">
+              <label>Descrição</label>
+              <textarea
+                value={activityFormData.description}
+                onChange={(event) =>
+                  setActivityFormData({ ...activityFormData, description: event.target.value })
+                }
+                rows={3}
+                placeholder="Descreva a atividade..."
+              />
+            </div>
+            <div className="modal-actions">
+              <button onClick={() => setShowAddActivityModal(false)} className="cancel-button">
+                Cancelar
+              </button>
+              <button onClick={handleAddActivity} className="submit-button">
+                Criar
+              </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Modal Adicionar Atividade */}
-        {showAddActivityModal && (
-          <div className="modal-overlay" onClick={() => setShowAddActivityModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <h2>Criar Atividade</h2>
-              <div className="form-group">
-                <label>Título *</label>
-                <input
-                  type="text"
-                  value={activityFormData.title}
-                  onChange={(e) => setActivityFormData({ ...activityFormData, title: e.target.value })}
-                  placeholder="Ex: Visita aos Enfermos"
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Data de Início *</label>
-                <input
-                  type="date"
-                  value={activityFormData.startDate}
-                  onChange={(e) => setActivityFormData({ ...activityFormData, startDate: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Data de Término</label>
-                <input
-                  type="date"
-                  value={activityFormData.endDate}
-                  onChange={(e) => setActivityFormData({ ...activityFormData, endDate: e.target.value })}
-                />
-              </div>
-              <div className="form-group">
-                <label>Local</label>
-                <input
-                  type="text"
-                  value={activityFormData.location}
-                  onChange={(e) => setActivityFormData({ ...activityFormData, location: e.target.value })}
-                  placeholder="Ex: Hospital Regional"
-                />
-              </div>
-              <div className="form-group">
-                <label>Descrição</label>
-                <textarea
-                  value={activityFormData.description}
-                  onChange={(e) => setActivityFormData({ ...activityFormData, description: e.target.value })}
-                  rows={3}
-                  placeholder="Descreva a atividade..."
-                />
-              </div>
-              <div className="modal-actions">
-                <button onClick={() => setShowAddActivityModal(false)} className="cancel-button">
-                  Cancelar
-                </button>
-                <button onClick={handleAddActivity} className="submit-button">
-                  Criar
-                </button>
-              </div>
+      {showAddGroupModal && (
+        <div className="modal-overlay" onClick={() => setShowAddGroupModal(false)}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+            <h2>Adicionar sub-grupo</h2>
+            <div className="form-group">
+              <label>Nome *</label>
+              <input
+                type="text"
+                value={groupFormData.name}
+                onChange={(event) =>
+                  setGroupFormData({ ...groupFormData, name: event.target.value })
+                }
+                placeholder="Ex: Coral, Ministros da Eucaristia"
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>Descrição</label>
+              <textarea
+                value={groupFormData.description}
+                onChange={(event) =>
+                  setGroupFormData({ ...groupFormData, description: event.target.value })
+                }
+                rows={3}
+                placeholder="Descreva o sub-grupo..."
+              />
+            </div>
+            <div className="modal-actions">
+              <button onClick={() => setShowAddGroupModal(false)} className="cancel-button">
+                Cancelar
+              </button>
+              <button onClick={handleAddGroup} className="submit-button">
+                Adicionar
+              </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Modal Adicionar Sub-grupo */}
-        {showAddGroupModal && (
-          <div className="modal-overlay" onClick={() => setShowAddGroupModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <h2>Adicionar Sub-grupo</h2>
-              <div className="form-group">
-                <label>Nome *</label>
-                <input
-                  type="text"
-                  value={groupFormData.name}
-                  onChange={(e) => setGroupFormData({ ...groupFormData, name: e.target.value })}
-                  placeholder="Ex: Coral, Ministros da Eucaristia"
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Descrição</label>
-                <textarea
-                  value={groupFormData.description}
-                  onChange={(e) => setGroupFormData({ ...groupFormData, description: e.target.value })}
-                  rows={3}
-                  placeholder="Descreva o sub-grupo..."
-                />
-              </div>
-              <div className="modal-actions">
-                <button onClick={() => setShowAddGroupModal(false)} className="cancel-button">
-                  Cancelar
-                </button>
-                <button onClick={handleAddGroup} className="submit-button">
-                  Adicionar
-                </button>
-              </div>
+      {showEditGroupModal && (
+        <div className="modal-overlay" onClick={() => setShowEditGroupModal(false)}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+            <h2>Editar sub-grupo</h2>
+            <div className="form-group">
+              <label>Nome *</label>
+              <input
+                type="text"
+                value={groupFormData.name}
+                onChange={(event) =>
+                  setGroupFormData({ ...groupFormData, name: event.target.value })
+                }
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>Descrição</label>
+              <textarea
+                value={groupFormData.description}
+                onChange={(event) =>
+                  setGroupFormData({ ...groupFormData, description: event.target.value })
+                }
+                rows={3}
+              />
+            </div>
+            <div className="modal-actions">
+              <button onClick={() => setShowEditGroupModal(false)} className="cancel-button">
+                Cancelar
+              </button>
+              <button onClick={handleUpdateGroup} className="submit-button">
+                Salvar
+              </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Modal Editar Sub-grupo */}
-        {showEditGroupModal && (
-          <div className="modal-overlay" onClick={() => setShowEditGroupModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <h2>Editar Sub-grupo</h2>
-              <div className="form-group">
-                <label>Nome *</label>
-                <input
-                  type="text"
-                  value={groupFormData.name}
-                  onChange={(e) => setGroupFormData({ ...groupFormData, name: e.target.value })}
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>Descrição</label>
-                <textarea
-                  value={groupFormData.description}
-                  onChange={(e) => setGroupFormData({ ...groupFormData, description: e.target.value })}
-                  rows={3}
-                />
-              </div>
-              <div className="modal-actions">
-                <button onClick={() => setShowEditGroupModal(false)} className="cancel-button">
-                  Cancelar
-                </button>
-                <button onClick={handleUpdateGroup} className="submit-button">
-                  Salvar
-                </button>
-              </div>
+      {showEditPastoralModal && (
+        <div className="modal-overlay" onClick={() => setShowEditPastoralModal(false)}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+            <h2>Editar pastoral</h2>
+            <div className="form-group">
+              <label>Descrição</label>
+              <textarea
+                value={editFormData.description}
+                onChange={(event) =>
+                  setEditFormData({ ...editFormData, description: event.target.value })
+                }
+                rows={3}
+                placeholder="Descreva a pastoral..."
+              />
+            </div>
+            <div className="form-group">
+              <label>Missão</label>
+              <textarea
+                value={editFormData.mission}
+                onChange={(event) =>
+                  setEditFormData({ ...editFormData, mission: event.target.value })
+                }
+                rows={3}
+                placeholder="Qual a missão desta pastoral?"
+              />
+            </div>
+            <div className="form-group">
+              <label>Dia da reunião</label>
+              <input
+                type="text"
+                value={editFormData.meetingDay}
+                onChange={(event) =>
+                  setEditFormData({ ...editFormData, meetingDay: event.target.value })
+                }
+                placeholder="Ex: Toda segunda-feira"
+              />
+            </div>
+            <div className="form-group">
+              <label>Horário da reunião</label>
+              <input
+                type="time"
+                value={editFormData.meetingTime}
+                onChange={(event) =>
+                  setEditFormData({ ...editFormData, meetingTime: event.target.value })
+                }
+              />
+            </div>
+            <div className="form-group">
+              <label>Observações</label>
+              <textarea
+                value={editFormData.notes}
+                onChange={(event) => setEditFormData({ ...editFormData, notes: event.target.value })}
+                rows={2}
+                placeholder="Informações adicionais..."
+              />
+            </div>
+            <div className="modal-actions">
+              <button onClick={() => setShowEditPastoralModal(false)} className="cancel-button">
+                Cancelar
+              </button>
+              <button onClick={handleUpdatePastoral} className="submit-button">
+                Salvar
+              </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Modal Editar Pastoral */}
-        {showEditPastoralModal && (
-          <div className="modal-overlay" onClick={() => setShowEditPastoralModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <h2>Editar Pastoral</h2>
-              <div className="form-group">
-                <label>Descrição:</label>
-                <textarea
-                  value={editFormData.description}
-                  onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
-                  rows={3}
-                  placeholder="Descreva a pastoral..."
-                />
-              </div>
-              <div className="form-group">
-                <label>Missão:</label>
-                <textarea
-                  value={editFormData.mission}
-                  onChange={(e) => setEditFormData({ ...editFormData, mission: e.target.value })}
-                  rows={3}
-                  placeholder="Qual a missão desta pastoral?"
-                />
-              </div>
-              <div className="form-group">
-                <label>Dia da Reunião:</label>
-                <input
-                  type="text"
-                  value={editFormData.meetingDay}
-                  onChange={(e) => setEditFormData({ ...editFormData, meetingDay: e.target.value })}
-                  placeholder="Ex: Toda segunda-feira"
-                />
-              </div>
-              <div className="form-group">
-                <label>Horário da Reunião:</label>
-                <input
-                  type="time"
-                  value={editFormData.meetingTime}
-                  onChange={(e) => setEditFormData({ ...editFormData, meetingTime: e.target.value })}
-                />
-              </div>
-              <div className="form-group">
-                <label>Observações:</label>
-                <textarea
-                  value={editFormData.notes}
-                  onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })}
-                  rows={2}
-                  placeholder="Informações adicionais..."
-                />
-              </div>
-              <div className="modal-actions">
-                <button onClick={() => setShowEditPastoralModal(false)} className="cancel-button">
-                  Cancelar
-                </button>
-                <button onClick={handleUpdatePastoral} className="submit-button">
-                  Salvar
-                </button>
-              </div>
+      {showEditRoleModal && (
+        <div className="modal-overlay" onClick={() => setShowEditRoleModal(false)}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+            <h2>Editar função</h2>
+            <p>
+              <strong>Membro:</strong> {editingMember?.member?.fullName || 'Membro sem nome'}
+            </p>
+            <div className="form-group">
+              <label>Função *</label>
+              <select value={editRole} onChange={(event) => setEditRole(event.target.value)}>
+                <option value="Coordenador">Coordenador</option>
+                <option value="Vice-Coordenador">Vice-Coordenador</option>
+                <option value="Secretário">Secretário</option>
+                <option value="Tesoureiro">Tesoureiro</option>
+                <option value="Membro">Membro</option>
+              </select>
+            </div>
+            <div className="modal-actions">
+              <button onClick={() => setShowEditRoleModal(false)} className="cancel-button">
+                Cancelar
+              </button>
+              <button onClick={handleUpdateRole} className="submit-button">
+                Salvar
+              </button>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Modal Editar Função */}
-        {showEditRoleModal && (
-          <div className="modal-overlay" onClick={() => setShowEditRoleModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <h2>Editar Função</h2>
-              <p><strong>Membro:</strong> {editingMember?.member.name}</p>
-              <div className="form-group">
-                <label>Função *</label>
-                <select value={editRole} onChange={(e) => setEditRole(e.target.value)}>
-                  <option value="Coordenador">Coordenador</option>
-                  <option value="Vice-Coordenador">Vice-Coordenador</option>
-                  <option value="Secretário">Secretário</option>
-                  <option value="Tesoureiro">Tesoureiro</option>
-                  <option value="Membro">Membro</option>
-                </select>
-              </div>
-              <div className="modal-actions">
-                <button onClick={() => setShowEditRoleModal(false)} className="cancel-button">
-                  Cancelar
-                </button>
-                <button onClick={handleUpdateRole} className="submit-button">
-                  Salvar
-                </button>
-              </div>
+      {showAddMemberModal && (
+        <div className="modal-overlay" onClick={() => setShowAddMemberModal(false)}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+            <h2>Adicionar membro</h2>
+            <div className="form-group">
+              <label>Membro *</label>
+              <select
+                value={selectedMemberId}
+                onChange={(event) => setSelectedMemberId(event.target.value)}
+                required
+              >
+                <option value="">Selecione um membro</option>
+                {availableMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.fullName} {member.email ? `- ${member.email}` : ''}
+                  </option>
+                ))}
+              </select>
+              {availableMembers.length === 0 && (
+                <p className="community-pastoral-modal-note">
+                  Todos os membros ativos da comunidade já estão vinculados a esta pastoral.
+                </p>
+              )}
+            </div>
+
+            <div className="form-group">
+              <label>Função *</label>
+              <select
+                value={memberRole}
+                onChange={(event) => setMemberRole(event.target.value)}
+                required
+              >
+                <option value="Coordenador">Coordenador</option>
+                <option value="Vice-Coordenador">Vice-Coordenador</option>
+                <option value="Secretário">Secretário</option>
+                <option value="Tesoureiro">Tesoureiro</option>
+                <option value="Membro">Membro</option>
+              </select>
+            </div>
+
+            <div className="modal-actions">
+              <button onClick={() => setShowAddMemberModal(false)} className="cancel-button">
+                Cancelar
+              </button>
+              <button onClick={handleAddMember} className="submit-button">
+                Adicionar
+              </button>
             </div>
           </div>
-        )}
-
-        {/* Modal Adicionar Membro */}
-        {showAddMemberModal && (
-          <div className="modal-overlay" onClick={() => setShowAddMemberModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <h2>Adicionar Membro</h2>
-              <div className="form-group">
-                <label>Membro *</label>
-                <select
-                  value={selectedMemberId}
-                  onChange={(e) => setSelectedMemberId(e.target.value)}
-                  required
-                >
-                  <option value="">Selecione um membro</option>
-                  {availableMembers.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.name} - {member.email}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Função *</label>
-                <select
-                  value={memberRole}
-                  onChange={(e) => setMemberRole(e.target.value)}
-                  required
-                >
-                  <option value="Coordenador">Coordenador</option>
-                  <option value="Vice-Coordenador">Vice-Coordenador</option>
-                  <option value="Secretário">Secretário</option>
-                  <option value="Tesoureiro">Tesoureiro</option>
-                  <option value="Membro">Membro</option>
-                </select>
-              </div>
-
-              <div className="modal-actions">
-                <button onClick={() => setShowAddMemberModal(false)} className="cancel-button">
-                  Cancelar
-                </button>
-                <button onClick={handleAddMember} className="submit-button">
-                  Adicionar
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        </div>
+      )}
     </div>
   );
 };

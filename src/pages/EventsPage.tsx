@@ -1,13 +1,31 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { notify, confirm } from '../services/notification.service';
 import Calendar from 'react-calendar';
+import { useAuth } from '../contexts/AuthContext';
+import CreateEventModal from '../components/CreateEventModal';
 import EventCalendar from '../components/EventCalendar';
-import RecurrenceForm from '../components/RecurrenceForm';
 import TimeInput24h from '../components/TimeInput24h';
-import { generateRecurrenceDates, getEventDuration, applyDuration } from '../utils/recurrenceHelper';
+import {
+  eventStatuses,
+  eventTypes,
+  getEventStatusColor,
+  getEventStatusLabel,
+  getEventTypeColor,
+  getEventTypeLabel,
+} from '../constants/eventOptions';
+import { confirm, notify } from '../services/notification.service';
+import SearchSelect from '../components/SearchSelect';
+import SaintAvatar from '../components/SaintAvatar';
+import { usePatronSaints } from '../components/PatronSaintsManager';
 import 'react-calendar/dist/Calendar.css';
 import './EventsPage.css';
+
+/** Ponto colorido para as opções de tipo/status */
+const colorDot = (color: string) => (
+  <span
+    style={{ width: 12, height: 12, borderRadius: '50%', background: color, flexShrink: 0, display: 'inline-block' }}
+  />
+);
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -28,6 +46,25 @@ interface Community {
   parish?: Parish;
 }
 
+interface EventPastoralSummary {
+  communityPastoralId: string;
+  requiredPeople?: number;
+  communityPastoral?: {
+    id: string;
+    name?: string;
+    globalPastoral?: {
+      id: string;
+      name: string;
+    };
+  };
+}
+
+interface PastoralOption {
+  id: string;
+  name: string;
+  communityId: string;
+}
+
 interface Event {
   id: string;
   title: string;
@@ -41,87 +78,120 @@ interface Event {
   isPublic: boolean;
   status: string;
   community: Community;
+  eventPastorals?: EventPastoralSummary[];
   _count: {
     participants: number;
   };
 }
 
+type SortField = 'title' | 'startDate' | 'type' | 'status' | 'community';
+
+const toLocalInputValue = (date: Date) => {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 16);
+};
+
+const formatDate = (dateString: string) =>
+  new Date(dateString).toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+const getPastoralName = (eventPastoral: EventPastoralSummary) =>
+  eventPastoral.communityPastoral?.globalPastoral?.name ||
+  eventPastoral.communityPastoral?.name ||
+  'Pastoral';
+
 const EventsPage: React.FC = () => {
   const [events, setEvents] = useState<Event[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
+  const [pastorals, setPastorals] = useState<PastoralOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [initialEventStartDate, setInitialEventStartDate] = useState('');
   const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const [duplicateCopyTeam, setDuplicateCopyTeam] = useState(false);
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterCommunity, setFilterCommunity] = useState('');
-  const [viewMode, setViewMode] = useState<'calendar' | 'table'>('calendar');
-  const [sortField, setSortField] = useState<'title' | 'startDate' | 'type' | 'status' | 'community'>('startDate');
+  // Recorte temporal da visão Lista: próximos (padrão), anteriores ou todos
+  const [periodFilter, setPeriodFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
+
+  // Padroeiros das comunidades — avatar nas opções do seletor
+  const { patronsByEntity: communityPatrons } = usePatronSaints('community');
+
+  // Arrastar para reagendar: apenas coordenação (o backend valida o escopo)
+  const { user: currentUser } = useAuth();
+  const canDragEvents = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR']
+    .includes(currentUser?.role ?? '');
+
+  // Mini-calendário lateral: data clicada navega o calendário principal
+  const [miniDate, setMiniDate] = useState<Date | null>(null);
+
+  // Agenda fixa (Missa/Confissão/Adoração/Terço) sobreposta ao calendário
+  const [fixedOccurrences, setFixedOccurrences] = useState<any[]>([]);
+  const [showFixed, setShowFixed] = useState(true);
+  const [calendarRange, setCalendarRange] = useState<{ from: Date; to: Date } | null>(null);
+
+  useEffect(() => {
+    if (!calendarRange) return;
+    if (!showFixed) {
+      setFixedOccurrences([]);
+      return;
+    }
+    const token = localStorage.getItem('token');
+    axios
+      .get(`${API_URL}/mass-schedules/occurrences`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          from: calendarRange.from.toISOString(),
+          to: calendarRange.to.toISOString(),
+          communityId: filterCommunity || undefined,
+        },
+      })
+      .then((res) => setFixedOccurrences(res.data || []))
+      .catch(() => setFixedOccurrences([]));
+  }, [calendarRange, showFixed, filterCommunity]);
+  // Preferência de visualização persistida por página
+  const [viewMode, setViewModeState] = useState<'calendar' | 'table'>(
+    () => (localStorage.getItem('parish:viewMode:events') === 'table' ? 'table' : 'calendar'),
+  );
+  const setViewMode = (mode: 'calendar' | 'table') => {
+    setViewModeState(mode);
+    localStorage.setItem('parish:viewMode:events', mode);
+  };
+  const [sortField, setSortField] = useState<SortField>('startDate');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
 
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    type: 'MASS',
-    startDate: '',
-    endDate: '',
-    location: '',
-    isRecurring: false,
-    recurrenceType: '',
-    recurrenceInterval: 1,
-    recurrenceDays: '[]',
-    recurrenceEndDate: '',
-    maxParticipants: '',
-    isPublic: true,
-    status: 'DRAFT',
-    communityId: '',
-  });
-
-  const eventTypes = [
-    { value: 'MASS', label: 'Missa' },
-    { value: 'RETREAT', label: 'Retiro' },
-    { value: 'FORMATION', label: 'Formação' },
-    { value: 'MEETING', label: 'Reunião' },
-    { value: 'CELEBRATION', label: 'Celebração' },
-    { value: 'PILGRIMAGE', label: 'Peregrinação' },
-    { value: 'ADORATION', label: 'Adoração' },
-    { value: 'ROSARY', label: 'Terço' },
-    { value: 'CONFESSION', label: 'Confissão' },
-    { value: 'OTHER', label: 'Outro' },
-  ];
-
-  const eventStatuses = [
-    { value: 'DRAFT', label: 'Rascunho', color: '#6c757d' },
-    { value: 'PUBLISHED', label: 'Publicado', color: '#28a745' },
-    { value: 'CANCELLED', label: 'Cancelado', color: '#dc3545' },
-    { value: 'COMPLETED', label: 'Concluído', color: '#007bff' },
-  ];
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
   const fetchData = async () => {
     try {
       const token = localStorage.getItem('token');
-      const [eventsRes, communitiesRes] = await Promise.all([
-        axios.get(`${API_URL}/events`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        axios.get(`${API_URL}/communities`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
+      const headers = { Authorization: `Bearer ${token}` };
+      const [eventsRes, communitiesRes, pastoralsRes] = await Promise.all([
+        axios.get(`${API_URL}/events`, { headers }),
+        axios.get(`${API_URL}/communities`, { headers }),
+        axios.get(`${API_URL}/pastorals/community`, { headers }),
       ]);
 
       setEvents(eventsRes.data);
       setCommunities(communitiesRes.data);
+      setPastorals(
+        pastoralsRes.data.map((pastoral: any) => ({
+          id: pastoral.id,
+          name: pastoral.globalPastoral?.name || pastoral.name,
+          communityId: pastoral.communityId,
+        })),
+      );
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       notify.error('Erro ao carregar dados');
@@ -130,111 +200,34 @@ const EventsPage: React.FC = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-    try {
-      const token = localStorage.getItem('token');
-      
-      if (editingEvent) {
-        // Editar evento existente
-        const payload = {
-          ...formData,
-          maxParticipants: formData.maxParticipants ? parseInt(formData.maxParticipants) : undefined,
-        };
-        
-        await axios.patch(
-          `${API_URL}/events/${editingEvent.id}`,
-          payload,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        notify.success('Evento atualizado com sucesso!');
-      } else if (formData.isRecurring && formData.recurrenceType) {
-        // Criar eventos recorrentes
-        const duration = getEventDuration(formData.startDate, formData.endDate);
-        const days = formData.recurrenceDays ? JSON.parse(formData.recurrenceDays) : [];
-        
-        const dates = generateRecurrenceDates(
-          formData.startDate,
-          {
-            type: formData.recurrenceType as any,
-            interval: formData.recurrenceInterval,
-            days,
-            endDate: formData.recurrenceEndDate || undefined,
-          }
-        );
-        
-        let createdCount = 0;
-        for (const date of dates) {
-          const payload = {
-            title: formData.title,
-            description: formData.description,
-            type: formData.type,
-            startDate: date,
-            endDate: applyDuration(date, duration),
-            location: formData.location,
-            isRecurring: false,
-            maxParticipants: formData.maxParticipants ? parseInt(formData.maxParticipants) : undefined,
-            isPublic: formData.isPublic,
-            status: formData.status,
-            communityId: formData.communityId,
-          };
-          
-          await axios.post(`${API_URL}/events`, payload, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          createdCount++;
-        }
-        
-        notify.success(`${createdCount} eventos criados com sucesso!`);
-      } else {
-        // Criar evento único
-        const payload = {
-          ...formData,
-          maxParticipants: formData.maxParticipants ? parseInt(formData.maxParticipants) : undefined,
-        };
-        
-        await axios.post(`${API_URL}/events`, payload, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        notify.success('Evento criado com sucesso!');
-      }
+  const closeCreateModal = () => {
+    setShowModal(false);
+    setEditingEvent(null);
+    setInitialEventStartDate('');
+  };
 
-      setShowModal(false);
-      resetForm();
-      fetchData();
-    } catch (error: any) {
-      console.error('Erro ao salvar evento:', error);
-      notify.error(error.response?.data?.message || 'Erro ao salvar evento');
-    }
+  const openNewEventModal = () => {
+    setEditingEvent(null);
+    setInitialEventStartDate('');
+    setShowModal(true);
   };
 
   const handleEdit = (event: Event) => {
     setEditingEvent(event);
-    setFormData({
-      title: event.title,
-      description: event.description || '',
-      type: event.type,
-      startDate: event.startDate.slice(0, 16),
-      endDate: event.endDate ? event.endDate.slice(0, 16) : '',
-      location: event.location || '',
-      isRecurring: event.isRecurring,
-      recurrenceType: '',
-      recurrenceInterval: 1,
-      recurrenceDays: '[]',
-      recurrenceEndDate: '',
-      maxParticipants: event.maxParticipants?.toString() || '',
-      isPublic: event.isPublic,
-      status: event.status,
-      communityId: event.community.id,
-    });
-    setShowModal(true);
+    setInitialEventStartDate('');
     setShowDetailModal(false);
+    setShowModal(true);
   };
 
   const handleDelete = async (id: string) => {
     const confirmed = await confirm.delete('este evento');
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     try {
       const token = localStorage.getItem('token');
@@ -243,32 +236,12 @@ const EventsPage: React.FC = () => {
       });
       notify.success('Evento excluído com sucesso!');
       setShowDetailModal(false);
+      setSelectedEvents((selected) => selected.filter((eventId) => eventId !== id));
       fetchData();
     } catch (error: any) {
       console.error('Erro ao excluir evento:', error);
       notify.error(error.response?.data?.message || 'Erro ao excluir evento');
     }
-  };
-
-  const resetForm = () => {
-    setFormData({
-      title: '',
-      description: '',
-      type: 'MASS',
-      startDate: '',
-      endDate: '',
-      location: '',
-      isRecurring: false,
-      recurrenceType: '',
-      recurrenceInterval: 1,
-      recurrenceDays: '[]',
-      recurrenceEndDate: '',
-      maxParticipants: '',
-      isPublic: true,
-      status: 'DRAFT',
-      communityId: '',
-    });
-    setEditingEvent(null);
   };
 
   const handleEventClick = (event: Event) => {
@@ -277,72 +250,60 @@ const EventsPage: React.FC = () => {
   };
 
   const handleDateClick = (date: Date) => {
-    resetForm();
-    const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-    const dateStr = localDate.toISOString().slice(0, 16);
-    setFormData(prev => ({
-      ...prev,
-      startDate: dateStr,
-      endDate: dateStr,
-    }));
+    setEditingEvent(null);
+    setInitialEventStartDate(toLocalInputValue(date));
     setShowModal(true);
   };
 
   const handleDuplicateClick = () => {
     setShowDetailModal(false);
     setShowDuplicateModal(true);
+    setDuplicateCopyTeam(false);
   };
 
   const handleCalendarSelect = (date: Date) => {
-    if (!selectedEvent) return;
+    if (!selectedEvent) {
+      return;
+    }
 
-    // Usar horário do evento original
     const originalDate = new Date(selectedEvent.startDate);
     const newDate = new Date(date);
     newDate.setHours(originalDate.getHours());
     newDate.setMinutes(originalDate.getMinutes());
 
-    const dateStr = newDate.toISOString().slice(0, 16);
-    
-    // Verificar se já existe
-    if (selectedDates.includes(dateStr)) {
-      // Se já existe, remover (toggle)
-      setSelectedDates(selectedDates.filter(d => d !== dateStr));
-    } else {
-      // Adicionar nova data
-      setSelectedDates([...selectedDates, dateStr].sort());
-    }
+    const dateStr = toLocalInputValue(newDate);
+    setSelectedDates((dates) =>
+      dates.includes(dateStr) ? dates.filter((selectedDate) => selectedDate !== dateStr) : [...dates, dateStr].sort(),
+    );
   };
 
   const handleTimeChange = (oldDate: string, newTime: string) => {
     const [hours, minutes] = newTime.split(':');
     const date = new Date(oldDate);
-    date.setHours(parseInt(hours));
-    date.setMinutes(parseInt(minutes));
-    
-    const newDateStr = date.toISOString().slice(0, 16);
-    
-    setSelectedDates(selectedDates.map(d => d === oldDate ? newDateStr : d).sort());
-  };
+    date.setHours(parseInt(hours, 10));
+    date.setMinutes(parseInt(minutes, 10));
+    const newDateStr = toLocalInputValue(date);
 
-  const handleRemoveDate = (date: string) => {
-    setSelectedDates(selectedDates.filter(d => d !== date));
+    setSelectedDates((dates) => dates.map((selectedDate) => (selectedDate === oldDate ? newDateStr : selectedDate)).sort());
   };
 
   const handleDuplicate = async () => {
-    if (!selectedEvent || selectedDates.length === 0) return;
+    if (!selectedEvent || selectedDates.length === 0) {
+      return;
+    }
 
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(
         `${API_URL}/events/${selectedEvent.id}/duplicate`,
-        { dates: selectedDates },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { dates: selectedDates, copyTeam: duplicateCopyTeam },
+        { headers: { Authorization: `Bearer ${token}` } },
       );
 
       notify.success(response.data.message);
       setShowDuplicateModal(false);
       setSelectedDates([]);
+      setDuplicateCopyTeam(false);
       fetchData();
     } catch (error: any) {
       console.error('Erro ao duplicar evento:', error);
@@ -357,8 +318,85 @@ const EventsPage: React.FC = () => {
     return matchesType && matchesStatus && matchesCommunity;
   });
 
-  // Ordenação
-  const sortedEvents = [...filteredEvents].sort((a, b) => {
+  // Dias com evento (pontinhos no mini-calendário)
+  const eventDays = useMemo(() => {
+    const days = new Set<string>();
+    for (const event of filteredEvents) {
+      const date = new Date(event.startDate);
+      days.add(`${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`);
+    }
+    return days;
+  }, [filteredEvents]);
+
+  /** Reagendar via arrastar-e-soltar: confirma, aplica o PATCH e recarrega */
+  const handleCalendarEventDrop = async (
+    event: { id: string; title: string; startDate: string; endDate?: string },
+    newStart: Date,
+  ): Promise<boolean> => {
+    const when = newStart.toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const confirmed = await confirm.action('Reagendar evento', `Mover "${event.title}" para ${when}?`, 'Reagendar');
+    if (!confirmed) return false;
+
+    try {
+      const token = localStorage.getItem('token');
+      // Preserva a duração original quando o evento tem horário de término
+      const duration = event.endDate
+        ? new Date(event.endDate).getTime() - new Date(event.startDate).getTime()
+        : null;
+      await axios.patch(
+        `${API_URL}/events/${event.id}`,
+        {
+          startDate: newStart.toISOString(),
+          ...(duration !== null ? { endDate: new Date(newStart.getTime() + duration).toISOString() } : {}),
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      notify.success('Evento reagendado!');
+      fetchData();
+      return true;
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Erro ao reagendar o evento');
+      return false;
+    }
+  };
+
+  /** Exporta a agenda em .ics (Google Calendar, Outlook, Apple Calendar) */
+  const handleExportIcs = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get(`${API_URL}/events/export.ics`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { communityId: filterCommunity || undefined },
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'text/calendar' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'agenda-paroquial.ics';
+      link.click();
+      URL.revokeObjectURL(url);
+      notify.success('Agenda exportada! Importe o .ics no Google Calendar, Outlook ou Apple Calendar.');
+    } catch {
+      notify.error('Erro ao exportar a agenda');
+    }
+  };
+
+  // A visão Lista mostra por padrão apenas os próximos eventos; o filtro de
+  // período permite ver os anteriores ou todos. O calendário não é afetado.
+  const now = Date.now();
+  const isPastEvent = (event: Event) =>
+    new Date(event.endDate || event.startDate).getTime() < now;
+  const tableEvents = filteredEvents.filter((event) => {
+    if (periodFilter === 'all') return true;
+    return periodFilter === 'past' ? isPastEvent(event) : !isPastEvent(event);
+  });
+
+  const sortedEvents = [...tableEvents].sort((a, b) => {
     let comparison = 0;
     switch (sortField) {
       case 'title':
@@ -380,42 +418,43 @@ const EventsPage: React.FC = () => {
     return sortDirection === 'asc' ? comparison : -comparison;
   });
 
-  // Paginação
   const totalPages = Math.ceil(sortedEvents.length / itemsPerPage);
-  const paginatedEvents = sortedEvents.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  const paginatedEvents = sortedEvents.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  const handleSort = (field: typeof sortField) => {
+  const handleSort = (field: SortField) => {
     if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
+      setSortDirection((direction) => (direction === 'asc' ? 'desc' : 'asc'));
+      return;
     }
+
+    setSortField(field);
+    setSortDirection('asc');
+  };
+
+  const getSortMarker = (field: SortField) => {
+    if (sortField !== field) {
+      return '';
+    }
+    return sortDirection === 'asc' ? ' ↑' : ' ↓';
   };
 
   const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedEvents(paginatedEvents.map((e) => e.id));
-    } else {
-      setSelectedEvents([]);
-    }
+    setSelectedEvents(checked ? paginatedEvents.map((event) => event.id) : []);
   };
 
   const handleSelectEvent = (id: string, checked: boolean) => {
-    if (checked) {
-      setSelectedEvents([...selectedEvents, id]);
-    } else {
-      setSelectedEvents(selectedEvents.filter((eid) => eid !== id));
-    }
+    setSelectedEvents((selected) => (checked ? [...selected, id] : selected.filter((eventId) => eventId !== id)));
   };
 
   const handleBulkDelete = async () => {
-    if (selectedEvents.length === 0) return;
+    if (selectedEvents.length === 0) {
+      return;
+    }
+
     const confirmed = await confirm.delete(`${selectedEvents.length} evento(s)`);
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     try {
       const token = localStorage.getItem('token');
@@ -437,18 +476,15 @@ const EventsPage: React.FC = () => {
     const headers = ['Título', 'Tipo', 'Data Início', 'Local', 'Comunidade', 'Status', 'Participantes'];
     const rows = sortedEvents.map((event) => [
       event.title,
-      getTypeLabel(event.type),
+      getEventTypeLabel(event.type),
       formatDate(event.startDate),
       event.location || '',
       event.community.name,
-      getStatusLabel(event.status),
+      getEventStatusLabel(event.status),
       event._count.participants.toString(),
     ]);
 
-    const csvContent = [headers, ...rows]
-      .map((row) => row.map((cell) => `"${cell}"`).join(','))
-      .join('\n');
-
+    const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -456,99 +492,53 @@ const EventsPage: React.FC = () => {
     link.click();
   };
 
-  const getTypeLabel = (type: string) => {
-    return eventTypes.find((t) => t.value === type)?.label || type;
-  };
-
-  const getStatusLabel = (status: string) => {
-    return eventStatuses.find((s) => s.value === status)?.label || status;
-  };
-
-  const getStatusColor = (status: string) => {
-    return eventStatuses.find((s) => s.value === status)?.color || '#6c757d';
-  };
-
-  const getTypeColor = (type: string) => {
-    const colors: { [key: string]: string } = {
-      MASS: '#9b59b6',
-      RETREAT: '#3498db',
-      FORMATION: '#27ae60',
-      MEETING: '#f39c12',
-      CELEBRATION: '#e74c3c',
-      PILGRIMAGE: '#1abc9c',
-      ADORATION: '#8e44ad',
-      ROSARY: '#2980b9',
-      CONFESSION: '#16a085',
-      OTHER: '#95a5a6',
-    };
-    return colors[type] || '#95a5a6';
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  if (loading) return <div className="events-page">Carregando...</div>;
+  if (loading) {
+    return <div className="events-page">Carregando...</div>;
+  }
 
   return (
     <div className="events-page">
       <div className="events-header">
-        <h1>📅 Agenda de Eventos</h1>
-        <button className="btn-new-event" onClick={() => {
-          resetForm();
-          setShowModal(true);
-        }}>
+        <h1>Agenda de Eventos</h1>
+        <button className="btn-new-event" onClick={openNewEventModal}>
           + Novo Evento
         </button>
       </div>
 
       <div className="events-controls">
         <div className="events-filters">
-          <select
+          <SearchSelect
+            options={eventTypes.map((type) => ({ value: type.value, label: type.label, icon: colorDot(type.color) }))}
             value={filterType}
-            onChange={(e) => setFilterType(e.target.value)}
-            className="filter-select"
-          >
-            <option value="">Todos os tipos</option>
-            {eventTypes.map((type) => (
-              <option key={type.value} value={type.value}>
-                {type.label}
-              </option>
-            ))}
-          </select>
-
-          <select
+            onChange={setFilterType}
+            placeholder="Todos os tipos"
+            allOption
+            searchPlaceholder="Buscar tipo..."
+          />
+          <SearchSelect
+            options={eventStatuses.map((status) => ({ value: status.value, label: status.label, icon: colorDot(status.color) }))}
             value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="filter-select"
-          >
-            <option value="">Todos os status</option>
-            {eventStatuses.map((status) => (
-              <option key={status.value} value={status.value}>
-                {status.label}
-              </option>
-            ))}
-          </select>
-
-          <select
+            onChange={setFilterStatus}
+            placeholder="Todos os status"
+            allOption
+            searchPlaceholder="Buscar status..."
+          />
+          <SearchSelect
+            options={communities.map((community) => {
+              const patron = communityPatrons[community.id]?.[0];
+              return {
+                value: community.id,
+                label: community.name,
+                sublabel: community.parish?.name,
+                icon: patron ? <SaintAvatar saint={patron.saint} small /> : undefined,
+              };
+            })}
             value={filterCommunity}
-            onChange={(e) => setFilterCommunity(e.target.value)}
-            className="filter-select filter-community"
-          >
-            <option value="">Todas as comunidades</option>
-            {communities.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.parish ? `${c.parish.name} › ${c.name}` : c.name}
-              </option>
-            ))}
-          </select>
+            onChange={setFilterCommunity}
+            placeholder="Todas as comunidades"
+            allOption
+            searchPlaceholder="Buscar comunidade ou paróquia..."
+          />
         </div>
 
         <div className="view-toggle">
@@ -556,88 +546,177 @@ const EventsPage: React.FC = () => {
             className={`view-toggle-btn ${viewMode === 'calendar' ? 'active' : ''}`}
             onClick={() => setViewMode('calendar')}
           >
-            📅 Calendário
+            Calendário
           </button>
           <button
             className={`view-toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
             onClick={() => setViewMode('table')}
           >
-            📋 Lista
+            Lista
           </button>
         </div>
       </div>
 
-      {/* Indicador de filtros ativos */}
       {(filterCommunity || filterType || filterStatus) && (
         <div className="active-filters-banner">
           <div className="active-filters-content">
-            <span className="filter-icon">🔍</span>
+            <span className="filter-icon">+</span>
             <span className="filter-label">Filtros ativos:</span>
             {filterCommunity && (
               <span className="filter-badge filter-badge-community">
-                📍 {communities.find(c => c.id === filterCommunity)?.parish 
-                  ? `${communities.find(c => c.id === filterCommunity)?.parish?.name} › ${communities.find(c => c.id === filterCommunity)?.name}`
-                  : communities.find(c => c.id === filterCommunity)?.name}
-                <button className="filter-remove" onClick={() => setFilterCommunity('')}>×</button>
+                Comunidade:{' '}
+                {communities.find((community) => community.id === filterCommunity)?.parish
+                  ? `${communities.find((community) => community.id === filterCommunity)?.parish?.name} - ${
+                      communities.find((community) => community.id === filterCommunity)?.name
+                    }`
+                  : communities.find((community) => community.id === filterCommunity)?.name}
+                <button className="filter-remove" onClick={() => setFilterCommunity('')}>
+                  x
+                </button>
               </span>
             )}
             {filterType && (
               <span className="filter-badge filter-badge-type">
-                📋 {eventTypes.find(t => t.value === filterType)?.label}
-                <button className="filter-remove" onClick={() => setFilterType('')}>×</button>
+                Tipo: {getEventTypeLabel(filterType)}
+                <button className="filter-remove" onClick={() => setFilterType('')}>
+                  x
+                </button>
               </span>
             )}
             {filterStatus && (
               <span className="filter-badge filter-badge-status">
-                ⚡ {eventStatuses.find(s => s.value === filterStatus)?.label}
-                <button className="filter-remove" onClick={() => setFilterStatus('')}>×</button>
+                Status: {getEventStatusLabel(filterStatus)}
+                <button className="filter-remove" onClick={() => setFilterStatus('')}>
+                  x
+                </button>
               </span>
             )}
-            <button className="btn-clear-all-filters" onClick={() => {
-              setFilterCommunity('');
-              setFilterType('');
-              setFilterStatus('');
-            }}>
+            <button
+              className="btn-clear-all-filters"
+              onClick={() => {
+                setFilterCommunity('');
+                setFilterType('');
+                setFilterStatus('');
+              }}
+            >
               Limpar todos
             </button>
           </div>
-          <div className="filter-results-count">
-            {filteredEvents.length} evento(s) encontrado(s)
-          </div>
+          <div className="filter-results-count">{filteredEvents.length} evento(s) encontrado(s)</div>
         </div>
       )}
 
       {viewMode === 'calendar' ? (
-        <EventCalendar
-          events={filteredEvents}
-          onEventClick={handleEventClick}
-          onDateClick={handleDateClick}
-        />
+        <div className="calendar-layout">
+          {/* Mini-calendário lateral: navegação rápida + pontinhos nos dias com evento */}
+          <aside className="calendar-side">
+            <Calendar
+              locale="pt-BR"
+              value={miniDate}
+              onChange={(value) => {
+                const date = Array.isArray(value) ? value[0] : value;
+                if (date instanceof Date) setMiniDate(date);
+              }}
+              tileContent={({ date, view }) =>
+                view === 'month' && eventDays.has(`${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`) ? (
+                  <span className="mini-cal-dot" />
+                ) : null
+              }
+            />
+            <button type="button" className="entity-btn primary calendar-ics-btn" onClick={handleExportIcs}>
+              📆 Exportar agenda (.ics)
+            </button>
+            <p className="mini-cal-hint">
+              Clique numa data para navegar. O .ics pode ser importado no Google Calendar, Outlook ou iPhone.
+            </p>
+          </aside>
+
+          <div className="calendar-main">
+            {/* Legenda clicável por tipo (padrão de mercado): clique filtra o calendário */}
+            <div className="calendar-legend">
+              {eventTypes.map((type) => (
+                <button
+                  key={type.value}
+                  type="button"
+                  className={`legend-item ${filterType === type.value ? 'active' : filterType ? 'dimmed' : ''}`}
+                  onClick={() => setFilterType(filterType === type.value ? '' : type.value)}
+                  title={filterType === type.value ? 'Clique para limpar o filtro' : `Mostrar apenas: ${type.label}`}
+                >
+                  <span className="legend-dot" style={{ background: type.color }} />
+                  {type.label}
+                </button>
+              ))}
+              {/* Toggle da agenda fixa (Missa/Confissão/Adoração/Terço) */}
+              <button
+                type="button"
+                className={`legend-item ${showFixed ? 'active' : 'dimmed'}`}
+                onClick={() => setShowFixed((value) => !value)}
+                title={showFixed ? 'Ocultar a agenda fixa' : 'Mostrar a agenda fixa'}
+              >
+                🕐 Agenda fixa
+              </button>
+            </div>
+            <EventCalendar
+              events={filteredEvents}
+              onEventClick={handleEventClick}
+              onDateClick={handleDateClick}
+              editable={canDragEvents}
+              onEventDrop={handleCalendarEventDrop}
+              focusDate={miniDate}
+              fixedOccurrences={showFixed ? fixedOccurrences : []}
+              onRangeChange={(from, to) => setCalendarRange({ from, to })}
+            />
+            {canDragEvents && (
+              <p className="calendar-drag-hint">💡 Dica: arraste um evento para outra data para reagendá-lo.</p>
+            )}
+          </div>
+        </div>
       ) : (
-        <div className="events-table-container">
-          {/* Ações em lote e exportação */}
+        <div className="events-table-container entity-table">
           <div className="table-actions">
-            <div className="bulk-actions">
+            <div className="bulk-actions" style={selectedEvents.length === 0 ? { display: 'none' } : undefined}>
               {selectedEvents.length > 0 && (
                 <>
                   <span className="selected-count">{selectedEvents.length} selecionado(s)</span>
                   <button className="btn-bulk-delete" onClick={handleBulkDelete}>
-                    Excluir Selecionados
+                    Excluir selecionados
                   </button>
                   <button className="btn-clear-selection" onClick={() => setSelectedEvents([])}>
-                    Limpar Seleção
+                    Limpar seleção
                   </button>
                 </>
               )}
             </div>
             <div className="table-controls">
+              <div className="period-toggle">
+                {([
+                  { value: 'upcoming', label: 'Próximos' },
+                  { value: 'past', label: 'Anteriores' },
+                  { value: 'all', label: 'Todos' },
+                ] as const).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`period-toggle-btn ${periodFilter === option.value ? 'active' : ''}`}
+                    onClick={() => {
+                      setPeriodFilter(option.value);
+                      setCurrentPage(1);
+                      // Anteriores: mais recentes primeiro; próximos: mais próximos primeiro
+                      setSortField('startDate');
+                      setSortDirection(option.value === 'past' ? 'desc' : 'asc');
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
               <button className="btn-export" onClick={exportToCSV}>
-                📥 Exportar CSV
+                Exportar CSV
               </button>
               <select
                 value={itemsPerPage}
-                onChange={(e) => {
-                  setItemsPerPage(Number(e.target.value));
+                onChange={(event) => {
+                  setItemsPerPage(Number(event.target.value));
                   setCurrentPage(1);
                 }}
                 className="items-per-page"
@@ -650,7 +729,6 @@ const EventsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Tabela */}
           <table className="events-table">
             <thead>
               <tr>
@@ -658,24 +736,24 @@ const EventsPage: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={selectedEvents.length === paginatedEvents.length && paginatedEvents.length > 0}
-                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    onChange={(event) => handleSelectAll(event.target.checked)}
                   />
                 </th>
                 <th className="sortable" onClick={() => handleSort('title')}>
-                  Título {sortField === 'title' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  Título{getSortMarker('title')}
                 </th>
                 <th className="sortable" onClick={() => handleSort('type')}>
-                  Tipo {sortField === 'type' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  Tipo{getSortMarker('type')}
                 </th>
                 <th className="sortable" onClick={() => handleSort('startDate')}>
-                  Data {sortField === 'startDate' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  Data{getSortMarker('startDate')}
                 </th>
                 <th>Local</th>
                 <th className="sortable" onClick={() => handleSort('community')}>
-                  Comunidade {sortField === 'community' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  Comunidade{getSortMarker('community')}
                 </th>
                 <th className="sortable" onClick={() => handleSort('status')}>
-                  Status {sortField === 'status' && (sortDirection === 'asc' ? '↑' : '↓')}
+                  Status{getSortMarker('status')}
                 </th>
                 <th>Participantes</th>
                 <th>Ações</th>
@@ -688,25 +766,39 @@ const EventsPage: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={selectedEvents.includes(event.id)}
-                      onChange={(e) => handleSelectEvent(event.id, e.target.checked)}
+                      onChange={(inputEvent) => handleSelectEvent(event.id, inputEvent.target.checked)}
                     />
                   </td>
                   <td className="title-cell">
-                    <span className="event-title-link" onClick={() => handleEventClick(event)}>
-                      {event.title}
-                    </span>
+                    <div>
+                      <span className="event-title-link" onClick={() => handleEventClick(event)}>
+                        {event.title}
+                      </span>
+                      {event.eventPastorals && event.eventPastorals.length > 0 && (
+                        <small style={{ display: 'block', color: '#6b7280' }}>
+                          {event.eventPastorals
+                            .map(
+                              (eventPastoral) =>
+                                `${getPastoralName(eventPastoral)}${
+                                  eventPastoral.requiredPeople ? ` (${eventPastoral.requiredPeople} vagas)` : ''
+                                }`,
+                            )
+                            .join(', ')}
+                        </small>
+                      )}
+                    </div>
                   </td>
                   <td>
-                    <span className="type-badge" style={{ backgroundColor: getTypeColor(event.type) }}>
-                      {getTypeLabel(event.type)}
+                    <span className="type-badge" style={{ backgroundColor: getEventTypeColor(event.type) }}>
+                      {getEventTypeLabel(event.type)}
                     </span>
                   </td>
                   <td>{formatDate(event.startDate)}</td>
                   <td>{event.location || '-'}</td>
                   <td>{event.community.name}</td>
                   <td>
-                    <span className="status-badge" style={{ backgroundColor: getStatusColor(event.status) }}>
-                      {getStatusLabel(event.status)}
+                    <span className="status-badge" style={{ backgroundColor: getEventStatusColor(event.status) }}>
+                      {getEventStatusLabel(event.status)}
                     </span>
                   </td>
                   <td className="center">
@@ -714,10 +806,10 @@ const EventsPage: React.FC = () => {
                     {event.maxParticipants && ` / ${event.maxParticipants}`}
                   </td>
                   <td className="actions-cell">
-                    <button className="btn-action btn-edit-small" onClick={() => handleEdit(event)} title="Editar">
+                    <button className="entity-icon-btn" onClick={() => handleEdit(event)} title="Editar">
                       ✏️
                     </button>
-                    <button className="btn-action btn-delete-small" onClick={() => handleDelete(event.id)} title="Excluir">
+                    <button className="entity-icon-btn danger" onClick={() => handleDelete(event.id)} title="Excluir">
                       🗑️
                     </button>
                   </td>
@@ -726,22 +818,25 @@ const EventsPage: React.FC = () => {
             </tbody>
           </table>
 
-          {/* Paginação */}
+          {paginatedEvents.length === 0 && (
+            <div className="empty-state" style={{ padding: '2rem', textAlign: 'center', color: '#888' }}>
+              {periodFilter === 'upcoming'
+                ? 'Nenhum evento futuro. Use "Anteriores" ou "Todos" para ver o histórico.'
+                : 'Nenhum evento encontrado para este filtro.'}
+            </div>
+          )}
+
           {totalPages > 1 && (
             <div className="pagination">
-              <button
-                className="pagination-btn"
-                onClick={() => setCurrentPage(1)}
-                disabled={currentPage === 1}
-              >
-                «
+              <button className="pagination-btn" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>
+                {'<<'}
               </button>
               <button
                 className="pagination-btn"
                 onClick={() => setCurrentPage(currentPage - 1)}
                 disabled={currentPage === 1}
               >
-                ‹
+                {'<'}
               </button>
               <span className="pagination-info">
                 Página {currentPage} de {totalPages} ({sortedEvents.length} eventos)
@@ -751,14 +846,14 @@ const EventsPage: React.FC = () => {
                 onClick={() => setCurrentPage(currentPage + 1)}
                 disabled={currentPage === totalPages}
               >
-                ›
+                {'>'}
               </button>
               <button
                 className="pagination-btn"
                 onClick={() => setCurrentPage(totalPages)}
                 disabled={currentPage === totalPages}
               >
-                »
+                {'>>'}
               </button>
             </div>
           )}
@@ -771,268 +866,139 @@ const EventsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Modal de Detalhes do Evento */}
       {showDetailModal && selectedEvent && (
         <div className="modal-overlay" onClick={() => setShowDetailModal(false)}>
-          <div className="modal-content event-detail-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => setShowDetailModal(false)}>×</button>
-            
+          <div className="modal-content event-detail-modal" onClick={(event) => event.stopPropagation()}>
+            <button className="modal-close" onClick={() => setShowDetailModal(false)}>
+              x
+            </button>
+
             <div className="event-detail-header">
               <h2>{selectedEvent.title}</h2>
-              <span
-                className="event-status-badge"
-                style={{ backgroundColor: getStatusColor(selectedEvent.status) }}
-              >
-                {getStatusLabel(selectedEvent.status)}
+              <span className="event-status-badge" style={{ backgroundColor: getEventStatusColor(selectedEvent.status) }}>
+                {getEventStatusLabel(selectedEvent.status)}
               </span>
             </div>
 
             <div className="event-detail-body">
               <div className="detail-row">
-                <strong>📌 Tipo:</strong>
-                <span>{getTypeLabel(selectedEvent.type)}</span>
+                <strong>Tipo:</strong>
+                <span>{getEventTypeLabel(selectedEvent.type)}</span>
               </div>
 
               {selectedEvent.description && (
                 <div className="detail-row">
-                  <strong>📝 Descrição:</strong>
+                  <strong>Descrição:</strong>
                   <p>{selectedEvent.description}</p>
                 </div>
               )}
 
               <div className="detail-row">
-                <strong>🕐 Início:</strong>
+                <strong>Início:</strong>
                 <span>{formatDate(selectedEvent.startDate)}</span>
               </div>
 
               {selectedEvent.endDate && (
                 <div className="detail-row">
-                  <strong>🕐 Fim:</strong>
+                  <strong>Fim:</strong>
                   <span>{formatDate(selectedEvent.endDate)}</span>
                 </div>
               )}
 
               {selectedEvent.location && (
                 <div className="detail-row">
-                  <strong>📍 Local:</strong>
+                  <strong>Local:</strong>
                   <span>{selectedEvent.location}</span>
                 </div>
               )}
 
               <div className="detail-row">
-                <strong>🏘️ Comunidade:</strong>
+                <strong>Comunidade:</strong>
                 <span>
                   {selectedEvent.community.name}
                   {selectedEvent.community.parish && ` - ${selectedEvent.community.parish.name}`}
                 </span>
               </div>
 
+              {selectedEvent.eventPastorals && selectedEvent.eventPastorals.length > 0 && (
+                <div className="detail-row">
+                  <strong>Pastorais:</strong>
+                  <span>
+                    {selectedEvent.eventPastorals
+                      .map(
+                        (eventPastoral) =>
+                          `${getPastoralName(eventPastoral)}${
+                            eventPastoral.requiredPeople ? ` (${eventPastoral.requiredPeople} vagas)` : ''
+                          }`,
+                      )
+                      .join(', ')}
+                  </span>
+                </div>
+              )}
+
               {selectedEvent.maxParticipants && (
                 <div className="detail-row">
-                  <strong>👥 Participantes:</strong>
+                  <strong>Participantes:</strong>
                   <span>
                     {selectedEvent._count.participants} / {selectedEvent.maxParticipants} inscritos
                   </span>
                 </div>
               )}
 
-              {selectedEvent.isRecurring && (
-                <div className="detail-row">
-                  <strong>🔄 Recorrência:</strong>
-                  <span>Evento recorrente</span>
-                </div>
-              )}
-
               <div className="detail-row">
-                <strong>👁️ Visibilidade:</strong>
+                <strong>Visibilidade:</strong>
                 <span>{selectedEvent.isPublic ? 'Público' : 'Privado'}</span>
               </div>
             </div>
 
             <div className="event-detail-actions">
               <button className="btn-edit" onClick={() => handleEdit(selectedEvent)}>
-                ✏️ Editar
+                Editar
               </button>
               <button className="btn-duplicate" onClick={handleDuplicateClick}>
-                📋 Duplicar
+                Duplicar
               </button>
               <button className="btn-delete" onClick={() => handleDelete(selectedEvent.id)}>
-                🗑️ Excluir
+                Excluir
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal de Criação/Edição */}
-      {showModal && (
-        <div className="modal-overlay" onClick={() => { setShowModal(false); resetForm(); }}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => { setShowModal(false); resetForm(); }}>×</button>
-            
-            <h2>{editingEvent ? 'Editar Evento' : 'Novo Evento'}</h2>
-            
-            <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label>Título *</label>
-                <input
-                  type="text"
-                  required
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  placeholder="Nome do evento"
-                />
-              </div>
+      <CreateEventModal
+        isOpen={showModal}
+        onClose={closeCreateModal}
+        onSuccess={() => {
+          fetchData();
+          closeCreateModal();
+        }}
+        communities={communities}
+        pastorals={pastorals}
+        editingEvent={editingEvent}
+        initialStartDate={initialEventStartDate}
+      />
 
-              <div className="form-group">
-                <label>Descrição</label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Detalhes sobre o evento"
-                  rows={3}
-                />
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Tipo *</label>
-                  <select
-                    required
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                  >
-                    {eventTypes.map((type) => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Status *</label>
-                  <select
-                    required
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  >
-                    {eventStatuses.map((status) => (
-                      <option key={status.value} value={status.value}>
-                        {status.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Data/Hora Início *</label>
-                  <input
-                    type="datetime-local"
-                    required
-                    value={formData.startDate}
-                    onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Data/Hora Fim</label>
-                  <input
-                    type="datetime-local"
-                    value={formData.endDate}
-                    onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label>Local</label>
-                <input
-                  type="text"
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  placeholder="Local do evento"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Comunidade *</label>
-                <select
-                  required
-                  value={formData.communityId}
-                  onChange={(e) => setFormData({ ...formData, communityId: e.target.value })}
-                >
-                  <option value="">Selecione uma comunidade</option>
-                  {communities.map((community) => (
-                    <option key={community.id} value={community.id}>
-                      {community.name} - {community.parish?.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Máximo de Participantes</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={formData.maxParticipants}
-                  onChange={(e) => setFormData({ ...formData, maxParticipants: e.target.value })}
-                  placeholder="Deixe vazio para ilimitado"
-                />
-              </div>
-
-              <div className="form-checkboxes">
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={formData.isRecurring}
-                    onChange={(e) => setFormData({ ...formData, isRecurring: e.target.checked })}
-                  />
-                  <span>Evento recorrente</span>
-                </label>
-
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={formData.isPublic}
-                    onChange={(e) => setFormData({ ...formData, isPublic: e.target.checked })}
-                  />
-                  <span>Evento público</span>
-                </label>
-              </div>
-
-              <RecurrenceForm
-                isRecurring={formData.isRecurring}
-                recurrenceType={formData.recurrenceType}
-                recurrenceInterval={formData.recurrenceInterval}
-                recurrenceDays={formData.recurrenceDays}
-                recurrenceEndDate={formData.recurrenceEndDate}
-                onChange={(field, value) => setFormData({ ...formData, [field]: value })}
-              />
-
-              <div className="modal-actions">
-                <button type="button" className="btn-cancel" onClick={() => { setShowModal(false); resetForm(); }}>
-                  Cancelar
-                </button>
-                <button type="submit" className="btn-submit">
-                  {editingEvent ? 'Atualizar' : 'Criar'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Duplicação */}
       {showDuplicateModal && selectedEvent && (
-        <div className="modal-overlay" onClick={() => { setShowDuplicateModal(false); setSelectedDates([]); }}>
-          <div className="modal-content duplicate-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close" onClick={() => { setShowDuplicateModal(false); setSelectedDates([]); }}>×</button>
-            
-            <h2>📋 Duplicar Evento</h2>
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            setShowDuplicateModal(false);
+            setSelectedDates([]);
+          }}
+        >
+          <div className="modal-content duplicate-modal" onClick={(event) => event.stopPropagation()}>
+            <button
+              className="modal-close"
+              onClick={() => {
+                setShowDuplicateModal(false);
+                setSelectedDates([]);
+              }}
+            >
+              x
+            </button>
+
+            <h2>Duplicar Evento</h2>
             <p className="duplicate-info">
               Selecione as datas para duplicar o evento <strong>"{selectedEvent.title}"</strong>
             </p>
@@ -1040,7 +1006,7 @@ const EventsPage: React.FC = () => {
             <div className="duplicate-content">
               <div className="calendar-section">
                 <Calendar
-                  onChange={(value: any) => {
+                  onChange={(value) => {
                     if (value instanceof Date) {
                       handleCalendarSelect(value);
                     }
@@ -1049,76 +1015,71 @@ const EventsPage: React.FC = () => {
                   minDate={new Date()}
                   locale="pt-BR"
                   tileClassName={({ date }) => {
-                    const dateStr = new Date(
-                      date.getFullYear(),
-                      date.getMonth(),
-                      date.getDate(),
-                      new Date(selectedEvent.startDate).getHours(),
-                      new Date(selectedEvent.startDate).getMinutes()
-                    ).toISOString().slice(0, 16);
-                    return selectedDates.includes(dateStr) ? 'selected-date' : '';
+                    const originalDate = new Date(selectedEvent.startDate);
+                    const candidate = new Date(date);
+                    candidate.setHours(originalDate.getHours());
+                    candidate.setMinutes(originalDate.getMinutes());
+                    return selectedDates.includes(toLocalInputValue(candidate)) ? 'selected-date' : '';
                   }}
                 />
               </div>
 
-              {selectedDates.length > 0 && (
+              {selectedDates.length > 0 ? (
                 <div className="selected-dates-list">
-                  <h4>Datas Selecionadas ({selectedDates.length})</h4>
+                  <h4>Datas selecionadas ({selectedDates.length})</h4>
                   <ul>
                     {selectedDates.map((date) => {
                       const dateObj = new Date(date);
-                      const dateStr = dateObj.toLocaleDateString('pt-BR');
-                      
-                      // Formato 24h: HH:mm
-                      const hours = dateObj.getHours().toString().padStart(2, '0');
-                      const minutes = dateObj.getMinutes().toString().padStart(2, '0');
-                      const timeStr = `${hours}:${minutes}`;
-                      
+                      const dateText = dateObj.toLocaleDateString('pt-BR');
+                      const timeText = `${dateObj.getHours().toString().padStart(2, '0')}:${dateObj
+                        .getMinutes()
+                        .toString()
+                        .padStart(2, '0')}`;
+
                       return (
                         <li key={date}>
                           <div className="date-item">
-                            <span className="date-text">{dateStr}</span>
-                            <TimeInput24h
-                              value={timeStr}
-                              onChange={(newTime) => handleTimeChange(date, newTime)}
-                            />
+                            <span className="date-text">{dateText}</span>
+                            <TimeInput24h value={timeText} onChange={(newTime) => handleTimeChange(date, newTime)} />
                           </div>
-                          <button
-                            type="button"
-                            className="btn-remove-date"
-                            onClick={() => handleRemoveDate(date)}
-                          >
-                            ✕
+                          <button type="button" className="btn-remove-date" onClick={() => setSelectedDates((dates) => dates.filter((selectedDate) => selectedDate !== date))}>
+                            x
                           </button>
                         </li>
                       );
                     })}
                   </ul>
                 </div>
-              )}
-
-              {selectedDates.length === 0 && (
+              ) : (
                 <div className="empty-dates">
-                  <p>📅 Nenhuma data selecionada</p>
+                  <p>Nenhuma data selecionada</p>
                   <small>Clique nas datas do calendário para selecionar</small>
                 </div>
               )}
             </div>
 
+            <label className="duplicate-copy-team">
+              <input
+                type="checkbox"
+                checked={duplicateCopyTeam}
+                onChange={(event) => setDuplicateCopyTeam(event.target.checked)}
+              />
+              Repetir a mesma equipe da escala (membros escalados precisarao reconfirmar presenca)
+            </label>
+
             <div className="modal-actions">
               <button
                 type="button"
                 className="btn-cancel"
-                onClick={() => { setShowDuplicateModal(false); setSelectedDates([]); }}
+                onClick={() => {
+                  setShowDuplicateModal(false);
+                  setSelectedDates([]);
+                  setDuplicateCopyTeam(false);
+                }}
               >
                 Cancelar
               </button>
-              <button
-                type="button"
-                className="btn-submit"
-                onClick={handleDuplicate}
-                disabled={selectedDates.length === 0}
-              >
+              <button type="button" className="btn-submit" onClick={handleDuplicate} disabled={selectedDates.length === 0}>
                 Duplicar para {selectedDates.length} data(s)
               </button>
             </div>

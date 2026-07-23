@@ -4,6 +4,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AdminLayout from './components/AdminLayout';
 import LoginPage from './pages/LoginPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import DiocesesPage from './pages/DiocesesPage';
 import ParishesPage from './pages/ParishesPage';
 import CommunitiesPage from './pages/CommunitiesPage';
@@ -14,6 +15,32 @@ import SchedulesPage from './pages/SchedulesPage';
 import GlobalPastoralsPage from './pages/pastorals/GlobalPastoralsPage';
 import CommunityPastoralsPage from './pages/pastorals/CommunityPastoralsPage';
 import CommunityPastoralDetailsPage from './pages/pastorals/CommunityPastoralDetailsPage';
+import MyPastoralsPage from './pages/pastorals/MyPastoralsPage';
+import CatechesisPage from './pages/modules/CatechesisPage';
+import PlanningPage from './pages/modules/PlanningPage';
+import DocumentsPage from './pages/modules/DocumentsPage';
+import FormationPage from './pages/modules/FormationPage';
+import RoomsPage from './pages/modules/RoomsPage';
+import FinancePage from './pages/modules/FinancePage';
+import SacramentProcessesPage from './pages/modules/SacramentProcessesPage';
+import VisitationPage from './pages/modules/VisitationPage';
+import SwapsPage from './pages/modules/SwapsPage';
+import SaintsPage from './pages/modules/SaintsPage';
+import ClergyMessagesPage from './pages/modules/ClergyMessagesPage';
+import FixedSchedulePage from './pages/modules/FixedSchedulePage';
+import { PrivacyPage, TermsPage, SupportPage } from './pages/LegalPages';
+
+// Papéis com acesso às telas de coordenação (módulos das Fases 3–4)
+const COORDINATION_ROLES = [
+  'SYSTEM_ADMIN',
+  'DIOCESAN_ADMIN',
+  'PARISH_ADMIN',
+  'COMMUNITY_COORDINATOR',
+  'PASTORAL_COORDINATOR',
+];
+
+// Módulos restritos à coordenação de comunidade ou superior (financeiro, sacramentos)
+const COMMUNITY_MANAGEMENT_ROLES = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'];
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { token, loading } = useAuth();
@@ -54,6 +81,15 @@ const App: React.FC = () => {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+
+          {/* Páginas públicas exigidas pelas lojas (App Store / Google Play) */}
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/privacidade" element={<PrivacyPage />} />
+          <Route path="/termos" element={<TermsPage />} />
+          <Route path="/terms" element={<TermsPage />} />
+          <Route path="/suporte" element={<SupportPage />} />
+          <Route path="/support" element={<SupportPage />} />
           
           <Route
             path="/admin"
@@ -77,15 +113,79 @@ const App: React.FC = () => {
             <Route path="communities" element={<CommunitiesPage />} />
             <Route path="members" element={<MembersPage />} />
             <Route path="events" element={<EventsPage />} />
+            <Route path="fixed-schedule" element={
+              <RoleProtectedRoute allowedRoles={COMMUNITY_MANAGEMENT_ROLES}>
+                <FixedSchedulePage />
+              </RoleProtectedRoute>
+            } />
             <Route path="schedules" element={<SchedulesPage />} />
             <Route path="users" element={<UsersPage />} />
+            <Route path="pastorals/my" element={
+              <RoleProtectedRoute allowedRoles={['PASTORAL_COORDINATOR']}>
+                <MyPastoralsPage />
+              </RoleProtectedRoute>
+            } />
             <Route path="pastorals/global" element={
               <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
                 <GlobalPastoralsPage />
               </RoleProtectedRoute>
             } />
-            <Route path="pastorals/community" element={<CommunityPastoralsPage />} />
-            <Route path="pastorals/community/:id" element={<CommunityPastoralDetailsPage />} />
+            <Route path="pastorals/community" element={
+              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR']}>
+                <CommunityPastoralsPage />
+              </RoleProtectedRoute>
+            } />
+            <Route path="pastorals/community/:id" element={
+              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR']}>
+                <CommunityPastoralDetailsPage />
+              </RoleProtectedRoute>
+            } />
+
+            {/* Módulos das Fases 3–4 */}
+            <Route path="catechesis" element={
+              <RoleProtectedRoute allowedRoles={COORDINATION_ROLES}>
+                <CatechesisPage />
+              </RoleProtectedRoute>
+            } />
+            <Route path="planning" element={
+              <RoleProtectedRoute allowedRoles={COORDINATION_ROLES}>
+                <PlanningPage />
+              </RoleProtectedRoute>
+            } />
+            <Route path="documents" element={
+              <RoleProtectedRoute allowedRoles={COORDINATION_ROLES}>
+                <DocumentsPage />
+              </RoleProtectedRoute>
+            } />
+            <Route path="formation" element={
+              <RoleProtectedRoute allowedRoles={COORDINATION_ROLES}>
+                <FormationPage />
+              </RoleProtectedRoute>
+            } />
+            <Route path="rooms" element={
+              <RoleProtectedRoute allowedRoles={COORDINATION_ROLES}>
+                <RoomsPage />
+              </RoleProtectedRoute>
+            } />
+            <Route path="finance" element={
+              <RoleProtectedRoute allowedRoles={COMMUNITY_MANAGEMENT_ROLES}>
+                <FinancePage />
+              </RoleProtectedRoute>
+            } />
+            <Route path="sacrament-processes" element={
+              <RoleProtectedRoute allowedRoles={COMMUNITY_MANAGEMENT_ROLES}>
+                <SacramentProcessesPage />
+              </RoleProtectedRoute>
+            } />
+            <Route path="visitation" element={
+              <RoleProtectedRoute allowedRoles={COORDINATION_ROLES}>
+                <VisitationPage />
+              </RoleProtectedRoute>
+            } />
+            <Route path="swaps" element={<SwapsPage />} />
+            {/* Santos e Palavra Pastoral: leitura aberta a todos os logados */}
+            <Route path="saints" element={<SaintsPage />} />
+            <Route path="clergy-messages" element={<ClergyMessagesPage />} />
           </Route>
 
           <Route path="/" element={<Navigate to="/admin" replace />} />

@@ -1,0 +1,992 @@
+/* Estilo compartilhado das páginas de módulos (Fases 3–4).
+   Reusa o vocabulário visual das páginas existentes (page-header, btn-primary,
+   modal, data-table) para manter a identidade do painel. */
+
+.module-page {
+  padding: 2rem;
+}
+
+.module-page .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.module-page .page-header h1 {
+  font-size: 2rem;
+  color: #2c3e50;
+  margin: 0;
+}
+
+.module-page .page-header .header-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.module-page .btn-primary {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.module-page .btn-primary:hover {
+  background: #0056b3;
+}
+
+.module-page .btn-secondary {
+  background: #6c757d;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.module-page .btn-secondary:hover {
+  background: #545b62;
+}
+
+.module-page .btn-small {
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  background: #e9ecef;
+  color: #333;
+}
+
+.module-page .btn-small:hover {
+  background: #d5dade;
+}
+
+.module-page .btn-small.success {
+  background: #28a745;
+  color: white;
+}
+
+.module-page .btn-small.danger {
+  background: #dc3545;
+  color: white;
+}
+
+.module-page .btn-small.warning {
+  background: #ffc107;
+  color: #333;
+}
+
+.module-page .btn-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Abas */
+.module-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 2px solid #dee2e6;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.module-tabs .tab-btn {
+  border: none;
+  background: transparent;
+  padding: 0.75rem 1.25rem;
+  font-size: 1rem;
+  cursor: pointer;
+  color: #555;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+}
+
+.module-tabs .tab-btn.active {
+  color: #007bff;
+  border-bottom-color: #007bff;
+  font-weight: 600;
+}
+
+/* Filtros */
+.module-page .filters {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.module-page .search-input,
+.module-page .filter-select,
+.module-page .filter-input {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  min-width: 200px;
+  background: white;
+}
+
+/* Cards de resumo (financeiro etc.) */
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.summary-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 1.25rem;
+}
+
+.summary-card .label {
+  color: #777;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.summary-card .value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #2c3e50;
+  margin-top: 0.35rem;
+}
+
+.summary-card .value.positive {
+  color: #28a745;
+}
+
+.summary-card .value.negative {
+  color: #dc3545;
+}
+
+/* Tabela */
+.module-page .table-container {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  overflow-x: auto;
+}
+
+.module-page .data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.module-page .data-table th {
+  text-align: left;
+  padding: 0.85rem 1rem;
+  background: #f8f9fa;
+  color: #555;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 2px solid #dee2e6;
+  white-space: nowrap;
+}
+
+.module-page .data-table td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid #f0f0f0;
+  color: #444;
+  font-size: 0.95rem;
+}
+
+.module-page .data-table tr:hover td {
+  background: #f8fbff;
+}
+
+.module-page .data-table .actions-cell {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.module-page .empty-state {
+  padding: 2.5rem;
+  text-align: center;
+  color: #888;
+}
+
+/* Cards genéricos */
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1.25rem;
+}
+
+.module-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.module-card h3 {
+  margin: 0;
+  color: #2c3e50;
+  font-size: 1.1rem;
+}
+
+.module-card p {
+  margin: 0;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.module-card .card-footer {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #f0f0f0;
+}
+
+/* Badges de status */
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.7rem;
+  border-radius: 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: #e9ecef;
+  color: #555;
+  white-space: nowrap;
+}
+
+.status-badge.blue {
+  background: #cfe2ff;
+  color: #084298;
+}
+
+.status-badge.green {
+  background: #d1e7dd;
+  color: #0f5132;
+}
+
+.status-badge.yellow {
+  background: #fff3cd;
+  color: #664d03;
+}
+
+.status-badge.red {
+  background: #f8d7da;
+  color: #842029;
+}
+
+.status-badge.gray {
+  background: #e2e3e5;
+  color: #41464b;
+}
+
+/* Painel de detalhe (mestre-detalhe) */
+.detail-panel {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.detail-panel h2 {
+  margin: 0 0 1rem 0;
+  color: #2c3e50;
+  font-size: 1.3rem;
+}
+
+.detail-panel .detail-section {
+  margin-bottom: 1.5rem;
+}
+
+.detail-panel .detail-section h4 {
+  margin: 0 0 0.6rem 0;
+  color: #555;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.inline-form {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.inline-form input,
+.inline-form select {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+/* Modal (mesmo padrão das páginas existentes) */
+.module-page .modal-overlay,
+.module-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.module-modal {
+  background: white;
+  border-radius: 12px;
+  padding: 1.75rem;
+  width: 100%;
+  max-width: 560px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.module-modal h2 {
+  margin: 0 0 1.25rem 0;
+  color: #2c3e50;
+  font-size: 1.35rem;
+}
+
+.module-modal .form-group {
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.module-modal .form-group label {
+  font-size: 0.9rem;
+  color: #555;
+  font-weight: 600;
+}
+
+.module-modal .form-group input,
+.module-modal .form-group select,
+.module-modal .form-group textarea {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-family: inherit;
+}
+
+.module-modal .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.module-modal .form-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  color: #444;
+}
+
+.module-modal .form-check input {
+  margin-top: 0.2rem;
+}
+
+.module-modal .modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+}
+
+.module-modal .btn-cancel {
+  background: #e9ecef;
+  color: #333;
+  border: none;
+  padding: 0.65rem 1.25rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.module-modal .btn-submit {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 0.65rem 1.25rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.module-modal .btn-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Avatares (santos etc.) */
+.entity-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 2px solid #f0f0f0;
+  background: #f4f6f8;
+}
+
+.entity-avatar.large {
+  width: 96px;
+  height: 96px;
+}
+
+.entity-avatar.small,
+.entity-avatar-fallback.small {
+  width: 36px;
+  height: 36px;
+  font-size: 0.8rem;
+}
+
+.entity-avatar-fallback {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 1.15rem;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+
+.entity-avatar-fallback.large {
+  width: 96px;
+  height: 96px;
+  font-size: 1.9rem;
+}
+
+.card-with-avatar {
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+}
+
+.card-with-avatar .card-avatar-info {
+  min-width: 0;
+}
+
+.module-modal.wide {
+  max-width: 780px;
+}
+
+/* Seletor visual de santos (busca + lista com avatar) */
+.saint-picker-search {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 8px 8px 0 0;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+
+.saint-picker-search:focus {
+  outline: none;
+  border-color: #86b7fe;
+}
+
+.saint-picker-list {
+  border: 1px solid #ddd;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: white;
+}
+
+.saint-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-bottom: 1px solid #f3f3f3;
+  background: white;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.saint-picker-item:last-child {
+  border-bottom: none;
+}
+
+.saint-picker-item:hover {
+  background: #f4f8ff;
+}
+
+.saint-picker-item.selected {
+  background: #e7f1ff;
+  box-shadow: inset 3px 0 0 #0d6efd;
+}
+
+.saint-picker-item .picker-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.saint-picker-item .picker-name {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 0.95rem;
+}
+
+.saint-picker-item .picker-meta {
+  font-size: 0.78rem;
+  color: #888;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saint-picker-item .picker-check {
+  color: #0d6efd;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.saint-picker-empty {
+  padding: 1.25rem;
+  text-align: center;
+  color: #999;
+  font-size: 0.9rem;
+}
+
+/* Combobox com busca (filtros e formulários de entidades) */
+.search-select {
+  position: relative;
+  min-width: 240px;
+}
+
+.search-select-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: white;
+  font-size: 0.95rem;
+  font-family: inherit;
+  color: #333;
+  cursor: pointer;
+  text-align: left;
+}
+
+.search-select-toggle:hover {
+  border-color: #bbb;
+}
+
+.search-select-toggle .search-select-placeholder {
+  color: #666;
+}
+
+.search-select-toggle .search-select-value {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Avatar dentro do botão fechado fica em tamanho reduzido */
+.search-select-toggle .entity-avatar,
+.search-select-toggle .entity-avatar-fallback {
+  width: 24px;
+  height: 24px;
+  font-size: 0.6rem;
+}
+
+.search-select-toggle .search-select-caret {
+  color: #888;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.search-select-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  /* Ancorado à direita e mais largo que o botão quando o conteúdo pedir,
+     sem vazar da tela */
+  right: 0;
+  left: auto;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(480px, 92vw);
+  z-index: 1200;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  overflow: hidden;
+}
+
+/* No dropdown largo, o subtítulo pode quebrar linha em vez de cortar */
+.search-select-menu .picker-meta {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+}
+
+.search-select-menu .saint-picker-search {
+  border: none;
+  border-bottom: 1px solid #eee;
+  border-radius: 0;
+}
+
+.search-select-menu .saint-picker-list {
+  border: none;
+  border-radius: 0;
+  max-height: 250px;
+}
+
+/* ============================================================
+   Cards de entidade (Dioceses, Paróquias, Comunidades)
+   Visual sóbrio: monograma, chips suaves e ações ghost.
+   ============================================================ */
+.entity-card {
+  background: white;
+  border: 1px solid #e8ecf1;
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: box-shadow 0.2s, transform 0.2s, border-color 0.2s;
+}
+
+.entity-card:hover {
+  transform: translateY(-2px);
+  border-color: #d9e0e8;
+  box-shadow: 0 8px 20px rgba(16, 24, 40, 0.1);
+}
+
+.entity-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 1.1rem 1.25rem 0.75rem;
+}
+
+.entity-monogram {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.entity-heading {
+  min-width: 0;
+}
+
+.entity-title {
+  margin: 0 0 0.35rem 0;
+  font-size: 1.08rem;
+  font-weight: 700;
+  color: #1f2d3d;
+  line-height: 1.25;
+}
+
+.entity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.entity-chip {
+  background: #f1f4f8;
+  color: #46566a;
+  border-radius: 999px;
+  padding: 0.15rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.entity-chip.soft-blue {
+  background: #eaf2fe;
+  color: #1d5cb8;
+}
+
+.entity-card-body {
+  padding: 0.25rem 1.25rem 1rem;
+  flex: 1;
+}
+
+.entity-field {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.28rem 0;
+  font-size: 0.9rem;
+  border-bottom: 1px dashed #f0f2f5;
+}
+
+.entity-field:last-of-type {
+  border-bottom: none;
+}
+
+.entity-field-label {
+  color: #8a97a6;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  min-width: 84px;
+  padding-top: 0.1rem;
+  flex-shrink: 0;
+}
+
+.entity-field-value {
+  color: #33414f;
+  font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.entity-card-footer {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.85rem 1.25rem;
+  border-top: 1px solid #f0f2f5;
+  background: #fafbfc;
+}
+
+.entity-btn {
+  flex: 1;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid #d9e0e8;
+  background: white;
+  color: #46566a;
+  font-weight: 600;
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.entity-btn.primary {
+  color: #0d6efd;
+  border-color: #cfe2ff;
+}
+
+.entity-btn.primary:hover {
+  background: #f0f6ff;
+  border-color: #9ec5fe;
+}
+
+.entity-btn.accent {
+  color: #6f42c1;
+  border-color: #e2d9f3;
+}
+
+.entity-btn.accent:hover {
+  background: #f7f4fc;
+  border-color: #c5b3e6;
+}
+
+.entity-btn.danger {
+  color: #b02a37;
+  border-color: #f5c2c7;
+}
+
+.entity-btn.danger:hover {
+  background: #fdf3f4;
+  border-color: #ea9ba4;
+}
+
+.entity-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Tabela das páginas de entidade — mesmo conceito dos cards */
+.entity-table {
+  background: white;
+  border: 1px solid #e8ecf1;
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+  overflow-x: auto;
+}
+
+.entity-table table th {
+  background: #fafbfc;
+  color: #8a97a6;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-bottom: 1px solid #e8ecf1;
+  padding: 0.85rem 1rem;
+}
+
+.entity-table table td {
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid #f0f2f5;
+  color: #33414f;
+  font-size: 0.92rem;
+  vertical-align: middle;
+}
+
+.entity-table table tbody tr:hover td {
+  background: #f8fafc;
+}
+
+.entity-table .patron-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  white-space: nowrap;
+}
+
+.entity-table .patron-cell .entity-avatar,
+.entity-table .patron-cell .entity-avatar-fallback {
+  width: 26px;
+  height: 26px;
+  font-size: 0.6rem;
+}
+
+/* Botões de ação em ícone (linhas da tabela) */
+.entity-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #d9e0e8;
+  background: white;
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.entity-icon-btn:hover {
+  background: #f0f6ff;
+  border-color: #9ec5fe;
+}
+
+.entity-icon-btn.danger:hover {
+  background: #fdf3f4;
+  border-color: #ea9ba4;
+}
+
+/* Avisos (privacidade, LGPD) */
+.privacy-note {
+  background: #fff8e6;
+  border: 1px solid #ffe1a1;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  color: #7a5b00;
+  font-size: 0.88rem;
+  margin-bottom: 1.25rem;
+}
+
+.module-page .loading {
+  padding: 3rem;
+  text-align: center;
+  color: #777;
+}
+
+/* Checklist */
+.checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.checklist label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.92rem;
+  color: #444;
+}
+
+/* Kanban simplificado de processos */
+.kanban {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.kanban-column {
+  background: #f4f6f8;
+  border-radius: 12px;
+  padding: 0.85rem;
+}
+
+.kanban-column h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #555;
+  display: flex;
+  justify-content: space-between;
+}
+
+.kanban-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  padding: 0.75rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.9rem;
+}
+
+.kanban-card strong {
+  display: block;
+  color: #2c3e50;
+  margin-bottom: 0.25rem;
+}
+
+.kanban-card .kanban-actions {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}

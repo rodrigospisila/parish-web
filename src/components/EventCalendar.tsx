@@ -4,6 +4,7 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
+import { getEventTypeColor, getEventTypeIcon, getEventTypeLabel } from '../constants/eventOptions';
 import './EventCalendar.css';
 
 interface Community {
@@ -41,78 +42,86 @@ interface EventCalendarProps {
   events: CalendarEvent[];
   onEventClick: (event: CalendarEvent) => void;
   onDateClick: (date: Date) => void;
+  /** Habilita arrastar para reagendar (coordenação) */
+  editable?: boolean;
+  /** Chamado ao soltar um evento em nova data; retorne false para reverter */
+  onEventDrop?: (event: CalendarEvent, newStart: Date, newEnd: Date | null) => Promise<boolean>;
+  /** Data para o calendário navegar (mini-calendário lateral) */
+  focusDate?: Date | null;
+  /** Ocorrências da agenda fixa (Missa/Confissão/...) para exibir junto */
+  fixedOccurrences?: FixedOccurrence[];
+  /** Notifica a página do período visível (para buscar as ocorrências fixas) */
+  onRangeChange?: (from: Date, to: Date) => void;
 }
 
-// Cores por tipo de evento
-const eventTypeColors: Record<string, string> = {
-  MASS: '#dc3545',           // Vermelho - Missa
-  BAPTISM: '#007bff',        // Azul - Batismo
-  WEDDING: '#28a745',        // Verde - Casamento
-  CATECHISM: '#ffc107',      // Amarelo - Catequese
-  MEETING: '#6f42c1',        // Roxo - Reunião
-  CELEBRATION: '#fd7e14',    // Laranja - Celebração
-  RETREAT: '#20c997',        // Verde-água - Retiro
-  FORMATION: '#17a2b8',      // Ciano - Formação
-  PILGRIMAGE: '#e83e8c',     // Rosa - Peregrinação
-  ADORATION: '#6610f2',      // Índigo - Adoração
-  ROSARY: '#d63384',         // Rosa escuro - Terço
-  CONFESSION: '#0dcaf0',     // Ciano claro - Confissão
-  OTHER: '#6c757d',          // Cinza - Outro
-};
+export interface FixedOccurrence {
+  id: string;
+  title: string;
+  type: string;
+  start: string;
+  end: string;
+  community?: { id: string; name: string } | null;
+}
 
-// Labels em português para os tipos
-const eventTypeLabels: Record<string, string> = {
-  MASS: 'Missa',
-  BAPTISM: 'Batismo',
-  WEDDING: 'Casamento',
-  CATECHISM: 'Catequese',
-  MEETING: 'Reunião',
-  CELEBRATION: 'Celebração',
-  RETREAT: 'Retiro',
-  FORMATION: 'Formação',
-  PILGRIMAGE: 'Peregrinação',
-  ADORATION: 'Adoração',
-  ROSARY: 'Terço',
-  CONFESSION: 'Confissão',
-  OTHER: 'Outro',
-};
-
-// Ícones por tipo de evento
-const eventTypeIcons: Record<string, string> = {
-  MASS: '🙏',
-  BAPTISM: '💧',
-  WEDDING: '💍',
-  CATECHISM: '📖',
-  MEETING: '👥',
-  CELEBRATION: '🎉',
-  RETREAT: '⛰️',
-  FORMATION: '🎓',
-  PILGRIMAGE: '🚶',
-  ADORATION: '✨',
-  ROSARY: '📿',
-  CONFESSION: '🕊️',
-  OTHER: '📅',
-};
-
-const EventCalendar: React.FC<EventCalendarProps> = ({ events, onEventClick, onDateClick }) => {
+const EventCalendar: React.FC<EventCalendarProps> = ({
+  events,
+  onEventClick,
+  onDateClick,
+  editable = false,
+  onEventDrop,
+  focusDate,
+  fixedOccurrences = [],
+  onRangeChange,
+}) => {
   const calendarRef = useRef<FullCalendar>(null);
 
-  // Converter eventos para formato do FullCalendar
-  const calendarEvents = events.map(event => ({
+  // Navegação pelo mini-calendário lateral
+  React.useEffect(() => {
+    if (focusDate) {
+      calendarRef.current?.getApi().gotoDate(focusDate);
+    }
+  }, [focusDate]);
+
+  const calendarEvents = events.map((event) => ({
     id: event.id,
     title: event.title,
     start: event.startDate,
     end: event.endDate || event.startDate,
-    backgroundColor: eventTypeColors[event.type] || eventTypeColors.OTHER,
-    borderColor: eventTypeColors[event.type] || eventTypeColors.OTHER,
+    backgroundColor: getEventTypeColor(event.type),
+    borderColor: getEventTypeColor(event.type),
+    editable,
     extendedProps: {
       ...event,
-      typeLabel: eventTypeLabels[event.type] || event.type,
+      typeLabel: getEventTypeLabel(event.type),
+      isFixed: false,
     },
   }));
 
+  // Cor neutra e estilo distinto para os horários fixos (agenda da comunidade)
+  const FIXED_COLOR = '#64748b';
+  const fixedCalendarEvents = fixedOccurrences.map((occ) => ({
+    id: occ.id,
+    title: occ.title,
+    start: occ.start,
+    end: occ.end,
+    backgroundColor: 'transparent',
+    borderColor: FIXED_COLOR,
+    editable: false, // agenda fixa não se arrasta; edite em "Agenda Fixa"
+    classNames: ['fc-fixed-occurrence'],
+    extendedProps: {
+      isFixed: true,
+      typeLabel: occ.title,
+      location: null,
+      community: occ.community,
+    },
+  }));
+
+  const allCalendarEvents = [...calendarEvents, ...fixedCalendarEvents];
+
   const handleEventClick = (clickInfo: any) => {
-    const event = events.find(e => e.id === clickInfo.event.id);
+    // Ocorrência fixa não abre o modal de evento (é virtual)
+    if (clickInfo.event.extendedProps?.isFixed) return;
+    const event = events.find((calendarEvent) => calendarEvent.id === clickInfo.event.id);
     if (event) {
       onEventClick(event);
     }
@@ -122,12 +131,23 @@ const EventCalendar: React.FC<EventCalendarProps> = ({ events, onEventClick, onD
     onDateClick(new Date(arg.dateStr));
   };
 
+  // Arrastar para reagendar: delega à página (PATCH); reverte se recusado/erro
+  const handleEventDrop = async (info: any) => {
+    const event = events.find((calendarEvent) => calendarEvent.id === info.event.id);
+    if (!event || !onEventDrop) {
+      info.revert();
+      return;
+    }
+    const ok = await onEventDrop(event, info.event.start, info.event.end).catch(() => false);
+    if (!ok) info.revert();
+  };
+
   return (
     <div className="event-calendar-container">
       <FullCalendar
         ref={calendarRef}
         plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
-        initialView="dayGridMonth"
+        initialView={typeof window !== 'undefined' && window.innerWidth < 768 ? 'listMonth' : 'dayGridMonth'}
         headerToolbar={{
           left: 'prev,next today',
           center: 'title',
@@ -141,11 +161,15 @@ const EventCalendar: React.FC<EventCalendarProps> = ({ events, onEventClick, onD
           list: 'Lista',
         }}
         locale="pt-br"
-        firstDay={0} // Domingo
+        firstDay={0}
         height="auto"
-        events={calendarEvents}
+        events={allCalendarEvents}
         eventClick={handleEventClick}
         dateClick={handleDateClick}
+        editable={editable}
+        eventDurationEditable={false}
+        eventDrop={handleEventDrop}
+        datesSet={(arg) => onRangeChange?.(arg.start, arg.end)}
         eventTimeFormat={{
           hour: '2-digit',
           minute: '2-digit',
@@ -160,9 +184,39 @@ const EventCalendar: React.FC<EventCalendarProps> = ({ events, onEventClick, onD
           const { event } = arg;
           const typeLabel = event.extendedProps.typeLabel;
           const location = event.extendedProps.location;
-          const type = event.extendedProps.type;
-          const icon = eventTypeIcons[type] || eventTypeIcons.OTHER;
-          
+          const icon = getEventTypeIcon(event.extendedProps.type);
+
+          const isFixed = event.extendedProps.isFixed;
+
+          // Visão mensal: linha compacta (estilo Google Calendar) — detalhes no
+          // hover (tooltip) e no clique. Semana/dia/lista: conteúdo completo.
+          if (arg.view.type === 'dayGridMonth') {
+            return (
+              <div
+                className={`fc-evt-compact ${isFixed ? 'is-fixed' : ''}`}
+                style={{ ['--evt-color' as any]: isFixed ? '#64748b' : event.backgroundColor }}
+              >
+                {isFixed && <span className="fc-evt-fixed-icon">🕐</span>}
+                {arg.timeText && <span className="fc-evt-compact-time">{arg.timeText}</span>}
+                <span className="fc-evt-compact-title">{event.title}</span>
+              </div>
+            );
+          }
+
+          // Semana/dia/lista para a agenda fixa: conteúdo enxuto com relógio
+          if (isFixed) {
+            return (
+              <div className="fc-event-content-custom is-fixed">
+                <div className="fc-event-header-custom">
+                  <span className="fc-event-icon">🕐</span>
+                  <span className="fc-event-time">{arg.timeText}</span>
+                </div>
+                <div className="fc-event-title-custom">{event.title}</div>
+                <div className="fc-event-type-badge">Agenda fixa</div>
+              </div>
+            );
+          }
+
           return (
             <div className="fc-event-content-custom">
               <div className="fc-event-header-custom">
@@ -170,19 +224,32 @@ const EventCalendar: React.FC<EventCalendarProps> = ({ events, onEventClick, onD
                 <span className="fc-event-time">{arg.timeText}</span>
               </div>
               <div className="fc-event-title-custom">{event.title}</div>
-              {location && (
-                <div className="fc-event-location">📍 {location}</div>
-              )}
+              {location && <div className="fc-event-location">Local: {location}</div>}
               <div className="fc-event-type-badge">{typeLabel}</div>
             </div>
           );
+        }}
+        eventDidMount={(info) => {
+          // Tooltip nativo com os detalhes (padrão de mercado: detalhes no hover)
+          const p = info.event.extendedProps as any;
+          const lines = [
+            `${info.timeText ? `${info.timeText} · ` : ''}${info.event.title}`,
+            p.isFixed ? 'Agenda fixa da comunidade' : [p.typeLabel, p.location].filter(Boolean).join(' · '),
+            p.community?.name,
+          ].filter(Boolean);
+          info.el.setAttribute('title', lines.join('\n'));
         }}
         dayMaxEvents={3}
         moreLinkText={(num) => `+${num} eventos`}
         allDaySlot={false}
         slotMinTime="06:00:00"
         slotMaxTime="23:00:00"
-        nowIndicator={true}
+        nowIndicator
+        weekends
+        dayHeaderFormat={{ weekday: 'short' }}
+        views={{
+          dayGridMonth: { titleFormat: { year: 'numeric', month: 'long' } },
+        }}
       />
     </div>
   );

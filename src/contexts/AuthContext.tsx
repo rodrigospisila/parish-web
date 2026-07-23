@@ -6,8 +6,19 @@ const API_URL = import.meta.env.VITE_API_URL;
 interface User {
   id: string;
   email: string;
+  name: string;
+  phone?: string;
   role: string;
   dioceseId?: string;
+  parishId?: string;
+  communityId?: string;
+  pastoralIds?: string[];
+  pastorals?: {
+    id: string;
+    name: string;
+    communityId: string;
+    role?: string;
+  }[];
   forcePasswordChange: boolean;
 }
 
