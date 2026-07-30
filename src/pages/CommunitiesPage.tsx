@@ -93,6 +93,7 @@ const CommunitiesPage: React.FC = () => {
     longitude: null as number | null,
   });
   const [geocoding, setGeocoding] = useState(false);
+  const [locInput, setLocInput] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -232,6 +233,33 @@ const CommunitiesPage: React.FC = () => {
     } finally {
       setGeocoding(false);
     }
+  };
+
+  // Extrai lat/long de um link do Google Maps ou de um texto "lat, long".
+  const parseCoords = (input: string): { lat: number; lng: number } | null => {
+    const s = (input || '').trim();
+    if (!s) return null;
+    // 1) Pino do lugar no Google Maps: !3d<lat>!4d<lng> (mais preciso)
+    let m = s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    // 2) Centro do mapa / query: @lat,lng · q=lat,lng · ll=lat,lng
+    m = s.match(/[@?&](?:q=|ll=)?(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)/);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    // 3) Texto simples "lat, long"
+    m = s.match(/^\s*(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*$/);
+    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    return null;
+  };
+
+  const applyPastedLocation = () => {
+    const coords = parseCoords(locInput);
+    if (!coords || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) {
+      notify.warning('Cole um link do Google Maps ou coordenadas no formato "-25.108, -50.126".');
+      return;
+    }
+    setFormData((prev) => ({ ...prev, latitude: coords.lat, longitude: coords.lng }));
+    setLocInput('');
+    notify.success('Coordenadas aplicadas! Confira o pino no mapa.');
   };
 
   // Filtros
@@ -714,6 +742,28 @@ const CommunitiesPage: React.FC = () => {
                 </div>
                 <p style={{ fontSize: 12, color: '#888', margin: '4px 0 8px' }}>
                   Usado para encontrar as missas mais próximas. Clique no mapa ou arraste o pino para ajustar.
+                </p>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    value={locInput}
+                    onChange={(e) => setLocInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyPastedLocation(); } }}
+                    placeholder='Colar link do Google Maps ou "lat, long"'
+                    style={{ flex: 1, minWidth: 220, padding: '8px 10px', fontSize: 13 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn-cancel"
+                    style={{ padding: '6px 14px', fontSize: 13 }}
+                    onClick={applyPastedLocation}
+                  >
+                    📌 Aplicar
+                  </button>
+                </div>
+                <p style={{ fontSize: 11, color: '#aaa', margin: '0 0 8px' }}>
+                  Dica: no Google Maps, clique com o botão direito no ponto exato → copie as coordenadas, ou cole o link
+                  da barra de endereço.
                 </p>
                 <MapPicker
                   value={
