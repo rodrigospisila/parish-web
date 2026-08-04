@@ -2830,3 +2830,113 @@
     background: #eeeeee;
   }
 }
+
+/* ===== Resumo do coordenador — alternância Cards | Lista ===== */
+.overview-view-toggle {
+  display: inline-flex;
+  border: 1px solid #d8dee6;
+  border-radius: 9px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.overview-view-toggle button {
+  padding: 0.45rem 0.95rem;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #52606d;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.overview-view-toggle button + button {
+  border-left: 1px solid #d8dee6;
+}
+
+.overview-view-toggle button.active {
+  background: #075aa9;
+  color: #fff;
+}
+
+/* Lista compacta (uma linha por escala) */
+.coordinator-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.coordinator-schedule-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.coordinator-schedule-table th {
+  text-align: left;
+  padding: 0.65rem 0.9rem;
+  background: #f5f7fa;
+  color: #52606d;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.coordinator-schedule-table td {
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid #eef2f6;
+  vertical-align: middle;
+}
+
+.coordinator-schedule-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.coordinator-schedule-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.coordinator-schedule-table td strong {
+  display: block;
+  color: #17324d;
+  line-height: 1.25;
+}
+
+.coordinator-schedule-table td small {
+  display: block;
+  color: #8b97a4;
+  margin-top: 2px;
+}
+
+.coordinator-schedule-table .nowrap {
+  white-space: nowrap;
+}
+
+.coordinator-schedule-table th.num,
+.coordinator-schedule-table td.num {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.coordinator-schedule-table td.num {
+  font-weight: 800;
+  color: #52606d;
+}
+
+.coordinator-schedule-table td.num.ok {
+  color: #2e9d62;
+}
+
+.coordinator-schedule-table td.num.warn {
+  color: #c78216;
+}
+
+.coordinator-schedule-table td.num.danger {
+  color: #c53b42;
+}

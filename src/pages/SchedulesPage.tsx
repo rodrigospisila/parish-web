@@ -433,6 +433,14 @@ const SchedulesPage: React.FC = () => {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [overview, setOverview] = useState<OverviewItem[]>([]);
+  // Visualização do resumo: cards (padrão) ou lista compacta (muitas escalas ativas)
+  const [overviewView, setOverviewView] = useState<'cards' | 'list'>(
+    () => (localStorage.getItem('schedules:overviewView') === 'list' ? 'list' : 'cards'),
+  );
+  const changeOverviewView = (view: 'cards' | 'list') => {
+    setOverviewView(view);
+    localStorage.setItem('schedules:overviewView', view);
+  };
   const [loading, setLoading] = useState(true);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -1430,9 +1438,27 @@ const SchedulesPage: React.FC = () => {
                 Veja o volume de escalas do periodo, presencas registradas e os compromissos mais recentes.
               </p>
             </div>
-            <button className="overview-action-button is-secondary" onClick={fetchOverview}>
-              {overviewLoading ? 'Carregando...' : 'Atualizar'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+              <div className="overview-view-toggle" role="group" aria-label="Modo de visualização">
+                <button
+                  type="button"
+                  className={overviewView === 'cards' ? 'active' : ''}
+                  onClick={() => changeOverviewView('cards')}
+                >
+                  ▦ Cards
+                </button>
+                <button
+                  type="button"
+                  className={overviewView === 'list' ? 'active' : ''}
+                  onClick={() => changeOverviewView('list')}
+                >
+                  ☰ Lista
+                </button>
+              </div>
+              <button className="overview-action-button is-secondary" onClick={fetchOverview}>
+                {overviewLoading ? 'Carregando...' : 'Atualizar'}
+              </button>
+            </div>
           </div>
 
           <div className="coordinator-controls">
@@ -1478,6 +1504,40 @@ const SchedulesPage: React.FC = () => {
 
           {overview.length === 0 ? (
             <p className="coordinator-empty">Nenhuma escala encontrada no periodo selecionado.</p>
+          ) : overviewView === 'list' ? (
+            <div className="coordinator-table-wrap">
+              <table className="coordinator-schedule-table">
+                <thead>
+                  <tr>
+                    <th>Escala</th>
+                    <th>Data</th>
+                    <th className="num">Pend.</th>
+                    <th className="num">Conf.</th>
+                    <th className="num">Recus.</th>
+                    <th className="num">Pres.</th>
+                    <th className="num">Presença</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overview.map((item) => (
+                    <tr key={item.scheduleId}>
+                      <td>
+                        <strong>{item.title}</strong>
+                        <small>{item.event.title}</small>
+                      </td>
+                      <td className="nowrap">{toHumanDate(item.date)}</td>
+                      <td className="num warn">{item.counts.pending}</td>
+                      <td className="num ok">{item.counts.confirmed}</td>
+                      <td className="num danger">{item.counts.declined}</td>
+                      <td className="num ok">{item.counts.checkedIn}</td>
+                      <td className="num">
+                        <span className="status-chip status-rate">{item.attendanceRate}%</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <div className="coordinator-schedule-grid">
               {overview.map((item) => (
