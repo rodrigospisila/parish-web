@@ -43,7 +43,7 @@
 }
 
 .btn-primary:hover {
-  background: #0056b3;
+  background: #075AA9;
 }
 
 .btn-export {
@@ -720,7 +720,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #075AA9 0%, #17324D 100%);
   color: white;
   padding: 1rem 1.5rem;
   border-radius: 12px;

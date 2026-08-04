@@ -153,7 +153,7 @@ const MyPastoralsPage: React.FC = () => {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1.25rem' }}>
             {pastorals.map((pastoral) => {
-              const accentColor = pastoral.globalPastoral.colorHex || '#3498db';
+              const accentColor = pastoral.globalPastoral.colorHex || '#075AA9';
               const leaders = getLeaders(pastoral);
               const isActive = pastoral.status === 'ACTIVE';
 

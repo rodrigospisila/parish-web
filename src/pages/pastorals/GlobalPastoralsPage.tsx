@@ -29,7 +29,7 @@ const GlobalPastoralsPage: React.FC = () => {
     description: '',
     mission: '',
     iconUrl: '',
-    colorHex: '#3498db',
+    colorHex: '#075AA9',
     status: 'ACTIVE',
   });
 
@@ -83,7 +83,7 @@ const GlobalPastoralsPage: React.FC = () => {
       description: pastoral.description || '',
       mission: pastoral.mission || '',
       iconUrl: pastoral.iconUrl || '',
-      colorHex: pastoral.colorHex || '#3498db',
+      colorHex: pastoral.colorHex || '#075AA9',
       status: pastoral.status,
     });
     setShowModal(true);
@@ -112,7 +112,7 @@ const GlobalPastoralsPage: React.FC = () => {
       description: '',
       mission: '',
       iconUrl: '',
-      colorHex: '#3498db',
+      colorHex: '#075AA9',
       status: 'ACTIVE',
     });
     setEditingPastoral(null);
@@ -155,10 +155,10 @@ const GlobalPastoralsPage: React.FC = () => {
           <div
             key={pastoral.id}
             className="entity-card"
-            style={{ borderLeft: `4px solid ${pastoral.colorHex || '#3498db'}` }}
+            style={{ borderLeft: `4px solid ${pastoral.colorHex || '#075AA9'}` }}
           >
             <div className="entity-card-header">
-              <div className="entity-monogram" style={{ background: pastoral.colorHex || '#3498db' }}>
+              <div className="entity-monogram" style={{ background: pastoral.colorHex || '#075AA9' }}>
                 {initials(pastoral.name)}
               </div>
               <div className="entity-heading">

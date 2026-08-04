@@ -15,7 +15,7 @@ const shell: React.CSSProperties = {
 };
 const h1: React.CSSProperties = { fontSize: 28, fontWeight: 800, margin: '8px 0 4px' };
 const muted: React.CSSProperties = { color: '#777', fontSize: 13 };
-const back: React.CSSProperties = { color: '#007AFF', textDecoration: 'none', fontWeight: 600, fontSize: 14 };
+const back: React.CSSProperties = { color: '#075AA9', textDecoration: 'none', fontWeight: 600, fontSize: 14 };
 
 const Layout: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <div style={shell}>
@@ -25,7 +25,7 @@ const Layout: React.FC<{ title: string; children: React.ReactNode }> = ({ title,
     {children}
     <hr style={{ margin: '40px 0 16px', border: 'none', borderTop: '1px solid #eee' }} />
     <p style={muted}>
-      Dúvidas? <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: '#007AFF' }}>{SUPPORT_EMAIL}</a>
+      Dúvidas? <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: '#075AA9' }}>{SUPPORT_EMAIL}</a>
     </p>
   </div>
 );

@@ -19,13 +19,13 @@
 }
 
 .time-display:hover {
-  border-color: #667eea;
+  border-color: #075AA9;
   background: #f8f9ff;
 }
 
 .time-display:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: #075AA9;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
@@ -55,7 +55,7 @@
 
 .time-column-header {
   padding: 10px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #075AA9 0%, #17324D 100%);
   color: white;
   font-weight: 600;
   font-size: 12px;
@@ -68,7 +68,7 @@
   max-height: 200px;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: #667eea #f0f0f0;
+  scrollbar-color: #075AA9 #f0f0f0;
 }
 
 .time-options::-webkit-scrollbar {
@@ -80,12 +80,12 @@
 }
 
 .time-options::-webkit-scrollbar-thumb {
-  background: #667eea;
+  background: #075AA9;
   border-radius: 3px;
 }
 
 .time-options::-webkit-scrollbar-thumb:hover {
-  background: #764ba2;
+  background: #17324D;
 }
 
 .time-option {
@@ -103,15 +103,15 @@
 
 .time-option:hover {
   background: #f8f9ff;
-  color: #667eea;
+  color: #075AA9;
 }
 
 .time-option.selected {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #075AA9 0%, #17324D 100%);
   color: white;
   font-weight: 600;
 }
 
 .time-option.selected:hover {
-  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+  background: linear-gradient(135deg, #17324D 0%, #075AA9 100%);
 }

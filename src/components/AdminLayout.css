@@ -175,7 +175,7 @@
 .nav-link.active {
   background: rgba(52, 152, 219, 0.22);
   color: white;
-  box-shadow: inset 3px 0 0 #3498db;
+  box-shadow: inset 3px 0 0 #075AA9;
   font-weight: 600;
 }
 

@@ -20,7 +20,7 @@
 }
 
 .btn-new-event {
-  background-color: #3498db;
+  background-color: #075AA9;
   color: white;
   border: none;
   padding: 12px 24px;
@@ -59,7 +59,7 @@
 
 .filter-select:hover,
 .filter-select:focus {
-  border-color: #3498db;
+  border-color: #075AA9;
   outline: none;
 }
 
@@ -162,7 +162,7 @@
 .form-group select:focus,
 .form-group textarea:focus {
   outline: none;
-  border-color: #3498db;
+  border-color: #075AA9;
   box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
 }
 
@@ -311,7 +311,7 @@
 }
 
 .btn-edit {
-  background-color: #3498db;
+  background-color: #075AA9;
   color: white;
 }
 
@@ -415,7 +415,7 @@
 
 /* Botão Duplicar */
 .btn-duplicate {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #075AA9 0%, #17324D 100%);
   color: white;
   border: none;
   padding: 10px 20px;
@@ -442,7 +442,7 @@
   margin-bottom: 20px;
   padding: 15px;
   background: #f8f9fa;
-  border-left: 4px solid #667eea;
+  border-left: 4px solid #075AA9;
   border-radius: 4px;
 }
 
@@ -477,7 +477,7 @@
 }
 
 .btn-add-date {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #075AA9 0%, #17324D 100%);
   color: white;
   border: none;
   padding: 12px 24px;
@@ -535,7 +535,7 @@
 }
 
 .selected-dates-list li:hover {
-  border-color: #667eea;
+  border-color: #075AA9;
   box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
 }
 
@@ -609,12 +609,12 @@
 }
 
 .calendar-section .react-calendar__tile--active {
-  background: #3498db;
+  background: #075AA9;
   color: white;
 }
 
 .calendar-section .react-calendar__tile.selected-date {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #075AA9 0%, #17324D 100%);
   color: white;
   font-weight: 600;
 }
@@ -646,7 +646,7 @@
 }
 
 .selected-dates-list li:hover {
-  border-color: #667eea;
+  border-color: #075AA9;
   box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
 }
 
@@ -675,12 +675,12 @@
 }
 
 .time-input:hover {
-  border-color: #667eea;
+  border-color: #075AA9;
 }
 
 .time-input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: #075AA9;
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
@@ -739,7 +739,7 @@
 }
 
 .view-toggle-btn.active {
-  background: #3498db;
+  background: #075AA9;
   color: white;
 }
 
@@ -771,7 +771,7 @@
 
 .selected-count {
   font-weight: 600;
-  color: #3498db;
+  color: #075AA9;
 }
 
 .btn-bulk-delete {
@@ -891,7 +891,7 @@
 }
 
 .event-title-link {
-  color: #3498db;
+  color: #075AA9;
   cursor: pointer;
   font-weight: 500;
   transition: color 0.2s;
@@ -969,9 +969,9 @@
 }
 
 .pagination-btn:hover:not(:disabled) {
-  background: #3498db;
+  background: #075AA9;
   color: white;
-  border-color: #3498db;
+  border-color: #075AA9;
 }
 
 .pagination-btn:disabled {
@@ -1066,7 +1066,7 @@
 
 /* Banner de filtros ativos */
 .active-filters-banner {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #075AA9 0%, #17324D 100%);
   border-radius: 12px;
   padding: 16px 20px;
   margin-bottom: 20px;

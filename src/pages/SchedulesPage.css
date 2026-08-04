@@ -27,7 +27,7 @@
 }
 
 .btn-primary:hover {
-  background: #0056b3;
+  background: #075AA9;
 }
 
 /* Filters */
@@ -151,7 +151,7 @@
 }
 
 .schedule-card .card-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #075AA9 0%, #17324D 100%);
   padding: 1.25rem;
   color: white;
   display: flex;
@@ -508,7 +508,7 @@
   width: 45px;
   height: 45px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #075AA9 0%, #17324D 100%);
   color: white;
   display: flex;
   align-items: center;
@@ -990,7 +990,7 @@
 .pastoral-badge {
   display: inline-flex;
   align-items: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #075AA9 0%, #17324D 100%);
   color: white;
   padding: 0.35rem 0.75rem;
   border-radius: 16px;
@@ -1039,7 +1039,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #075AA9 0%, #17324D 100%);
   color: white;
   padding: 1rem 1.5rem;
   border-radius: 12px;

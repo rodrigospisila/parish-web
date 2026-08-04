@@ -27,7 +27,7 @@
 
 /* Botões */
 .fc .fc-button {
-  background-color: #3498db;
+  background-color: #075AA9;
   border: none;
   padding: 8px 16px;
   font-weight: 500;
@@ -85,7 +85,7 @@
 }
 
 .fc .fc-day-today .fc-daygrid-day-number {
-  background-color: #2196f3;
+  background-color: #0A84FF;
   color: white;
   border-radius: 50%;
   width: 32px;
@@ -204,7 +204,7 @@
 
 /* Link "mais eventos" */
 .fc .fc-more-link {
-  color: #3498db;
+  color: #075AA9;
   font-weight: 600;
   font-size: 0.85rem;
 }
@@ -357,20 +357,20 @@
   min-width: 0;
   padding: 2px 6px 2px 4px;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--evt-color, #3498db) 14%, white);
-  border-left: 3px solid var(--evt-color, #3498db);
+  background: color-mix(in srgb, var(--evt-color, #075AA9) 14%, white);
+  border-left: 3px solid var(--evt-color, #075AA9);
   cursor: pointer;
   transition: background 0.12s;
 }
 
 .fc-evt-compact:hover {
-  background: color-mix(in srgb, var(--evt-color, #3498db) 26%, white);
+  background: color-mix(in srgb, var(--evt-color, #075AA9) 26%, white);
 }
 
 .fc-evt-compact-time {
   font-size: 0.7rem;
   font-weight: 700;
-  color: var(--evt-color, #3498db);
+  color: var(--evt-color, #075AA9);
   flex-shrink: 0;
 }
 

@@ -269,10 +269,10 @@ const CommunityPastoralsPage: React.FC = () => {
           <div
             key={pastoral.id}
             className="entity-card"
-            style={{ borderLeft: `4px solid ${pastoral.globalPastoral.colorHex || '#3498db'}` }}
+            style={{ borderLeft: `4px solid ${pastoral.globalPastoral.colorHex || '#075AA9'}` }}
           >
             <div className="entity-card-header">
-              <div className="entity-monogram" style={{ background: pastoral.globalPastoral.colorHex || '#3498db' }}>
+              <div className="entity-monogram" style={{ background: pastoral.globalPastoral.colorHex || '#075AA9' }}>
                 {initials(pastoral.globalPastoral.name)}
               </div>
               <div className="entity-heading">
