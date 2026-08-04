@@ -333,6 +333,30 @@ const toDateTimeInput = (value: string) => {
   return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 16);
 };
 
+/** Chave de dia local (YYYY-MM-DD). */
+const toDayKey = (value: string | Date) => {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate(),
+  ).padStart(2, '0')}`;
+};
+
+/** Dias (YYYY-MM-DD) cobertos pelo evento — um por dia entre início e fim (limite 60).
+ *  Evento multi-dia (tríduo, novena…) tem uma celebração/escala por dia. */
+const eventDayKeys = (eventItem: EventItem): string[] => {
+  const start = new Date(eventItem.startDate);
+  if (Number.isNaN(start.getTime())) return [];
+  const end = eventItem.endDate ? new Date(eventItem.endDate) : start;
+  const days: string[] = [];
+  const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  while (cursor <= last && days.length < 60) {
+    days.push(toDayKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days.length ? days : [toDayKey(start)];
+};
+
 const toHumanDate = (value: string) =>
   new Date(value).toLocaleString('pt-BR', {
     day: '2-digit',
@@ -418,6 +442,8 @@ const SchedulesPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | ScheduleStatus>('all');
   const [eventFilter, setEventFilter] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  // Evento multi-dia: criar uma escala para cada dia pendente do período
+  const [createAllDays, setCreateAllDays] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
 
@@ -474,6 +500,15 @@ const SchedulesPage: React.FC = () => {
     Authorization: `Bearer ${localStorage.getItem('token')}`,
   };
 
+  /** Primeiro dia do evento ainda sem escala, mantendo o horário de início. */
+  const firstPendingDateInput = (eventItem: EventItem): string => {
+    const done = scheduledDaysByEvent.get(eventItem.id);
+    const pending = eventDayKeys(eventItem).find((day) => !done?.has(day));
+    if (!pending) return toDateTimeInput(eventItem.startDate);
+    const time = toDateTimeInput(eventItem.startDate).slice(11) || '00:00';
+    return `${pending}T${time}`;
+  };
+
   const resetCreateForm = () => {
     setCreateForm({
       eventId: '',
@@ -482,6 +517,7 @@ const SchedulesPage: React.FC = () => {
       date: '',
       pastoralSettings: [],
     });
+    setCreateAllDays(false);
   };
 
   const resetAssignmentForm = () => {
@@ -519,9 +555,10 @@ const SchedulesPage: React.FC = () => {
       ...prev,
       eventId,
       title: selectedEvent ? `Escala - ${selectedEvent.title}` : prev.title,
-      date: selectedEvent ? toDateTimeInput(selectedEvent.startDate) : prev.date,
+      date: selectedEvent ? firstPendingDateInput(selectedEvent) : prev.date,
       pastoralSettings: buildCreatePastoralSettings(selectedEvent),
     }));
+    setCreateAllDays(false);
   };
 
   const handleCreatePastoralRequiredPeopleChange = (communityPastoralId: string, rawValue: string) => {
@@ -689,12 +726,28 @@ const SchedulesPage: React.FC = () => {
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [getFilteredSchedules]);
 
+  // Dias já escalados por evento — evento multi-dia recebe UMA escala por dia
+  const scheduledDaysByEvent = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const schedule of schedules) {
+      if (schedule.isStandalone) continue;
+      const eventId = schedule.event?.id;
+      if (!eventId) continue;
+      if (!map.has(eventId)) map.set(eventId, new Set());
+      map.get(eventId)!.add(toDayKey(schedule.date));
+    }
+    return map;
+  }, [schedules]);
+
   const eventsWithoutSchedule = useMemo(() => {
-    const schedulesEvents = new Set(schedules.map((schedule) => schedule.event.id));
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     return events
-      .filter((event) => !schedulesEvents.has(event.id))
+      // Permanece pendente enquanto houver DIA do evento sem escala
+      .filter((event) => {
+        const done = scheduledDaysByEvent.get(event.id);
+        return eventDayKeys(event).some((day) => !done?.has(day));
+      })
       // Apenas eventos futuros ou ainda em andamento (multi-dia)
       .filter((event) => new Date(event.endDate ?? event.startDate) >= startOfToday)
       .filter((event) => {
@@ -707,7 +760,7 @@ const SchedulesPage: React.FC = () => {
         );
       })
       .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
-  }, [events, schedules, searchText]);
+  }, [events, scheduledDaysByEvent, searchText]);
 
   const openCreate = (event?: EventItem) => {
     resetCreateForm();
@@ -716,7 +769,7 @@ const SchedulesPage: React.FC = () => {
         eventId: event.id,
         title: `Escala - ${event.title}`,
         description: '',
-        date: toDateTimeInput(event.startDate),
+        date: firstPendingDateInput(event),
         pastoralSettings: buildCreatePastoralSettings(event),
       });
     }
@@ -1031,18 +1084,62 @@ const SchedulesPage: React.FC = () => {
       return;
     }
 
+    const basePayload = {
+      description: createForm.description,
+      eventId: createForm.eventId,
+      pastoralSettings: createForm.pastoralSettings.map((item) => ({
+        communityPastoralId: item.communityPastoralId,
+        requiredPeople: Number(item.requiredPeople || 0),
+      })),
+    };
+
+    // Evento multi-dia: cria uma escala para cada dia ainda sem escala,
+    // usando o horário informado no formulário para todos os dias.
+    const selectedEvent = events.find((item) => item.id === createForm.eventId);
+    if (createAllDays && selectedEvent && eventDayKeys(selectedEvent).length > 1) {
+      const done = scheduledDaysByEvent.get(selectedEvent.id);
+      const pendingDays = eventDayKeys(selectedEvent).filter((day) => !done?.has(day));
+      if (pendingDays.length === 0) {
+        notify.warning('Todos os dias deste evento ja possuem escala.');
+        return;
+      }
+      const time = createForm.date.slice(11) || '00:00';
+      let created = 0;
+      const failures: string[] = [];
+      for (const day of pendingDays) {
+        const label = `${day.slice(8, 10)}/${day.slice(5, 7)}`;
+        try {
+          await axios.post(
+            `${API_URL}/schedules`,
+            {
+              ...basePayload,
+              title: `${createForm.title} — ${label}`,
+              date: new Date(`${day}T${time}`).toISOString(),
+            },
+            { headers },
+          );
+          created++;
+        } catch (error: any) {
+          failures.push(`${label}: ${error.response?.data?.message || 'erro'}`);
+        }
+      }
+      if (created > 0) notify.success(`${created} escala(s) criada(s) para "${selectedEvent.title}"`);
+      if (failures.length > 0) notify.error(`Falhas: ${failures.join(' | ')}`);
+      if (created > 0) {
+        setShowCreateModal(false);
+        resetCreateForm();
+        await fetchData();
+      }
+      return;
+    }
+
     try {
       await axios.post(
         `${API_URL}/schedules`,
         {
+          ...basePayload,
           title: createForm.title,
-          description: createForm.description,
           date: new Date(createForm.date).toISOString(),
-          eventId: createForm.eventId,
-          pastoralSettings: createForm.pastoralSettings.map((item) => ({
-            communityPastoralId: item.communityPastoralId,
-            requiredPeople: Number(item.requiredPeople || 0),
-          })),
         },
         { headers },
       );
@@ -1561,6 +1658,11 @@ const SchedulesPage: React.FC = () => {
                     <div className="event-title-row">
                       <strong>{eventItem.title}</strong>
                       <span className="event-date-chip">{toDateTag(eventItem.startDate)}</span>
+                      {eventDayKeys(eventItem).length > 1 && (
+                        <span className="event-date-chip" title="Evento de vários dias — uma escala por dia">
+                          {scheduledDaysByEvent.get(eventItem.id)?.size ?? 0} de {eventDayKeys(eventItem).length} dias com escala
+                        </span>
+                      )}
                     </div>
                     <div className="event-meta-row">
                       <span className="event-community">{eventItem.community.name}</span>
@@ -1735,6 +1837,47 @@ const SchedulesPage: React.FC = () => {
                   onChange={(event) => setCreateForm({ ...createForm, date: event.target.value })}
                 />
               </div>
+
+              {(() => {
+                const selectedEvent = events.find((item) => item.id === createForm.eventId);
+                if (!selectedEvent) return null;
+                const days = eventDayKeys(selectedEvent);
+                if (days.length <= 1) return null;
+                const done = scheduledDaysByEvent.get(selectedEvent.id);
+                const pending = days.filter((day) => !done?.has(day));
+                const fmt = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
+                return (
+                  <div
+                    className="form-group"
+                    style={{
+                      background: '#eaf4ff',
+                      border: '1px solid #b6d4fe',
+                      borderRadius: 10,
+                      padding: '10px 12px',
+                    }}
+                  >
+                    <strong style={{ fontSize: '0.9rem', color: '#075aa9' }}>
+                      Evento de vários dias ({days.length} celebrações)
+                    </strong>
+                    <p style={{ margin: '4px 0 8px', fontSize: '0.82rem', color: '#33475b' }}>
+                      Cada dia tem a própria escala. Já com escala:{' '}
+                      {days.length - pending.length === 0
+                        ? 'nenhum'
+                        : days.filter((day) => done?.has(day)).map(fmt).join(', ')}{' '}
+                      · Pendentes: {pending.length === 0 ? 'nenhum' : pending.map(fmt).join(', ')}
+                    </p>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, cursor: 'pointer', fontSize: '0.88rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={createAllDays}
+                        onChange={(event) => setCreateAllDays(event.target.checked)}
+                        style={{ width: 16, height: 16 }}
+                      />
+                      Criar uma escala para <strong>cada dia pendente</strong> ({pending.length}) usando o horário informado acima
+                    </label>
+                  </div>
+                );
+              })()}
 
               <div className="create-slots-panel">
                 <div className="create-slots-header">
