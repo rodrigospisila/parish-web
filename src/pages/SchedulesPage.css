@@ -1874,9 +1874,8 @@
 
 /* Page Refresh */
 .schedules-page {
-  max-width: 1480px;
-  margin: 0 auto;
-  padding: 2rem 1.6rem 2.5rem;
+  /* Padrão do painel: página ocupa a largura inteira (como Membros/Comunidades) */
+  padding: 2rem 2rem 2.5rem;
 }
 
 .schedule-surface,

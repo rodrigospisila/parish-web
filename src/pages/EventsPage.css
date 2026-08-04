@@ -1,9 +1,8 @@
 /* EventsPage.css */
 
 .events-page {
-  padding: 24px;
-  max-width: 1400px;
-  margin: 0 auto;
+  /* Padrão do painel: página ocupa a largura inteira (como Membros/Comunidades) */
+  padding: 2rem;
 }
 
 .events-header {

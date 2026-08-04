@@ -1,7 +1,6 @@
 .pastorals-page {
-  padding: 20px;
-  max-width: 1400px;
-  margin: 0 auto;
+  /* Padrão do painel: página ocupa a largura inteira (como Membros/Comunidades) */
+  padding: 2rem;
 }
 
 .page-header {
@@ -662,8 +661,7 @@
 }
 
 .community-pastoral-page {
-  max-width: 1380px;
-  padding: 28px 24px 40px;
+  padding: 2rem 2rem 2.5rem;
 }
 
 .community-pastoral-page .page-header {
