@@ -1547,7 +1547,17 @@ const SchedulesPage: React.FC = () => {
                                 ▸
                               </span>
                               <span>
-                                <strong>{item.title}</strong>
+                                <span className="overview-title-line">
+                                  <strong>{item.title}</strong>
+                                  {item.counts.total === 0 && (
+                                    <span
+                                      className="overview-alert-chip"
+                                      title="Nenhum membro foi atribuído a esta escala"
+                                    >
+                                      ⚠️ Sem atribuições
+                                    </span>
+                                  )}
+                                </span>
                                 <small>{item.event.title}</small>
                               </span>
                             </span>
@@ -1599,7 +1609,14 @@ const SchedulesPage: React.FC = () => {
                       <p className="coordinator-schedule-date">{toHumanDate(item.date)}</p>
                       <p>{item.event.title}</p>
                     </div>
-                    <span className="status-chip status-rate">{item.attendanceRate}% presentes</span>
+                    <div className="coordinator-schedule-badges">
+                      <span className="status-chip status-rate">{item.attendanceRate}% presentes</span>
+                      {item.counts.total === 0 && (
+                        <span className="overview-alert-chip" title="Nenhum membro foi atribuído a esta escala">
+                          ⚠️ Sem atribuições
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="assignment-status-summary">
                     <span className="status-pill status-pending">Pendentes: {item.counts.pending}</span>

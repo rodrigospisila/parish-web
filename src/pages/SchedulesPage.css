@@ -3060,3 +3060,38 @@ tr.overview-row.is-open td {
   background: #fdeaea;
   color: #c53b42;
 }
+
+/* Alerta de escala sem atribuições */
+.overview-alert-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  background: #fdf3e3;
+  color: #a96a0d;
+  border: 1px solid #f2d9ac;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.overview-title-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.overview-title-line strong {
+  display: inline;
+}
+
+.coordinator-schedule-badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+}
