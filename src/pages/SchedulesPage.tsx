@@ -20,6 +20,15 @@ type CandidateRecommendationLevel = 'RECOMMENDED' | 'ATTENTION' | 'CONFLICT';
 type CandidateHistoryOutcome = 'CHECKED_IN' | 'NO_SHOW' | 'DECLINED';
 type CandidateFilter = 'all' | 'recommended' | 'attention' | 'conflict';
 
+interface SchedulePastoralInfo {
+  id: string;
+  communityPastoralId: string;
+  role?: string | null;
+  isLeader?: boolean;
+  requiredPeople: number;
+  communityPastoral?: { id: string; globalPastoral?: { id: string; name: string } | null } | null;
+}
+
 interface Schedule {
   id: string;
   title: string;
@@ -33,6 +42,8 @@ interface Schedule {
   endTime?: string | null;
   location?: string | null;
   event: EventItem;
+  // Pastorais vinculadas à ESCALA (fonte das vagas; vem no GET /schedules/:id)
+  pastorals?: SchedulePastoralInfo[];
   assignments: Assignment[];
   _count: { assignments: number };
 }
@@ -55,6 +66,7 @@ interface RotationPreviewItem {
   date: string;
   suggestions: RotationSuggestion[];
   gaps: RotationGap[];
+  pastorals?: Array<{ communityPastoralId: string; name: string; requiredPeople: number }>;
   noPastorals?: boolean;
   noSlots?: boolean;
 }
@@ -410,23 +422,37 @@ const addDays = (date: Date, days: number) => {
 const getPastoralName = (eventPastoral?: EventPastoral | null) =>
   eventPastoral?.communityPastoral?.globalPastoral?.name || 'Pastoral';
 
-const getPastoralProgress = (schedule: Schedule) =>
-  (schedule.event.eventPastorals || []).map((eventPastoral) => {
-    const assignedCount = schedule.assignments.filter(
-      (assignment) => assignment.communityPastoral?.id === eventPastoral.communityPastoralId,
-    ).length;
-    const requiredPeople = Number(eventPastoral.requiredPeople || 0);
+const getPastoralProgress = (schedule: Schedule) => {
+  // Fonte preferida: as pastorais da PRÓPRIA escala (vagas editáveis por escala).
+  // Fallback: as do evento (listagens que não trazem schedule.pastorals).
+  const source =
+    schedule.pastorals && schedule.pastorals.length > 0
+      ? schedule.pastorals.map((pastoral) => ({
+          communityPastoralId: pastoral.communityPastoralId,
+          name: pastoral.communityPastoral?.globalPastoral?.name || 'Pastoral',
+          role: pastoral.role ?? undefined,
+          isLeader: pastoral.isLeader,
+          requiredPeople: Number(pastoral.requiredPeople || 0),
+        }))
+      : (schedule.event.eventPastorals || []).map((eventPastoral) => ({
+          communityPastoralId: eventPastoral.communityPastoralId,
+          name: getPastoralName(eventPastoral),
+          role: eventPastoral.role,
+          isLeader: eventPastoral.isLeader,
+          requiredPeople: Number(eventPastoral.requiredPeople || 0),
+        }));
 
+  return source.map((item) => {
+    const assignedCount = schedule.assignments.filter(
+      (assignment) => assignment.communityPastoral?.id === item.communityPastoralId,
+    ).length;
     return {
-      communityPastoralId: eventPastoral.communityPastoralId,
-      name: getPastoralName(eventPastoral),
-      role: eventPastoral.role,
-      isLeader: eventPastoral.isLeader,
+      ...item,
       assignedCount,
-      requiredPeople,
-      remainingPeople: requiredPeople > 0 ? Math.max(requiredPeople - assignedCount, 0) : null,
+      remainingPeople: item.requiredPeople > 0 ? Math.max(item.requiredPeople - assignedCount, 0) : null,
     };
   });
+};
 
 const SchedulesPage: React.FC = () => {
   const { user: currentUser } = useAuth();
@@ -507,6 +533,15 @@ const SchedulesPage: React.FC = () => {
   const [rotationSelection, setRotationSelection] = useState<string[]>([]);
   const [rotationPreview, setRotationPreview] = useState<RotationResponse | null>(null);
   const [rotationLoading, setRotationLoading] = useState(false);
+  // Vagas definidas na geração do rodízio: scheduleId -> (communityPastoralId -> vagas)
+  const [rotationSlots, setRotationSlots] = useState<Record<string, Record<string, number>>>({});
+
+  // Edição de vagas da escala (detalhe)
+  const [slotsEdit, setSlotsEdit] = useState<null | {
+    scheduleId: string;
+    items: Array<{ communityPastoralId: string; name: string; requiredPeople: number }>;
+  }>(null);
+  const [slotsSaving, setSlotsSaving] = useState(false);
 
   const headers = {
     Authorization: `Bearer ${localStorage.getItem('token')}`,
@@ -838,7 +873,66 @@ const SchedulesPage: React.FC = () => {
       .map((schedule) => schedule.id);
     setRotationSelection(openIds);
     setRotationPreview(null);
+    setRotationSlots({});
     setShowRotationModal(true);
+  };
+
+  /** Vagas por pastoral definidas na tela do rodízio, no formato do backend. */
+  const buildSlotOverrides = () =>
+    Object.entries(rotationSlots)
+      .map(([scheduleId, settings]) => ({
+        scheduleId,
+        settings: Object.entries(settings).map(([communityPastoralId, requiredPeople]) => ({
+          communityPastoralId,
+          requiredPeople: Math.max(0, Number(requiredPeople || 0)),
+        })),
+      }))
+      .filter((override) => override.settings.length > 0);
+
+  const setRotationSlot = (scheduleId: string, communityPastoralId: string, value: number) => {
+    setRotationSlots((prev) => ({
+      ...prev,
+      [scheduleId]: { ...(prev[scheduleId] || {}), [communityPastoralId]: Math.max(0, value) },
+    }));
+  };
+
+  // ===== Edição de vagas da escala (detalhe) =====
+
+  const openSlotsEdit = () => {
+    if (!activeSchedule) return;
+    setSlotsEdit({
+      scheduleId: activeSchedule.id,
+      items: detailPastoralProgress.map((pastoral) => ({
+        communityPastoralId: pastoral.communityPastoralId,
+        name: pastoral.name,
+        requiredPeople: pastoral.requiredPeople,
+      })),
+    });
+  };
+
+  const handleSaveSlots = async () => {
+    if (!slotsEdit) return;
+    setSlotsSaving(true);
+    try {
+      await axios.patch(
+        `${API_URL}/schedules/${slotsEdit.scheduleId}/pastorals`,
+        {
+          pastoralSettings: slotsEdit.items.map((item) => ({
+            communityPastoralId: item.communityPastoralId,
+            requiredPeople: Number(item.requiredPeople || 0),
+          })),
+        },
+        { headers },
+      );
+      notify.success('Vagas atualizadas!');
+      setSlotsEdit(null);
+      await fetchScheduleById(slotsEdit.scheduleId, true);
+      fetchData();
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Erro ao atualizar as vagas');
+    } finally {
+      setSlotsSaving(false);
+    }
   };
 
   const toggleRotationSchedule = (scheduleId: string) => {
@@ -857,7 +951,7 @@ const SchedulesPage: React.FC = () => {
     try {
       const response = await axios.post<RotationResponse>(
         `${API_URL}/schedules/generate`,
-        { scheduleIds: rotationSelection, dryRun },
+        { scheduleIds: rotationSelection, dryRun, slotOverrides: buildSlotOverrides() },
         { headers },
       );
       setRotationPreview(response.data);
@@ -2119,6 +2213,11 @@ const SchedulesPage: React.FC = () => {
               <div className="assignments-section-header assignments-section-header-inline">
                 <h3>Preenchimento por pastoral</h3>
                 <p className="filter-subtitle">Abra a vaga pela pastoral correta para reduzir erros de alocacao.</p>
+                {managerRole && detailPastoralProgress.length > 0 && (
+                  <button className="btn-small btn-surface" onClick={openSlotsEdit}>
+                    ✏️ Editar vagas
+                  </button>
+                )}
               </div>
               <div className="pastoral-progress-grid">
                 {detailPastoralProgress.length > 0 ? (
@@ -2653,6 +2752,67 @@ const SchedulesPage: React.FC = () => {
         </div>
       )}
 
+      {slotsEdit && (
+        <div className="modal-overlay" onClick={() => setSlotsEdit(null)}>
+          <div className="modal-content" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 480 }}>
+            <button className="modal-close" onClick={() => setSlotsEdit(null)}>
+              ×
+            </button>
+            <h2>Editar vagas por pastoral</h2>
+            <p style={{ color: '#52606d', fontSize: '0.9rem', margin: '0.25rem 0 1rem' }}>
+              As vagas valem só para esta escala. O gerador de rodízio usa esses números para sugerir membros.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+              {slotsEdit.items.map((item, index) => (
+                <label
+                  key={item.communityPastoralId}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 10,
+                    padding: '0.55rem 0.8rem',
+                    margin: 0,
+                  }}
+                >
+                  <span style={{ fontWeight: 600, color: '#17324d' }}>{item.name}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={item.requiredPeople}
+                    onChange={(event) =>
+                      setSlotsEdit((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              items: prev.items.map((entry, entryIndex) =>
+                                entryIndex === index
+                                  ? { ...entry, requiredPeople: Math.max(0, Number(event.target.value || 0)) }
+                                  : entry,
+                              ),
+                            }
+                          : prev,
+                      )
+                    }
+                    style={{ width: 80, padding: '6px 8px', textAlign: 'center' }}
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" onClick={() => setSlotsEdit(null)}>
+                Cancelar
+              </button>
+              <button type="button" className="btn-submit" disabled={slotsSaving} onClick={handleSaveSlots}>
+                {slotsSaving ? 'Salvando...' : 'Salvar vagas'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showRotationModal && (
         <div className="modal-overlay" onClick={() => setShowRotationModal(false)}>
           <div className="modal-content modal-large" onClick={(event) => event.stopPropagation()}>
@@ -2689,6 +2849,48 @@ const SchedulesPage: React.FC = () => {
                 {rotationPreview.preview.map((item) => (
                   <div key={item.scheduleId} style={{ border: '1px solid #eee', borderRadius: 8, padding: '0.6rem 0.8rem', marginBottom: '0.5rem' }}>
                     <strong>{item.title}</strong> — {toHumanDate(item.date)}
+                    {(item.pastorals?.length ?? 0) > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', margin: '0.45rem 0 0.2rem' }}>
+                        {item.pastorals!.map((pastoral) => (
+                          <label
+                            key={pastoral.communityPastoralId}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              fontSize: '0.82rem',
+                              color: '#52606d',
+                              background: '#f5f7fa',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: 8,
+                              padding: '0.28rem 0.55rem',
+                              margin: 0,
+                            }}
+                          >
+                            {pastoral.name} · vagas
+                            <input
+                              type="number"
+                              min={0}
+                              value={
+                                rotationSlots[item.scheduleId]?.[pastoral.communityPastoralId] ??
+                                pastoral.requiredPeople
+                              }
+                              onChange={(event) =>
+                                setRotationSlot(
+                                  item.scheduleId,
+                                  pastoral.communityPastoralId,
+                                  Number(event.target.value || 0),
+                                )
+                              }
+                              style={{ width: 58, padding: '2px 6px', textAlign: 'center' }}
+                            />
+                          </label>
+                        ))}
+                        <span style={{ fontSize: '0.75rem', color: '#8b97a4', alignSelf: 'center' }}>
+                          Ajustou? Clique em “Gerar prévia” de novo — ao publicar, as vagas são salvas na escala.
+                        </span>
+                      </div>
+                    )}
                     {item.suggestions.length > 0 ? (
                       <ul style={{ margin: '0.35rem 0 0 1rem', padding: 0 }}>
                         {item.suggestions.map((suggestion, index) => (
