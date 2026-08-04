@@ -2,12 +2,30 @@ import React, { useState, useEffect, useCallback } from 'react';
 import api, { getErrorMessage } from '../../services/api';
 import { notify, confirm } from '../../services/notification.service';
 import SearchSelect from '../../components/SearchSelect';
+import { useAuth } from '../../contexts/AuthContext';
 import './ModulePages.css';
+
+// Papéis que gerenciam a agenda fixa (criam/editam). O coordenador de pastoral
+// só pode GERAR ESCALA a partir de um horário já configurado.
+const MANAGE_ROLES = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'];
 
 interface Community {
   id: string;
   name: string;
   parish?: { id: string; name: string };
+}
+
+interface CommunityPastoral {
+  id: string;
+  name?: string;
+  globalPastoral?: { id: string; name: string };
+  communityId?: string;
+}
+
+interface MassPastoral {
+  id: string;
+  requiredPeople: number;
+  communityPastoral: { id: string; globalPastoral?: { id: string; name: string } | null };
 }
 
 interface MassSchedule {
@@ -19,6 +37,13 @@ interface MassSchedule {
   isSpecial: boolean;
   specialDate?: string | null;
   community: { id: string; name: string; parish?: { name: string } | null };
+  pastorals?: MassPastoral[];
+}
+
+interface SelectedPastoral {
+  communityPastoralId: string;
+  name: string;
+  requiredPeople: number;
 }
 
 const WEEKDAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
@@ -30,7 +55,21 @@ const TYPE_META: Record<MassSchedule['type'], { label: string; color: string; ic
   ROSARY: { label: 'Terço', color: 'gray', icon: '📿' },
 };
 
+const pastoralName = (p: CommunityPastoral) => p.globalPastoral?.name || p.name || 'Pastoral';
+
+/** Próxima data (YYYY-MM-DD) em que cai o dia da semana informado. */
+function nextOccurrence(dayOfWeek: number): string {
+  const today = new Date();
+  const d = new Date(today);
+  const diff = (dayOfWeek - today.getDay() + 7) % 7;
+  d.setDate(today.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
 const FixedSchedulePage: React.FC = () => {
+  const { user } = useAuth();
+  const canManage = MANAGE_ROLES.includes(user?.role ?? '');
+
   const [loading, setLoading] = useState(true);
   const [schedules, setSchedules] = useState<MassSchedule[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -47,6 +86,15 @@ const FixedSchedulePage: React.FC = () => {
     isSpecial: false,
     specialDate: '',
   });
+
+  // Pastorais vinculadas ao horário fixo
+  const [communityPastorals, setCommunityPastorals] = useState<CommunityPastoral[]>([]);
+  const [selectedPastorals, setSelectedPastorals] = useState<SelectedPastoral[]>([]);
+
+  // Modal de gerar escala
+  const [genTarget, setGenTarget] = useState<MassSchedule | null>(null);
+  const [genDate, setGenDate] = useState('');
+  const [generating, setGenerating] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -67,9 +115,30 @@ const FixedSchedulePage: React.FC = () => {
     fetchData();
   }, [fetchData]);
 
+  // Carrega as pastorais da comunidade selecionada no modal
+  useEffect(() => {
+    if (!showModal || !form.communityId) {
+      setCommunityPastorals([]);
+      return;
+    }
+    let active = true;
+    api
+      .get('/pastorals/community', { params: { communityId: form.communityId } })
+      .then((res) => {
+        if (active) setCommunityPastorals(res.data || []);
+      })
+      .catch(() => {
+        if (active) setCommunityPastorals([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [showModal, form.communityId]);
+
   const openCreate = () => {
     setEditing(null);
     setForm({ communityId: communityFilter || '', type: 'MASS', dayOfWeek: 0, time: '', notes: '', isSpecial: false, specialDate: '' });
+    setSelectedPastorals([]);
     setShowModal(true);
   };
 
@@ -84,7 +153,28 @@ const FixedSchedulePage: React.FC = () => {
       isSpecial: schedule.isSpecial,
       specialDate: schedule.specialDate ? schedule.specialDate.slice(0, 10) : '',
     });
+    setSelectedPastorals(
+      (schedule.pastorals ?? []).map((p) => ({
+        communityPastoralId: p.communityPastoral.id,
+        name: p.communityPastoral.globalPastoral?.name || 'Pastoral',
+        requiredPeople: p.requiredPeople ?? 0,
+      })),
+    );
     setShowModal(true);
+  };
+
+  const togglePastoral = (p: CommunityPastoral) => {
+    setSelectedPastorals((prev) => {
+      const exists = prev.find((s) => s.communityPastoralId === p.id);
+      if (exists) return prev.filter((s) => s.communityPastoralId !== p.id);
+      return [...prev, { communityPastoralId: p.id, name: pastoralName(p), requiredPeople: 0 }];
+    });
+  };
+
+  const setPastoralRequired = (communityPastoralId: string, requiredPeople: number) => {
+    setSelectedPastorals((prev) =>
+      prev.map((s) => (s.communityPastoralId === communityPastoralId ? { ...s, requiredPeople } : s)),
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -105,6 +195,10 @@ const FixedSchedulePage: React.FC = () => {
       notes: form.notes || undefined,
       isSpecial: form.isSpecial,
       specialDate: form.isSpecial && form.specialDate ? new Date(form.specialDate).toISOString() : undefined,
+      pastoralSettings: selectedPastorals.map((s) => ({
+        communityPastoralId: s.communityPastoralId,
+        requiredPeople: Number(s.requiredPeople || 0),
+      })),
     };
     try {
       if (editing) {
@@ -133,7 +227,36 @@ const FixedSchedulePage: React.FC = () => {
     }
   };
 
-  // Agrupa por comunidade → tipo para exibição
+  const openGenerate = (schedule: MassSchedule) => {
+    if (!schedule.pastorals || schedule.pastorals.length === 0) {
+      notify.warning('Vincule ao menos uma pastoral a este horário (Editar) antes de gerar a escala.');
+      return;
+    }
+    setGenTarget(schedule);
+    setGenDate(
+      schedule.isSpecial && schedule.specialDate
+        ? schedule.specialDate.slice(0, 10)
+        : nextOccurrence(schedule.dayOfWeek),
+    );
+  };
+
+  const handleGenerate = async () => {
+    if (!genTarget || !genDate) return;
+    setGenerating(true);
+    try {
+      await api.post(`/mass-schedules/${genTarget.id}/schedule`, {
+        date: new Date(genDate).toISOString(),
+      });
+      notify.success('Escala gerada! Gerencie as atribuições na página Escalas.');
+      setGenTarget(null);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao gerar escala'));
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  // Agrupa por comunidade para exibição
   const grouped = schedules.reduce<Record<string, MassSchedule[]>>((acc, schedule) => {
     (acc[schedule.community.name] ??= []).push(schedule);
     return acc;
@@ -146,13 +269,15 @@ const FixedSchedulePage: React.FC = () => {
       <div className="page-header">
         <h1>🕐 Agenda Fixa</h1>
         <div className="header-actions">
-          <button className="btn-primary" onClick={openCreate}>+ Novo Horário Fixo</button>
+          {canManage && <button className="btn-primary" onClick={openCreate}>+ Novo Horário Fixo</button>}
         </div>
       </div>
 
       <div className="privacy-note" style={{ background: '#eef6ff', borderColor: '#b6d4fe', color: '#084298' }}>
-        Horários fixos semanais (Missa, Confissão, Adoração, Terço) da comunidade. Eles aparecem
-        automaticamente no <strong>calendário de Eventos</strong> semana após semana e no export .ics.
+        Horários fixos semanais (Missa, Confissão, Adoração, Terço) da comunidade. Aparecem no
+        <strong> calendário de Eventos</strong> semana após semana. Vincule as <strong>pastorais</strong> que
+        servem em cada horário e use <strong>Gerar escala</strong> para criar a escala de uma data — as
+        atribuições são feitas na página <strong>Escalas</strong>.
       </div>
 
       <div className="filters">
@@ -179,13 +304,14 @@ const FixedSchedulePage: React.FC = () => {
                     <th>Tipo</th>
                     <th>Dia</th>
                     <th>Horário</th>
-                    <th>Observação</th>
+                    <th>Pastorais</th>
                     <th>Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {list.map((schedule) => {
                     const meta = TYPE_META[schedule.type];
+                    const pastorals = schedule.pastorals ?? [];
                     return (
                       <tr key={schedule.id}>
                         <td>
@@ -197,10 +323,35 @@ const FixedSchedulePage: React.FC = () => {
                             : WEEKDAYS[schedule.dayOfWeek]}
                         </td>
                         <td><strong>{schedule.time}</strong></td>
-                        <td>{schedule.notes || '—'}</td>
+                        <td>
+                          {pastorals.length === 0 ? (
+                            <span style={{ color: '#999' }}>—</span>
+                          ) : (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                              {pastorals.map((p) => (
+                                <span key={p.id} className="status-badge blue" style={{ fontSize: '0.72rem' }}>
+                                  {p.communityPastoral.globalPastoral?.name || 'Pastoral'}
+                                  {p.requiredPeople ? ` · ${p.requiredPeople}` : ''}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
                         <td className="actions-cell">
-                          <button className="entity-icon-btn" onClick={() => openEdit(schedule)} title="Editar">✏️</button>
-                          <button className="entity-icon-btn danger" onClick={() => handleDelete(schedule)} title="Excluir">🗑️</button>
+                          <button
+                            className="btn-secondary"
+                            style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                            onClick={() => openGenerate(schedule)}
+                            title="Gerar escala para uma data"
+                          >
+                            📋 Gerar escala
+                          </button>
+                          {canManage && (
+                            <>
+                              <button className="entity-icon-btn" onClick={() => openEdit(schedule)} title="Editar">✏️</button>
+                              <button className="entity-icon-btn danger" onClick={() => handleDelete(schedule)} title="Excluir">🗑️</button>
+                            </>
+                          )}
                         </td>
                       </tr>
                     );
@@ -270,11 +421,74 @@ const FixedSchedulePage: React.FC = () => {
                 <input type="text" placeholder="Ex.: Missa com bênção das crianças" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
               </div>
 
+              {/* Pastorais vinculadas */}
+              <div className="form-group">
+                <label>Pastorais que servem neste horário</label>
+                {!form.communityId ? (
+                  <p style={{ color: '#888', fontSize: '0.85rem' }}>Selecione a comunidade para listar as pastorais.</p>
+                ) : communityPastorals.length === 0 ? (
+                  <p style={{ color: '#888', fontSize: '0.85rem' }}>Nenhuma pastoral cadastrada nesta comunidade.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: 8, padding: 8 }}>
+                    {communityPastorals.map((p) => {
+                      const sel = selectedPastorals.find((s) => s.communityPastoralId === p.id);
+                      return (
+                        <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, cursor: 'pointer', margin: 0 }}>
+                            <input type="checkbox" checked={!!sel} onChange={() => togglePastoral(p)} />
+                            <span>{pastoralName(p)}</span>
+                          </label>
+                          {sel && (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: '#555' }}>
+                              vagas:
+                              <input
+                                type="number"
+                                min={0}
+                                value={sel.requiredPeople}
+                                onChange={(e) => setPastoralRequired(p.id, Math.max(0, Number(e.target.value)))}
+                                style={{ width: 64, padding: '2px 6px' }}
+                              />
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div className="modal-actions">
                 <button type="button" className="btn-cancel" onClick={() => setShowModal(false)}>Cancelar</button>
                 <button type="submit" className="btn-submit">{editing ? 'Salvar' : 'Criar'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de gerar escala */}
+      {genTarget && (
+        <div className="module-modal-overlay" onClick={() => setGenTarget(null)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <h2>Gerar escala</h2>
+            <p style={{ color: '#555', marginBottom: 12 }}>
+              {TYPE_META[genTarget.type].label} das <strong>{genTarget.time}</strong> ·{' '}
+              {genTarget.community.name}
+            </p>
+            <div className="form-group">
+              <label>Data da celebração *</label>
+              <input type="date" value={genDate} onChange={(e) => setGenDate(e.target.value)} />
+            </div>
+            <p style={{ fontSize: '0.85rem', color: '#666' }}>
+              As pastorais vinculadas ({(genTarget.pastorals ?? []).length}) serão copiadas para a escala.
+              As atribuições de membros são feitas na página <strong>Escalas</strong>.
+            </p>
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" onClick={() => setGenTarget(null)}>Cancelar</button>
+              <button type="button" className="btn-submit" disabled={generating || !genDate} onClick={handleGenerate}>
+                {generating ? 'Gerando...' : 'Gerar escala'}
+              </button>
+            </div>
           </div>
         </div>
       )}

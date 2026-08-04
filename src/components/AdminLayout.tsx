@@ -98,7 +98,7 @@ const AdminLayout: React.FC = () => {
           <NavLink to="/admin/events" className="nav-link">
             <NavIcon name="calendario-liturgico" /> Eventos
           </NavLink>
-          {isCommunityManagement && (
+          {canManageSchedules && (
             <NavLink to="/admin/fixed-schedule" className="nav-link">
               <NavIcon name="missa-proxima" /> Agenda Fixa
             </NavLink>

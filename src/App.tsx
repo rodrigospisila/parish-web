@@ -41,6 +41,8 @@ const COORDINATION_ROLES = [
 
 // Módulos restritos à coordenação de comunidade ou superior (financeiro, sacramentos)
 const COMMUNITY_MANAGEMENT_ROLES = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'];
+// Agenda Fixa: coordenador de pastoral acessa para GERAR ESCALA (CRUD segue restrito no componente/back)
+const FIXED_SCHEDULE_ROLES = [...COMMUNITY_MANAGEMENT_ROLES, 'PASTORAL_COORDINATOR'];
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { token, loading } = useAuth();
@@ -114,7 +116,7 @@ const App: React.FC = () => {
             <Route path="members" element={<MembersPage />} />
             <Route path="events" element={<EventsPage />} />
             <Route path="fixed-schedule" element={
-              <RoleProtectedRoute allowedRoles={COMMUNITY_MANAGEMENT_ROLES}>
+              <RoleProtectedRoute allowedRoles={FIXED_SCHEDULE_ROLES}>
                 <FixedSchedulePage />
               </RoleProtectedRoute>
             } />
