@@ -423,38 +423,97 @@ const FixedSchedulePage: React.FC = () => {
 
               {/* Pastorais vinculadas */}
               <div className="form-group">
-                <label>Pastorais que servem neste horário</label>
+                <label>
+                  Pastorais que servem neste horário
+                  {selectedPastorals.length > 0 && (
+                    <span style={{ color: '#075AA9', fontWeight: 700 }}> · {selectedPastorals.length} selecionada{selectedPastorals.length > 1 ? 's' : ''}</span>
+                  )}
+                </label>
                 {!form.communityId ? (
-                  <p style={{ color: '#888', fontSize: '0.85rem' }}>Selecione a comunidade para listar as pastorais.</p>
+                  <p style={{ color: '#888', fontSize: '0.85rem', margin: 0 }}>Selecione a comunidade para listar as pastorais.</p>
                 ) : communityPastorals.length === 0 ? (
-                  <p style={{ color: '#888', fontSize: '0.85rem' }}>Nenhuma pastoral cadastrada nesta comunidade.</p>
+                  <p style={{ color: '#888', fontSize: '0.85rem', margin: 0 }}>Nenhuma pastoral cadastrada nesta comunidade.</p>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: 8, padding: 8 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 240, overflowY: 'auto', padding: 2 }}>
                     {communityPastorals.map((p) => {
                       const sel = selectedPastorals.find((s) => s.communityPastoralId === p.id);
                       return (
-                        <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, cursor: 'pointer', margin: 0 }}>
-                            <input type="checkbox" checked={!!sel} onChange={() => togglePastoral(p)} />
-                            <span>{pastoralName(p)}</span>
-                          </label>
+                        <div
+                          key={p.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            padding: '9px 12px',
+                            borderRadius: 10,
+                            border: `1px solid ${sel ? '#0A84FF' : '#e5e7eb'}`,
+                            background: sel ? '#eaf4ff' : '#fff',
+                            transition: 'border-color .15s, background .15s',
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => togglePastoral(p)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 10,
+                              flex: 1,
+                              minWidth: 0,
+                              background: 'transparent',
+                              border: 'none',
+                              padding: 0,
+                              margin: 0,
+                              cursor: 'pointer',
+                              font: 'inherit',
+                              color: 'inherit',
+                              textAlign: 'left',
+                            }}
+                          >
+                            <span
+                              aria-hidden="true"
+                              style={{
+                                width: 20,
+                                height: 20,
+                                flexShrink: 0,
+                                borderRadius: 6,
+                                border: `2px solid ${sel ? '#0A84FF' : '#c3ccd6'}`,
+                                background: sel ? '#0A84FF' : '#fff',
+                                color: '#fff',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: 13,
+                                lineHeight: 1,
+                                fontWeight: 800,
+                              }}
+                            >
+                              {sel ? '✓' : ''}
+                            </span>
+                            <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {pastoralName(p)}
+                            </span>
+                          </button>
                           {sel && (
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: '#555' }}>
-                              vagas:
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8rem', color: '#52606d', margin: 0, flexShrink: 0 }}>
+                              vagas
                               <input
                                 type="number"
                                 min={0}
                                 value={sel.requiredPeople}
                                 onChange={(e) => setPastoralRequired(p.id, Math.max(0, Number(e.target.value)))}
-                                style={{ width: 64, padding: '2px 6px' }}
+                                style={{ width: 62, padding: '5px 8px', textAlign: 'center' }}
                               />
-                            </span>
+                            </label>
                           )}
                         </div>
                       );
                     })}
                   </div>
                 )}
+                <p style={{ color: '#888', fontSize: '0.78rem', margin: '6px 2px 0' }}>
+                  As pastorais marcadas são copiadas para a escala ao clicar em “Gerar escala”. “Vagas” = quantidade sugerida de pessoas.
+                </p>
               </div>
 
               <div className="modal-actions">
