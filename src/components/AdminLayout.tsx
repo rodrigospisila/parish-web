@@ -93,7 +93,7 @@ const AdminLayout: React.FC = () => {
 
           <span className="nav-section-label">Comunidade</span>
           <NavLink to="/admin/members" className="nav-link">
-            <NavIcon name="ministro" /> Membros
+            <NavIcon name="membros" /> Membros
           </NavLink>
           <NavLink to="/admin/events" className="nav-link">
             <NavIcon name="calendario-liturgico" /> Eventos
@@ -109,7 +109,7 @@ const AdminLayout: React.FC = () => {
             </NavLink>
           )}
           <NavLink to="/admin/swaps" className="nav-link">
-            <NavIcon name="escala" /> Trocas de Escala
+            <NavIcon name="trocas-escala" /> Trocas de Escala
           </NavLink>
 
           <span className="nav-section-label">Pastoral</span>
@@ -138,7 +138,7 @@ const AdminLayout: React.FC = () => {
                 <NavIcon name="catequese" /> Catequese
               </NavLink>
               <NavLink to="/admin/planning" className="nav-link">
-                <NavIcon name="documento" /> Planejamento
+                <NavIcon name="planejamento" /> Planejamento
               </NavLink>
               <NavLink to="/admin/documents" className="nav-link">
                 <NavIcon name="documento" /> Documentos
@@ -147,10 +147,10 @@ const AdminLayout: React.FC = () => {
                 <NavIcon name="biblia" /> Formação
               </NavLink>
               <NavLink to="/admin/rooms" className="nav-link">
-                <NavIcon name="igreja" /> Espaços
+                <NavIcon name="espacos" /> Espaços
               </NavLink>
               <NavLink to="/admin/visitation" className="nav-link">
-                <NavIcon name="oracao" /> Visitação
+                <NavIcon name="visitacao" /> Visitação
               </NavLink>
             </>
           )}
@@ -168,7 +168,7 @@ const AdminLayout: React.FC = () => {
           )}
           {canManageUsers && (
             <NavLink to="/admin/users" className="nav-link">
-              <NavIcon name="ministro" /> Usuários
+              <NavIcon name="usuarios" /> Usuários
             </NavLink>
           )}
         </nav>
