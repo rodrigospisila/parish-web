@@ -30,7 +30,8 @@ const LoginPage: React.FC = () => {
   return (
     <div className="login-page">
       <div className="login-card">
-        <h1>Sistema de Gestão Paroquial</h1>
+        <img src="/brand/parish-logo-horizontal-cor.svg" alt="Parish" className="login-logo" />
+        <p className="login-tagline">Comunidade, fé e serviço.</p>
         <p className="login-subtitle">Faça login para continuar</p>
 
         {error && (
