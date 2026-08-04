@@ -55,6 +55,8 @@ interface RotationPreviewItem {
   date: string;
   suggestions: RotationSuggestion[];
   gaps: RotationGap[];
+  noPastorals?: boolean;
+  noSlots?: boolean;
 }
 
 interface RotationResponse {
@@ -1112,6 +1114,19 @@ const SchedulesPage: React.FC = () => {
       if (pendingDays.length === 0) {
         notify.warning('Todos os dias deste evento ja possuem escala.');
         return;
+      }
+      // Sem vagas definidas o rodízio não terá o que sugerir — confirma a intenção
+      const totalSlots = basePayload.pastoralSettings.reduce(
+        (acc, item) => acc + Number(item.requiredPeople || 0),
+        0,
+      );
+      if (totalSlots === 0) {
+        const proceed = await confirm.action(
+          'Criar escalas sem vagas?',
+          'Nenhuma vaga por pastoral foi definida. O gerador de rodízio não terá o que sugerir nessas escalas. Deseja criar mesmo assim?',
+          'Criar mesmo assim',
+        );
+        if (!proceed) return;
       }
       const time = createForm.date.slice(11) || '00:00';
       let created = 0;
@@ -2682,8 +2697,20 @@ const SchedulesPage: React.FC = () => {
                           </li>
                         ))}
                       </ul>
+                    ) : item.noPastorals ? (
+                      <p style={{ margin: '0.35rem 0 0 0', color: '#b26a00', fontSize: '0.9rem' }}>
+                        ⚠️ Sem pastorais vinculadas a esta escala.
+                      </p>
+                    ) : item.noSlots ? (
+                      <p style={{ margin: '0.35rem 0 0 0', color: '#b26a00', fontSize: '0.9rem' }}>
+                        ⚠️ As pastorais desta escala estão com <strong>0 vagas</strong> — o rodízio não tem o que
+                        preencher. Recrie a escala definindo as vagas por pastoral (ou defina as vagas no evento
+                        para as próximas herdarem).
+                      </p>
                     ) : (
-                      <p style={{ margin: '0.35rem 0 0 0', color: '#888', fontSize: '0.9rem' }}>Sem sugestões (verifique as pastorais vinculadas).</p>
+                      <p style={{ margin: '0.35rem 0 0 0', color: '#888', fontSize: '0.9rem' }}>
+                        Sem candidatos elegíveis para as vagas desta escala.
+                      </p>
                     )}
                     {item.gaps.length > 0 && (
                       <p style={{ margin: '0.35rem 0 0 0', color: '#b26a00', fontSize: '0.88rem' }}>
