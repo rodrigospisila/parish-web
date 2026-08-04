@@ -22,10 +22,14 @@ const NavIcon: React.FC<{ name: string }> = ({ name }) => (
   <span
     className="nav-icon"
     aria-hidden="true"
-    style={{
-      WebkitMaskImage: `url('/icons/${name}.svg')`,
-      maskImage: `url('/icons/${name}.svg')`,
-    }}
+    style={
+      {
+        WebkitMaskImage: `url('/icons/${name}.svg')`,
+        maskImage: `url('/icons/${name}.svg')`,
+        // Versão colorida (set v2.2 sem fundo) usada quando o item está ativo
+        '--nav-icon-color': `url('/icons-color/${name}.svg')`,
+      } as React.CSSProperties
+    }
   />
 );
 
@@ -59,7 +63,8 @@ const AdminLayout: React.FC = () => {
       <aside className="sidebar">
         <div className="sidebar-header">
           <div className="sidebar-brand">
-            <img src="/brand/parish-logo-horizontal-branco.svg" alt="Parish" className="sidebar-logo" />
+            <img src="/brand/parish-simbolo-cor.svg" alt="" className="sidebar-logo-mark" />
+            <span className="sidebar-logo-word">Parish</span>
           </div>
           <div className="sidebar-user">
             <div className="sidebar-user-top">
