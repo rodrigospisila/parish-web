@@ -441,6 +441,8 @@ const SchedulesPage: React.FC = () => {
     setOverviewView(view);
     localStorage.setItem('schedules:overviewView', view);
   };
+  // Linha expandida na visão em lista (mostra os membros escalados)
+  const [expandedOverviewId, setExpandedOverviewId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -1462,25 +1464,30 @@ const SchedulesPage: React.FC = () => {
           </div>
 
           <div className="coordinator-controls">
-            <div className="coordinator-date-filters">
+            <div className="coordinator-period">
               <label className="coordinator-date-field">
                 <span>De</span>
                 <input type="date" value={overviewFrom} onChange={(event) => setOverviewFrom(event.target.value)} />
               </label>
+              <span className="coordinator-period-sep" aria-hidden="true">
+                →
+              </span>
               <label className="coordinator-date-field">
-                <span>Ate</span>
+                <span>Até</span>
                 <input type="date" value={overviewTo} onChange={(event) => setOverviewTo(event.target.value)} />
               </label>
+              <button className="overview-action-button is-primary" onClick={fetchOverview}>
+                Aplicar
+              </button>
             </div>
-            <button className="overview-action-button is-primary" onClick={fetchOverview}>
-              Aplicar periodo
-            </button>
-            <button className="overview-action-button is-secondary" onClick={() => window.print()}>
-              Imprimir
-            </button>
-            <button className="overview-action-button is-secondary" onClick={handleExportPdf} disabled={exportingPdf}>
-              {exportingPdf ? 'Gerando PDF...' : 'Baixar PDF'}
-            </button>
+            <div className="coordinator-actions">
+              <button className="overview-action-button is-secondary" onClick={() => window.print()}>
+                🖨️ Imprimir
+              </button>
+              <button className="overview-action-button is-secondary" onClick={handleExportPdf} disabled={exportingPdf}>
+                {exportingPdf ? 'Gerando PDF…' : '⬇️ Baixar PDF'}
+              </button>
+            </div>
           </div>
 
           <div className="coordinator-summary-grid">
@@ -1519,22 +1526,66 @@ const SchedulesPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {overview.map((item) => (
-                    <tr key={item.scheduleId}>
-                      <td>
-                        <strong>{item.title}</strong>
-                        <small>{item.event.title}</small>
-                      </td>
-                      <td className="nowrap">{toHumanDate(item.date)}</td>
-                      <td className="num warn">{item.counts.pending}</td>
-                      <td className="num ok">{item.counts.confirmed}</td>
-                      <td className="num danger">{item.counts.declined}</td>
-                      <td className="num ok">{item.counts.checkedIn}</td>
-                      <td className="num">
-                        <span className="status-chip status-rate">{item.attendanceRate}%</span>
-                      </td>
-                    </tr>
-                  ))}
+                  {overview.map((item) => {
+                    const isOpen = expandedOverviewId === item.scheduleId;
+                    const assignmentStatusLabel = (assignment: OverviewAssignment) => {
+                      if (assignment.checkedIn) return { label: 'Presente', cls: 'st-present' };
+                      if (assignment.status === 'CONFIRMED') return { label: 'Confirmado', cls: 'st-confirmed' };
+                      if (assignment.status === 'DECLINED') return { label: 'Recusado', cls: 'st-declined' };
+                      return { label: 'Pendente', cls: 'st-pending' };
+                    };
+                    return (
+                      <React.Fragment key={item.scheduleId}>
+                        <tr
+                          className={`overview-row ${isOpen ? 'is-open' : ''}`}
+                          onClick={() => setExpandedOverviewId(isOpen ? null : item.scheduleId)}
+                          title={isOpen ? 'Ocultar membros escalados' : 'Ver membros escalados'}
+                        >
+                          <td>
+                            <span className="overview-row-title">
+                              <span className="overview-caret" aria-hidden="true">
+                                ▸
+                              </span>
+                              <span>
+                                <strong>{item.title}</strong>
+                                <small>{item.event.title}</small>
+                              </span>
+                            </span>
+                          </td>
+                          <td className="nowrap">{toHumanDate(item.date)}</td>
+                          <td className="num warn">{item.counts.pending}</td>
+                          <td className="num ok">{item.counts.confirmed}</td>
+                          <td className="num danger">{item.counts.declined}</td>
+                          <td className="num ok">{item.counts.checkedIn}</td>
+                          <td className="num">
+                            <span className="status-chip status-rate">{item.attendanceRate}%</span>
+                          </td>
+                        </tr>
+                        {isOpen && (
+                          <tr className="overview-expand-row">
+                            <td colSpan={7}>
+                              {item.assignments.length === 0 ? (
+                                <p className="overview-expand-empty">Sem atribuições nesta escala.</p>
+                              ) : (
+                                <div className="overview-members-grid">
+                                  {item.assignments.map((assignment) => {
+                                    const status = assignmentStatusLabel(assignment);
+                                    return (
+                                      <div className="overview-member-pill" key={assignment.id}>
+                                        <strong>{assignment.memberName}</strong>
+                                        <em>{assignment.role}</em>
+                                        <span className={`overview-member-status ${status.cls}`}>{status.label}</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
