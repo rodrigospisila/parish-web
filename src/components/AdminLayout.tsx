@@ -14,6 +14,21 @@ const ROLE_LABELS: Record<string, string> = {
   FAITHFUL: 'Fiel',
 };
 
+/**
+ * Ícone católico da identidade v2.0. Os SVGs são traço em `currentColor`, então
+ * usamos CSS mask para recolorir com a cor do item do menu (branco / destaque).
+ */
+const NavIcon: React.FC<{ name: string }> = ({ name }) => (
+  <span
+    className="nav-icon"
+    aria-hidden="true"
+    style={{
+      WebkitMaskImage: `url('/icons/${name}.svg')`,
+      maskImage: `url('/icons/${name}.svg')`,
+    }}
+  />
+);
+
 const AdminLayout: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -44,8 +59,7 @@ const AdminLayout: React.FC = () => {
       <aside className="sidebar">
         <div className="sidebar-header">
           <div className="sidebar-brand">
-            <span className="sidebar-brand-icon">⛪</span>
-            <h2>Gestão Paroquial</h2>
+            <img src="/brand/parish-logo-horizontal-branco.svg" alt="Parish" className="sidebar-logo" />
           </div>
           <div className="sidebar-user">
             <div className="sidebar-user-top">
@@ -65,78 +79,78 @@ const AdminLayout: React.FC = () => {
           <span className="nav-section-label">Estrutura</span>
           {canManageDioceses && (
             <NavLink to="/admin/dioceses" className="nav-link">
-              <span className="nav-icon">📍</span> Dioceses
+              <NavIcon name="diocese" /> Dioceses
             </NavLink>
           )}
           {canManageParishes && (
             <NavLink to="/admin/parishes" className="nav-link">
-              <span className="nav-icon">⛪</span> Paróquias
+              <NavIcon name="paroquia" /> Paróquias
             </NavLink>
           )}
           <NavLink to="/admin/communities" className="nav-link">
-            <span className="nav-icon">🏘️</span> Comunidades
+            <NavIcon name="comunidade" /> Comunidades
           </NavLink>
 
           <span className="nav-section-label">Comunidade</span>
           <NavLink to="/admin/members" className="nav-link">
-            <span className="nav-icon">👥</span> Membros
+            <NavIcon name="ministro" /> Membros
           </NavLink>
           <NavLink to="/admin/events" className="nav-link">
-            <span className="nav-icon">📅</span> Eventos
+            <NavIcon name="calendario-liturgico" /> Eventos
           </NavLink>
           {isCommunityManagement && (
             <NavLink to="/admin/fixed-schedule" className="nav-link">
-              <span className="nav-icon">🕐</span> Agenda Fixa
+              <NavIcon name="missa-proxima" /> Agenda Fixa
             </NavLink>
           )}
           {canManageSchedules && (
             <NavLink to="/admin/schedules" className="nav-link">
-              <span className="nav-icon">📋</span> Escalas
+              <NavIcon name="escala" /> Escalas
             </NavLink>
           )}
           <NavLink to="/admin/swaps" className="nav-link">
-            <span className="nav-icon">🔄</span> Trocas de Escala
+            <NavIcon name="escala" /> Trocas de Escala
           </NavLink>
 
           <span className="nav-section-label">Pastoral</span>
           <NavLink to="/admin/clergy-messages" className="nav-link">
-            <span className="nav-icon">📜</span> Palavra Pastoral
+            <NavIcon name="sacerdote" /> Palavra Pastoral
           </NavLink>
           <NavLink to="/admin/saints" className="nav-link">
-            <span className="nav-icon">🕊️</span> Santos
+            <NavIcon name="santo" /> Santos
           </NavLink>
           <NavLink to="/admin/pastorals/community" className="nav-link">
-            <span className="nav-icon">🙏</span> Pastorais
+            <NavIcon name="pastoral" /> Pastorais
           </NavLink>
           {isPastoralCoordinator && (
             <NavLink to="/admin/pastorals/my" className="nav-link highlight">
-              <span className="nav-icon">🌟</span> Minhas Pastorais
+              <NavIcon name="pastoral" /> Minhas Pastorais
             </NavLink>
           )}
           {isSystemAdmin && (
             <NavLink to="/admin/pastorals/global" className="nav-link">
-              <span className="nav-icon">🌐</span> Pastorais Globais
+              <NavIcon name="igreja" /> Pastorais Globais
             </NavLink>
           )}
           {isCoordination && (
             <>
               <NavLink to="/admin/catechesis" className="nav-link">
-                <span className="nav-icon">📖</span> Catequese
+                <NavIcon name="catequese" /> Catequese
               </NavLink>
               <NavLink to="/admin/planning" className="nav-link">
-                <span className="nav-icon">🗺️</span> Planejamento
+                <NavIcon name="documento" /> Planejamento
               </NavLink>
               <NavLink to="/admin/documents" className="nav-link">
-                <span className="nav-icon">📁</span> Documentos
+                <NavIcon name="documento" /> Documentos
               </NavLink>
               <NavLink to="/admin/formation" className="nav-link">
-                <span className="nav-icon">🎓</span> Formação
+                <NavIcon name="biblia" /> Formação
               </NavLink>
               <NavLink to="/admin/rooms" className="nav-link">
-                <span className="nav-icon">🏛️</span> Espaços
+                <NavIcon name="igreja" /> Espaços
               </NavLink>
               <NavLink to="/admin/visitation" className="nav-link">
-                <span className="nav-icon">🏠</span> Visitação
+                <NavIcon name="oracao" /> Visitação
               </NavLink>
             </>
           )}
@@ -145,16 +159,16 @@ const AdminLayout: React.FC = () => {
           {isCommunityManagement && (
             <>
               <NavLink to="/admin/finance" className="nav-link">
-                <span className="nav-icon">💰</span> Financeiro
+                <NavIcon name="dizimo" /> Financeiro
               </NavLink>
               <NavLink to="/admin/sacrament-processes" className="nav-link">
-                <span className="nav-icon">✝️</span> Sacramentos
+                <NavIcon name="cruz" /> Sacramentos
               </NavLink>
             </>
           )}
           {canManageUsers && (
             <NavLink to="/admin/users" className="nav-link">
-              <span className="nav-icon">🔐</span> Usuários
+              <NavIcon name="ministro" /> Usuários
             </NavLink>
           )}
         </nav>

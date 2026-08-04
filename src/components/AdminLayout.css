@@ -6,7 +6,7 @@
 
 .sidebar {
   width: 264px;
-  background: linear-gradient(180deg, #24303f 0%, #1e2937 100%);
+  background: linear-gradient(180deg, #17324d 0%, #0b1c2c 100%);
   color: white;
   display: flex;
   flex-direction: column;
@@ -29,15 +29,11 @@
   margin-bottom: 1rem;
 }
 
-.sidebar-brand-icon {
-  font-size: 1.35rem;
-}
-
-.sidebar-brand h2 {
-  font-size: 1.12rem;
-  margin: 0;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+.sidebar-logo {
+  display: block;
+  width: 156px;
+  max-width: 100%;
+  height: auto;
 }
 
 .sidebar-user {
@@ -162,9 +158,16 @@
 }
 
 .nav-icon {
-  width: 1.3rem;
-  text-align: center;
+  width: 1.2rem;
+  height: 1.2rem;
   flex-shrink: 0;
+  background-color: currentColor;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
 }
 
 .nav-link:hover {
@@ -173,14 +176,14 @@
 }
 
 .nav-link.active {
-  background: rgba(52, 152, 219, 0.22);
+  background: rgba(10, 132, 255, 0.18);
   color: white;
-  box-shadow: inset 3px 0 0 #075AA9;
+  box-shadow: inset 3px 0 0 #0a84ff;
   font-weight: 600;
 }
 
 .nav-link.highlight {
-  color: #ffd166;
+  color: #d8a83e;
 }
 
 /* ===== Rodapé / sair ===== */
