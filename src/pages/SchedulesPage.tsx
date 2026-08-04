@@ -461,16 +461,23 @@ const SchedulesPage: React.FC = () => {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [overview, setOverview] = useState<OverviewItem[]>([]);
-  // Visualização do resumo: cards (padrão) ou lista compacta (muitas escalas ativas)
-  const [overviewView, setOverviewView] = useState<'cards' | 'list'>(
-    () => (localStorage.getItem('schedules:overviewView') === 'list' ? 'list' : 'cards'),
-  );
-  const changeOverviewView = (view: 'cards' | 'list') => {
+  // Visualização do resumo: cards (padrão), lista compacta ou calendário
+  const [overviewView, setOverviewView] = useState<'cards' | 'list' | 'calendar'>(() => {
+    const stored = localStorage.getItem('schedules:overviewView');
+    return stored === 'list' || stored === 'calendar' ? stored : 'cards';
+  });
+  const changeOverviewView = (view: 'cards' | 'list' | 'calendar') => {
     setOverviewView(view);
     localStorage.setItem('schedules:overviewView', view);
   };
   // Linha expandida na visão em lista (mostra os membros escalados)
   const [expandedOverviewId, setExpandedOverviewId] = useState<string | null>(null);
+  // Calendário: mês exibido + escala selecionada (mostra quem serve)
+  const [calMonth, setCalMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [calSelectedId, setCalSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -1151,6 +1158,37 @@ const SchedulesPage: React.FC = () => {
     return getPastoralProgress(activeSchedule);
   }, [activeSchedule]);
 
+  // Escalas do resumo agrupadas por dia (visão calendário)
+  const overviewByDay = useMemo(() => {
+    const map = new Map<string, OverviewItem[]>();
+    for (const item of overview) {
+      const key = toDayKey(item.date);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(item);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    }
+    return map;
+  }, [overview]);
+
+  // Células do mês exibido (inicia no domingo anterior; 6 semanas fixas)
+  const calCells = useMemo(() => {
+    const first = new Date(calMonth.getFullYear(), calMonth.getMonth(), 1);
+    const start = new Date(first);
+    start.setDate(first.getDate() - first.getDay());
+    return Array.from({ length: 42 }, (_, index) => {
+      const date = new Date(start);
+      date.setDate(start.getDate() + index);
+      return { date, key: toDayKey(date), inMonth: date.getMonth() === calMonth.getMonth() };
+    });
+  }, [calMonth]);
+
+  const calSelected = useMemo(
+    () => overview.find((item) => item.scheduleId === calSelectedId) ?? null,
+    [overview, calSelectedId],
+  );
+
   const overviewTotal = overview.length;
   const overviewAssignments = overview.reduce((acc, item) => acc + item.counts.total, 0);
   const overviewChecked = overview.reduce((acc, item) => acc + item.counts.checkedIn, 0);
@@ -1565,6 +1603,13 @@ const SchedulesPage: React.FC = () => {
                 >
                   ☰ Lista
                 </button>
+                <button
+                  type="button"
+                  className={overviewView === 'calendar' ? 'active' : ''}
+                  onClick={() => changeOverviewView('calendar')}
+                >
+                  🗓 Calendário
+                </button>
               </div>
               <button className="overview-action-button is-secondary" onClick={fetchOverview}>
                 {overviewLoading ? 'Carregando...' : 'Atualizar'}
@@ -1620,6 +1665,125 @@ const SchedulesPage: React.FC = () => {
 
           {overview.length === 0 ? (
             <p className="coordinator-empty">Nenhuma escala encontrada no periodo selecionado.</p>
+          ) : overviewView === 'calendar' ? (
+            <div className="coordinator-calendar">
+              <div className="cal-toolbar">
+                <div className="cal-nav">
+                  <button
+                    type="button"
+                    onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1))}
+                    aria-label="Mês anterior"
+                  >
+                    ‹
+                  </button>
+                  <strong className="cal-month-label">
+                    {calMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                  </strong>
+                  <button
+                    type="button"
+                    onClick={() => setCalMonth(new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1))}
+                    aria-label="Próximo mês"
+                  >
+                    ›
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="cal-today-btn"
+                  onClick={() => {
+                    const now = new Date();
+                    setCalMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+                  }}
+                >
+                  Hoje
+                </button>
+              </div>
+
+              <div className="cal-grid cal-grid-head">
+                {['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'].map((weekday) => (
+                  <span key={weekday} className="cal-weekday">
+                    {weekday}
+                  </span>
+                ))}
+              </div>
+              <div className="cal-grid">
+                {calCells.map((cell) => {
+                  const daySchedules = overviewByDay.get(cell.key) ?? [];
+                  const isToday = cell.key === toDayKey(new Date());
+                  return (
+                    <div
+                      key={cell.key}
+                      className={`cal-cell${cell.inMonth ? '' : ' is-out'}${isToday ? ' is-today' : ''}`}
+                    >
+                      <span className="cal-day-num">{cell.date.getDate()}</span>
+                      {daySchedules.map((item) => {
+                        const time = new Date(item.date).toLocaleTimeString('pt-BR', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        });
+                        return (
+                          <button
+                            key={item.scheduleId}
+                            type="button"
+                            className={`cal-pill${item.counts.total === 0 ? ' is-empty' : ''}${
+                              calSelectedId === item.scheduleId ? ' is-active' : ''
+                            }`}
+                            onClick={() =>
+                              setCalSelectedId(calSelectedId === item.scheduleId ? null : item.scheduleId)
+                            }
+                            title={`${item.title} — ${item.counts.total} escalado(s)`}
+                          >
+                            {time !== '00:00' && <span className="cal-pill-time">{time}</span>}
+                            <span className="cal-pill-title">{item.title.replace(/^Escala - /, '')}</span>
+                            <span className="cal-pill-count">
+                              {item.counts.total === 0 ? '⚠' : item.counts.total}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {calSelected ? (
+                <div className="cal-detail">
+                  <div className="cal-detail-head">
+                    <div>
+                      <strong>{calSelected.title}</strong>
+                      <span className="cal-detail-date">{toHumanDate(calSelected.date)}</span>
+                    </div>
+                    <button type="button" className="cal-detail-close" onClick={() => setCalSelectedId(null)}>
+                      ×
+                    </button>
+                  </div>
+                  {calSelected.assignments.length === 0 ? (
+                    <p className="overview-expand-empty">Sem atribuições nesta escala.</p>
+                  ) : (
+                    <div className="overview-members-grid">
+                      {calSelected.assignments.map((assignment) => {
+                        const status = assignment.checkedIn
+                          ? { label: 'Presente', cls: 'st-present' }
+                          : assignment.status === 'CONFIRMED'
+                            ? { label: 'Confirmado', cls: 'st-confirmed' }
+                            : assignment.status === 'DECLINED'
+                              ? { label: 'Recusado', cls: 'st-declined' }
+                              : { label: 'Pendente', cls: 'st-pending' };
+                        return (
+                          <div className="overview-member-pill" key={assignment.id}>
+                            <strong>{assignment.memberName}</strong>
+                            <em>{assignment.role}</em>
+                            <span className={`overview-member-status ${status.cls}`}>{status.label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="cal-hint">Clique numa escala do calendário para ver quem irá servir.</p>
+              )}
+            </div>
           ) : overviewView === 'list' ? (
             <div className="coordinator-table-wrap">
               <table className="coordinator-schedule-table">
