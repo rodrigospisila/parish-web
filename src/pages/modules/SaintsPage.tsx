@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify, confirm } from '../../services/notification.service';
 import { useAuth } from '../../contexts/AuthContext';
@@ -203,7 +204,7 @@ const SaintsPage: React.FC = () => {
   return (
     <div className="module-page">
       <div className="page-header">
-        <h1>🕊️ Santos</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="santo" /> Santos</h1>
         <div className="header-actions">
           {canManageCatalog && (
             <button className="btn-primary" onClick={() => { setEditingSaint(null); setShowModal(true); }}>

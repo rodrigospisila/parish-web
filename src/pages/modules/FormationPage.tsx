@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
 import './ModulePages.css';
@@ -181,7 +182,7 @@ const FormationPage: React.FC = () => {
   return (
     <div className="module-page">
       <div className="page-header">
-        <h1>🎓 Formação de Agentes</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="biblia" /> Formação de Agentes</h1>
         <div className="header-actions">
           <button className="btn-secondary" onClick={() => setShowTrackModal(true)}>+ Trilha</button>
           <button className="btn-primary" onClick={() => setShowCourseModal(true)}>+ Curso</button>

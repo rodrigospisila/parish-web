@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import TitleIcon from '../../components/TitleIcon';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../../contexts/AuthContext';
@@ -226,7 +227,7 @@ const CommunityPastoralsPage: React.FC = () => {
   return (
     <div className="pastorals-page">
       <div className="page-header">
-        <h1>⛪ Pastorais Comunitárias</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="pastoral" /> Pastorais Comunitárias</h1>
         <p>Gestão de pastorais nas comunidades</p>
       </div>
 

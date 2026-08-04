@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
 import './ModulePages.css';
@@ -111,7 +112,7 @@ const SwapsPage: React.FC = () => {
   return (
     <div className="module-page">
       <div className="page-header">
-        <h1>🔄 Trocas de Escala</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="trocas-escala" /> Trocas de Escala</h1>
         <div className="header-actions">
           <button className="btn-primary" onClick={() => setShowRequestModal(true)} disabled={!hasMemberRecord}>
             + Pedir troca

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import TitleIcon from '../../components/TitleIcon';
 import axios from 'axios';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
@@ -192,7 +193,7 @@ const VisitationPage: React.FC = () => {
   return (
     <div className="module-page">
       <div className="page-header">
-        <h1>🏠 Visitação e Enfermos</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="visitacao" /> Visitação e Enfermos</h1>
         <div className="header-actions">
           <button className="btn-primary" onClick={() => setShowCreateModal(true)}>+ Pedido de Visita</button>
         </div>

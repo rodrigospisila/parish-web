@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import TitleIcon from '../components/TitleIcon';
 import axios from 'axios';
 import { notify, confirm } from '../services/notification.service';
 import PatronSaintsManager, { usePatronSaints, PatronSaintsBadge } from '../components/PatronSaintsManager';
@@ -379,7 +380,7 @@ const CommunitiesPage: React.FC = () => {
   return (
     <div className="communities-page">
       <div className="page-header">
-        <h1>🏘️ Comunidades</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="comunidade" /> Comunidades</h1>
         <button className="btn-primary" onClick={() => setShowModal(true)}>
           + Nova Comunidade
         </button>

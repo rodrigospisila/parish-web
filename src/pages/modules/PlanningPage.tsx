@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify, confirm } from '../../services/notification.service';
 import './ModulePages.css';
@@ -224,7 +225,7 @@ const PlanningPage: React.FC = () => {
   return (
     <div className="module-page">
       <div className="page-header">
-        <h1>🗺️ Planejamento Pastoral</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="planejamento" /> Planejamento Pastoral</h1>
         <div className="header-actions">
           <button className="btn-primary" onClick={() => setShowPlanModal(true)}>+ Novo Plano</button>
         </div>

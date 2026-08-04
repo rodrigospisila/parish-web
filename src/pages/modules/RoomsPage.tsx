@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
 import './ModulePages.css';
@@ -161,7 +162,7 @@ const RoomsPage: React.FC = () => {
   return (
     <div className="module-page">
       <div className="page-header">
-        <h1>🏛️ Reserva de Espaços</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="espacos" /> Reserva de Espaços</h1>
         <div className="header-actions">
           <button className="btn-primary" onClick={() => setShowRoomModal(true)}>+ Novo Espaço</button>
         </div>

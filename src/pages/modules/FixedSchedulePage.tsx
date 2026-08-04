@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify, confirm } from '../../services/notification.service';
 import SearchSelect from '../../components/SearchSelect';
@@ -267,7 +268,7 @@ const FixedSchedulePage: React.FC = () => {
   return (
     <div className="module-page">
       <div className="page-header">
-        <h1>🕐 Agenda Fixa</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="missa-proxima" /> Agenda Fixa</h1>
         <div className="header-actions">
           {canManage && <button className="btn-primary" onClick={openCreate}>+ Novo Horário Fixo</button>}
         </div>

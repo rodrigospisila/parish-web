@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import TitleIcon from '../../components/TitleIcon';
 import axios from 'axios';
 import { notify, confirm } from '../../services/notification.service';
 import { initials } from '../../components/SaintAvatar';
@@ -127,7 +128,7 @@ const GlobalPastoralsPage: React.FC = () => {
   return (
     <div className="pastorals-page">
       <div className="page-header">
-        <h1>📋 Pastorais Globais</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="igreja" /> Pastorais Globais</h1>
         <p>Cadastro global de pastorais (apenas SYSTEM_ADMIN)</p>
       </div>
 

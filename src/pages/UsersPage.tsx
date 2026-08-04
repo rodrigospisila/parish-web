@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import TitleIcon from '../components/TitleIcon';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { notify, confirm } from '../services/notification.service';
@@ -672,7 +673,7 @@ const UsersPage: React.FC = () => {
   return (
     <div className="users-page">
       <div className="page-header">
-        <h1>Usuários</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="usuarios" /> Usuários</h1>
         <div className="header-actions">
           <button className="btn-export" onClick={handleExportCSV} title="Exportar CSV">
             Exportar

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import TitleIcon from '../components/TitleIcon';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { notify, confirm } from '../services/notification.service';
@@ -312,7 +313,7 @@ const ParishesPage: React.FC = () => {
   return (
     <div className="parishes-page">
       <div className="page-header">
-        <h1>⛪ Paróquias</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="paroquia" /> Paróquias</h1>
         {currentUserRole !== 'PARISH_ADMIN' && (
           <button className="btn-primary" onClick={() => setShowModal(true)}>
             + Nova Paróquia

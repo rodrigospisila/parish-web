@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import TitleIcon from '../components/TitleIcon';
 import axios from 'axios';
 import Calendar from 'react-calendar';
 import { useAuth } from '../contexts/AuthContext';
@@ -499,7 +500,7 @@ const EventsPage: React.FC = () => {
   return (
     <div className="events-page">
       <div className="events-header">
-        <h1>Agenda de Eventos</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="calendario-liturgico" /> Agenda de Eventos</h1>
         <button className="btn-new-event" onClick={openNewEventModal}>
           + Novo Evento
         </button>

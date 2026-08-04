@@ -1,5 +1,6 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import TitleIcon from '../components/TitleIcon';
 import { notify, confirm } from '../services/notification.service';
 import { useAuth } from '../contexts/AuthContext';
 import './SchedulesPage.css';
@@ -1276,7 +1277,7 @@ const SchedulesPage: React.FC = () => {
       <header className="schedules-hero">
         <div className="schedules-hero-copy">
           <span className="schedules-eyebrow">Coordenacao de escalas</span>
-          <h1>Escalas</h1>
+          <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="escala" /> Escalas</h1>
           <p>
             Organize os eventos da comunidade, acompanhe vagas abertas e centralize confirmacoes e
             presencas em um unico painel.
@@ -1420,7 +1421,7 @@ const SchedulesPage: React.FC = () => {
           )}
 
           <div className="schedule-print-view">
-            <h1>Escala de Serviço</h1>
+            <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="escala" /> Escala de Serviço</h1>
             <p className="schedule-print-period">
               Período de {overviewFrom ? toHumanDate(`${overviewFrom}T00:00:00`) : '—'} até{' '}
               {overviewTo ? toHumanDate(`${overviewTo}T23:59:59`) : '—'}

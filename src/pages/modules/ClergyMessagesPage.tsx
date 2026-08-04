@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify, confirm } from '../../services/notification.service';
 import { useAuth } from '../../contexts/AuthContext';
@@ -213,7 +214,7 @@ const ClergyMessagesPage: React.FC = () => {
   return (
     <div className="module-page">
       <div className="page-header">
-        <h1>📜 Palavra Pastoral</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="sacerdote" /> Palavra Pastoral</h1>
         <div className="header-actions">
           {canSend && (
             <button className="btn-primary" onClick={() => setShowComposer(true)}>+ Nova Mensagem</button>

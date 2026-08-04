@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
 import './ModulePages.css';
@@ -187,7 +188,7 @@ const SacramentProcessesPage: React.FC = () => {
   return (
     <div className="module-page">
       <div className="page-header">
-        <h1>✝️ Preparação de Sacramentos</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="cruz" /> Preparação de Sacramentos</h1>
         <div className="header-actions">
           <button className="btn-primary" onClick={() => setShowCreateModal(true)}>+ Novo Processo</button>
         </div>

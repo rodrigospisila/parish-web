@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
 import './ModulePages.css';
@@ -284,7 +285,7 @@ const CatechesisPage: React.FC = () => {
   return (
     <div className="module-page">
       <div className="page-header">
-        <h1>📖 Catequese</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="catequese" /> Catequese</h1>
         <div className="header-actions">
           {tab === 'stages' ? (
             <button className="btn-primary" onClick={() => setShowStageModal(true)}>+ Nova Etapa</button>

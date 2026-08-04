@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import TitleIcon from '../components/TitleIcon';
 import axios from 'axios';
 import { notify, confirm } from '../services/notification.service';
 import PatronSaintsManager, { usePatronSaints, PatronSaintsBadge } from '../components/PatronSaintsManager';
@@ -143,7 +144,7 @@ const DiocesesPage: React.FC = () => {
   return (
     <div className="dioceses-page">
       <div className="page-header">
-        <h1>Dioceses</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="diocese" /> Dioceses</h1>
         <button className="btn-primary" onClick={() => setShowModal(true)}>
           + Nova Diocese
         </button>

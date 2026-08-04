@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
 import './ModulePages.css';
@@ -195,7 +196,7 @@ const FinancePage: React.FC = () => {
   return (
     <div className="module-page">
       <div className="page-header">
-        <h1>💰 Financeiro</h1>
+        <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="dizimo" /> Financeiro</h1>
         <div className="header-actions">
           {tab === 'transactions' ? (
             <button className="btn-primary" onClick={() => setShowTxModal(true)}>+ Lançamento</button>
