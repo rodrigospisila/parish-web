@@ -478,6 +478,16 @@ const SchedulesPage: React.FC = () => {
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
   const [calSelectedId, setCalSelectedId] = useState<string | null>(null);
+  // Mostrar os membros escalados dentro das células do calendário
+  const [calShowMembers, setCalShowMembers] = useState(
+    () => localStorage.getItem('schedules:calMembers') !== 'off',
+  );
+  const toggleCalMembers = () => {
+    setCalShowMembers((prev) => {
+      localStorage.setItem('schedules:calMembers', prev ? 'off' : 'on');
+      return !prev;
+    });
+  };
   const [loading, setLoading] = useState(true);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -1687,16 +1697,26 @@ const SchedulesPage: React.FC = () => {
                     ›
                   </button>
                 </div>
-                <button
-                  type="button"
-                  className="cal-today-btn"
-                  onClick={() => {
-                    const now = new Date();
-                    setCalMonth(new Date(now.getFullYear(), now.getMonth(), 1));
-                  }}
-                >
-                  Hoje
-                </button>
+                <div className="cal-toolbar-right">
+                  <button
+                    type="button"
+                    className={`cal-members-toggle${calShowMembers ? ' active' : ''}`}
+                    onClick={toggleCalMembers}
+                    title="Exibir os membros escalados dentro dos dias"
+                  >
+                    👥 Membros
+                  </button>
+                  <button
+                    type="button"
+                    className="cal-today-btn"
+                    onClick={() => {
+                      const now = new Date();
+                      setCalMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+                    }}
+                  >
+                    Hoje
+                  </button>
+                </div>
               </div>
 
               <div className="cal-grid cal-grid-head">
@@ -1721,24 +1741,50 @@ const SchedulesPage: React.FC = () => {
                           hour: '2-digit',
                           minute: '2-digit',
                         });
+                        const statusOf = (assignment: OverviewAssignment) =>
+                          assignment.checkedIn
+                            ? { label: 'Presente', cls: 'st-present' }
+                            : assignment.status === 'CONFIRMED'
+                              ? { label: 'Confirmado', cls: 'st-confirmed' }
+                              : assignment.status === 'DECLINED'
+                                ? { label: 'Recusado', cls: 'st-declined' }
+                                : { label: 'Pendente', cls: 'st-pending' };
                         return (
-                          <button
-                            key={item.scheduleId}
-                            type="button"
-                            className={`cal-pill${item.counts.total === 0 ? ' is-empty' : ''}${
-                              calSelectedId === item.scheduleId ? ' is-active' : ''
-                            }`}
-                            onClick={() =>
-                              setCalSelectedId(calSelectedId === item.scheduleId ? null : item.scheduleId)
-                            }
-                            title={`${item.title} — ${item.counts.total} escalado(s)`}
-                          >
-                            {time !== '00:00' && <span className="cal-pill-time">{time}</span>}
-                            <span className="cal-pill-title">{item.title.replace(/^Escala - /, '')}</span>
-                            <span className="cal-pill-count">
-                              {item.counts.total === 0 ? '⚠' : item.counts.total}
-                            </span>
-                          </button>
+                          <div key={item.scheduleId} className="cal-entry">
+                            <button
+                              type="button"
+                              className={`cal-pill${item.counts.total === 0 ? ' is-empty' : ''}${
+                                calSelectedId === item.scheduleId ? ' is-active' : ''
+                              }`}
+                              onClick={() =>
+                                setCalSelectedId(calSelectedId === item.scheduleId ? null : item.scheduleId)
+                              }
+                              title={`${item.title} — ${item.counts.total} escalado(s)`}
+                            >
+                              {time !== '00:00' && <span className="cal-pill-time">{time}</span>}
+                              <span className="cal-pill-title">{item.title.replace(/^Escala - /, '')}</span>
+                              <span className="cal-pill-count">
+                                {item.counts.total === 0 ? '⚠' : item.counts.total}
+                              </span>
+                            </button>
+                            {calShowMembers && (
+                              <div className="cal-members">
+                                {item.assignments.length === 0 ? (
+                                  <span className="cal-member-empty">Sem membros</span>
+                                ) : (
+                                  item.assignments.map((assignment) => {
+                                    const status = statusOf(assignment);
+                                    return (
+                                      <span key={assignment.id} className="cal-member-row" title={`${assignment.memberName} — ${assignment.role}`}>
+                                        <span className="cal-member-name">{assignment.memberName}</span>
+                                        <span className={`cal-member-badge ${status.cls}`}>{status.label}</span>
+                                      </span>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
@@ -1746,7 +1792,7 @@ const SchedulesPage: React.FC = () => {
                 })}
               </div>
 
-              {calSelected ? (
+              {calShowMembers && !calSelected ? null : calSelected ? (
                 <div className="cal-detail">
                   <div className="cal-detail-head">
                     <div>

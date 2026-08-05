@@ -3310,3 +3310,110 @@ tr.overview-row.is-open td {
     display: none;
   }
 }
+
+/* Membros dentro das células do calendário */
+.cal-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cal-members-toggle {
+  border: 1px solid #d8dee6;
+  background: #fff;
+  color: #52606d;
+  border-radius: 8px;
+  padding: 0.35rem 0.8rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.cal-members-toggle.active {
+  background: #075aa9;
+  border-color: #075aa9;
+  color: #fff;
+}
+
+.cal-entry {
+  border: 1px solid #cfe0f8;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.cal-entry .cal-pill {
+  border: none;
+  border-radius: 0;
+  width: 100%;
+}
+
+.cal-members {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px 5px 4px;
+  border-top: 1px solid #eef2f6;
+}
+
+.cal-member-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.cal-member-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #33475b;
+  font-weight: 600;
+}
+
+.cal-member-badge {
+  flex-shrink: 0;
+  font-size: 0.56rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.cal-member-badge.st-present {
+  background: #e7f6ee;
+  color: #2e9d62;
+}
+
+.cal-member-badge.st-confirmed {
+  background: #e8f1fb;
+  color: #2979c8;
+}
+
+.cal-member-badge.st-pending {
+  background: #fdf3e3;
+  color: #c78216;
+}
+
+.cal-member-badge.st-declined {
+  background: #fdeaea;
+  color: #c53b42;
+}
+
+.cal-member-empty {
+  font-size: 0.66rem;
+  color: #b3bcc7;
+  font-style: italic;
+  padding: 1px 2px;
+}
+
+@media (max-width: 900px) {
+  .cal-members {
+    display: none;
+  }
+}
