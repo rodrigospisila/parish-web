@@ -75,6 +75,7 @@ interface RotationPreviewItem {
   noPastorals?: boolean;
   noSlots?: boolean;
   allFilled?: boolean;
+  coupleWarnings?: string[];
 }
 
 interface RotationResponse {
@@ -1064,6 +1065,10 @@ const SchedulesPage: React.FC = () => {
       setRotationPreview(response.data);
       if (!dryRun) {
         notify.success(`Rodízio publicado: ${response.data.created ?? 0} atribuição(ões) criada(s) como pendentes.`);
+        const allCoupleWarnings = response.data.preview.flatMap((item) => item.coupleWarnings ?? []);
+        if (allCoupleWarnings.length > 0) {
+          notify.warning(`💍 ${allCoupleWarnings.join(' | ')}`);
+        }
         setShowRotationModal(false);
         setRotationPreview(null);
         fetchData();
@@ -3916,6 +3921,15 @@ const SchedulesPage: React.FC = () => {
                         ⚠️ Vagas sem candidato: {item.gaps.map((gap) => `${gap.role} (${gap.missing})`).join(', ')}
                       </p>
                     )}
+                    {(item.coupleWarnings?.length ?? 0) > 0 &&
+                      item.coupleWarnings!.map((warning, warningIndex) => (
+                        <p
+                          key={warningIndex}
+                          style={{ margin: '0.35rem 0 0 0', color: '#a96a0d', fontSize: '0.88rem' }}
+                        >
+                          💍 {warning} — abra a gestão para escalar o cônjuge (ou aumente as vagas).
+                        </p>
+                      ))}
                   </div>
                 ))}
               </div>
