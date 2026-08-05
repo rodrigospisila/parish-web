@@ -545,6 +545,14 @@ const SchedulesPage: React.FC = () => {
   const [candidates, setCandidates] = useState<ScheduleCandidatesResponse | null>(null);
   const [eligibleLoading, setEligibleLoading] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
+  // Preencher vaga: candidatos em cards ou lista compacta
+  const [assignView, setAssignView] = useState<'cards' | 'list'>(
+    () => (localStorage.getItem('schedules:assignView') === 'list' ? 'list' : 'cards'),
+  );
+  const changeAssignView = (view: 'cards' | 'list') => {
+    setAssignView(view);
+    localStorage.setItem('schedules:assignView', view);
+  };
   const [memberPastoralFilter, setMemberPastoralFilter] = useState('all');
   const [candidateFilter, setCandidateFilter] = useState<CandidateFilter>('all');
   const [expandedCandidateId, setExpandedCandidateId] = useState('');
@@ -2879,8 +2887,147 @@ const SchedulesPage: React.FC = () => {
                       Conflito ({candidateCounts.conflict})
                     </button>
                   </div>
+                  <div className="overview-view-toggle assign-view-toggle" role="group" aria-label="Modo de visualização">
+                    <button
+                      type="button"
+                      className={assignView === 'cards' ? 'active' : ''}
+                      onClick={() => changeAssignView('cards')}
+                    >
+                      ▦
+                    </button>
+                    <button
+                      type="button"
+                      className={assignView === 'list' ? 'active' : ''}
+                      onClick={() => changeAssignView('list')}
+                    >
+                      ☰
+                    </button>
+                  </div>
                 </div>
 
+                {assignView === 'list' ? (
+                  <div className="assign-table-wrap">
+                    {filteredCandidates.length === 0 ? (
+                      <p className="no-assignments">Nenhum candidato encontrado com os filtros atuais.</p>
+                    ) : (
+                      <table className="assign-table">
+                        <thead>
+                          <tr>
+                            <th>Membro</th>
+                            <th>Pastoral</th>
+                            <th className="num">Presença</th>
+                            <th className="num">Faltas</th>
+                            <th className="num">30d</th>
+                            <th className="num">Score</th>
+                            <th aria-label="Ação" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredCandidates.map((member) => {
+                            const isExpanded = expandedCandidateId === member.id;
+                            return (
+                              <React.Fragment key={member.id}>
+                                <tr
+                                  className={`assign-row level-${member.recommendation.level.toLowerCase()}${isExpanded ? ' is-open' : ''}`}
+                                  onClick={() => handleExpandMember(member.id)}
+                                >
+                                  <td>
+                                    <div className="assign-row-member">
+                                      <span className="member-avatar candidate-avatar">
+                                        {member.fullName.charAt(0).toUpperCase()}
+                                      </span>
+                                      <span className="assign-row-member-copy">
+                                        <strong>{member.fullName}</strong>
+                                        <small>{member.email || member.phone || 'Sem contato'}</small>
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="assign-row-pastoral">
+                                    {member.pastorals[0]?.name || '—'}
+                                    {member.pastorals.length > 1 ? ` +${member.pastorals.length - 1}` : ''}
+                                  </td>
+                                  <td className="num">{member.history.attendanceRate}%</td>
+                                  <td className={`num${member.history.noShowCount > 0 ? ' danger' : ''}`}>
+                                    {member.history.noShowCount}
+                                  </td>
+                                  <td className="num">{member.load.upcoming30DaysCount}</td>
+                                  <td className="num">
+                                    <span
+                                      className={`candidate-level candidate-level-${member.recommendation.level.toLowerCase()}`}
+                                    >
+                                      {recommendationLabelMap[member.recommendation.level]}
+                                    </span>{' '}
+                                    <strong>{member.recommendation.score}</strong>
+                                  </td>
+                                  <td className="assign-row-action">
+                                    <button
+                                      type="button"
+                                      className="btn-small btn-surface"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        handleExpandMember(member.id);
+                                      }}
+                                    >
+                                      {isExpanded ? 'Fechar' : 'Selecionar'}
+                                    </button>
+                                  </td>
+                                </tr>
+                                {isExpanded && (
+                                  <tr className="assign-row-expand">
+                                    <td colSpan={7}>
+                                      <p className="candidate-inline-summary">
+                                        {member.recommendation.reasons[0] || 'Sem alertas para esta vaga'} •{' '}
+                                        {member.availability.summary[0] || 'Disponibilidade nao informada'}
+                                      </p>
+                                      <div className="candidate-inline-form">
+                                        <div className="candidate-inline-role">
+                                          <label htmlFor={`list-role-${member.id}`}>Funcao para esta vaga</label>
+                                          <input
+                                            id={`list-role-${member.id}`}
+                                            type="text"
+                                            list="inline-roles"
+                                            value={inlineRole}
+                                            onChange={(event) => setInlineRole(event.target.value)}
+                                            placeholder="Ex: Leitor, Cantor, Slide"
+                                          />
+                                          <datalist id="inline-roles">
+                                            {roleSuggestions.map((role) => (
+                                              <option key={role} value={role} />
+                                            ))}
+                                          </datalist>
+                                        </div>
+                                        <div className="candidate-inline-actions">
+                                          <button
+                                            type="button"
+                                            className="btn-small btn-surface"
+                                            onClick={() => {
+                                              setExpandedCandidateId('');
+                                              setInlineRole('');
+                                            }}
+                                          >
+                                            Cancelar
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="btn-small btn-submit"
+                                            disabled={assignSubmitting || !inlineRole.trim()}
+                                            onClick={() => void createAssignment(member.id, inlineRole, true)}
+                                          >
+                                            {assignSubmitting ? 'Salvando...' : 'Escalar'}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                ) : (
                 <div className="candidate-list assign-candidate-list">
                   {filteredCandidates.length === 0 ? (
                     <p className="no-assignments">Nenhum candidato encontrado com os filtros atuais.</p>
@@ -3039,6 +3186,7 @@ const SchedulesPage: React.FC = () => {
                     })
                   )}
                 </div>
+                )}
 
                 <div className="assign-modal-footer">
                   <button className="overview-action-button is-secondary" type="button" onClick={closeAssignModal}>
