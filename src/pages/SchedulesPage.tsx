@@ -927,6 +927,14 @@ const SchedulesPage: React.FC = () => {
     setShowRotationModal(true);
   };
 
+  /** "Preencher automático" da gestão: gerador de rodízio focado numa única escala. */
+  const openRotationForSchedule = (scheduleId: string) => {
+    setRotationSelection([scheduleId]);
+    setRotationPreview(null);
+    setRotationSlots({});
+    setShowRotationModal(true);
+  };
+
   /** Vagas por pastoral definidas na tela do rodízio, no formato do backend. */
   const buildSlotOverrides = () =>
     Object.entries(rotationSlots)
@@ -1010,6 +1018,10 @@ const SchedulesPage: React.FC = () => {
         setShowRotationModal(false);
         setRotationPreview(null);
         fetchData();
+        // Mantém o modal de gestão (se aberto) com os dados frescos
+        if (showDetailModal && activeSchedule) {
+          void fetchScheduleById(activeSchedule.id, true);
+        }
       }
     } catch (error: any) {
       notify.error(error.response?.data?.message || 'Erro ao gerar o rodízio');
@@ -2514,6 +2526,13 @@ const SchedulesPage: React.FC = () => {
                   <option value="COMPLETED">Concluida</option>
                   <option value="CANCELLED">Cancelada</option>
                 </select>
+                <button
+                  className="manage-action highlight"
+                  onClick={() => openRotationForSchedule(activeSchedule.id)}
+                  title="Sugere e escala membros para as vagas em aberto usando as regras do rodízio"
+                >
+                  ⚡ Preencher automático
+                </button>
                 <button className="manage-action" onClick={() => handleNotifyTeam(activeSchedule.id)}>
                   📣 Avisar equipe
                 </button>

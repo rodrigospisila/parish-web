@@ -4010,3 +4010,15 @@ tr.overview-row.is-open td {
     grid-template-columns: 1fr;
   }
 }
+
+/* Botão de preenchimento automático (rodízio) na gestão */
+.manage-action.highlight {
+  background: #0a84ff;
+  border-color: #0a84ff;
+  color: #fff;
+}
+
+.manage-action.highlight:hover {
+  background: #075aa9;
+  border-color: #075aa9;
+}
