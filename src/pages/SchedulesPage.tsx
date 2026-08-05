@@ -581,6 +581,8 @@ const SchedulesPage: React.FC = () => {
     items: Array<{ communityPastoralId: string; name: string; requiredPeople: number }>;
   }>(null);
   const [slotsSaving, setSlotsSaving] = useState(false);
+  // Substituição de membro: ao escalar o novo, o anterior é removido
+  const [replaceTarget, setReplaceTarget] = useState<Assignment | null>(null);
 
   const headers = {
     Authorization: `Bearer ${localStorage.getItem('token')}`,
@@ -1055,6 +1057,18 @@ const SchedulesPage: React.FC = () => {
     setShowAssignModal(false);
     setCandidates(null);
     resetAssignmentForm();
+    setReplaceTarget(null);
+  };
+
+  /** Abre a gestão da escala a partir do calendário/resumo (busca se não estiver na lista). */
+  const openManageFromOverview = async (scheduleId: string) => {
+    const existing = schedules.find((schedule) => schedule.id === scheduleId);
+    if (existing) {
+      void openDetail(existing);
+      return;
+    }
+    setShowDetailModal(true);
+    await fetchScheduleById(scheduleId, true);
   };
 
   const openAssign = async (schedule: Schedule, preferredPastoralId = '') => {
@@ -1474,6 +1488,17 @@ const SchedulesPage: React.FC = () => {
       );
       notify.success('Membro escalado');
 
+      // Fluxo de substituição: remove o membro anterior automaticamente
+      if (replaceTarget) {
+        try {
+          await axios.delete(`${API_URL}/schedules/assignments/${replaceTarget.id}`, { headers });
+          notify.success(`${replaceTarget.member.fullName} foi substituído(a).`);
+        } catch {
+          notify.error('Novo membro escalado, mas não foi possível remover o anterior — remova manualmente.');
+        }
+        setReplaceTarget(null);
+      }
+
       if (keepOpen) {
         setExpandedCandidateId('');
         setInlineRole('');
@@ -1778,10 +1803,11 @@ const SchedulesPage: React.FC = () => {
                               className={`cal-pill${item.counts.total === 0 ? ' is-empty' : ''}${
                                 calSelectedId === item.scheduleId ? ' is-active' : ''
                               }`}
-                              onClick={() =>
-                                setCalSelectedId(calSelectedId === item.scheduleId ? null : item.scheduleId)
-                              }
-                              title={`${item.title} — ${item.counts.total} escalado(s)`}
+                              onClick={() => {
+                                setCalSelectedId(item.scheduleId);
+                                void openManageFromOverview(item.scheduleId);
+                              }}
+                              title={`${item.title} — ${item.counts.total} escalado(s) · clique para gerenciar`}
                             >
                               {time !== '00:00' && <span className="cal-pill-time">{time}</span>}
                               <span className="cal-pill-title">{item.title.replace(/^Escala - /, '')}</span>
@@ -1873,7 +1899,7 @@ const SchedulesPage: React.FC = () => {
                   )}
                 </div>
               ) : (
-                <p className="cal-hint">Clique numa escala do calendário para ver quem irá servir.</p>
+                <p className="cal-hint">Clique numa escala do calendário para abrir a gestão completa.</p>
               )}
             </div>
           ) : overviewView === 'list' ? (
@@ -2454,48 +2480,79 @@ const SchedulesPage: React.FC = () => {
       )}
 
       {showDetailModal && activeSchedule && (
-        <div className="modal-overlay" onClick={() => setShowDetailModal(false)}>
-          <div className="modal-content modal-xl" onClick={(event) => event.stopPropagation()}>
-            <button className="modal-close" onClick={() => setShowDetailModal(false)}>
-              ×
-            </button>
-
-            <div className="detail-header">
-              <div>
+        <div className="modal-overlay manage-overlay" onClick={() => setShowDetailModal(false)}>
+          <div className="modal-content modal-manage" onClick={(event) => event.stopPropagation()}>
+            <div className="manage-topbar">
+              <div className="manage-title-block">
+                <span className="manage-kicker">Gestão da escala</span>
                 <h2>{activeSchedule.title}</h2>
-                <p className="detail-event">{activeSchedule.event.title}</p>
-                <p className="detail-date">{toHumanDate(activeSchedule.date)}</p>
-                <p className="detail-desc">Status: {scheduleStatusMap[activeSchedule.status]?.label}</p>
+                <div className="manage-meta">
+                  <span>📅 {toHumanDate(activeSchedule.date)}</span>
+                  <span>⛪ {activeSchedule.isStandalone ? 'Serviço contínuo' : activeSchedule.event.title}</span>
+                  {activeSchedule.event.community?.name && <span>📍 {activeSchedule.event.community.name}</span>}
+                  {activeSchedule.event.location && <span>🗺 {activeSchedule.event.location}</span>}
+                </div>
               </div>
-              <div className="assignments-section-header">
+              <div className="manage-top-actions">
                 <select
+                  className="manage-status-select"
                   value={activeSchedule.status}
                   onChange={(event) => handleUpdateStatus(activeSchedule.id, event.target.value as ScheduleStatus)}
+                  title="Status da escala"
                 >
                   <option value="OPEN">Aberta</option>
                   <option value="CLOSED">Fechada</option>
                   <option value="COMPLETED">Concluida</option>
                   <option value="CANCELLED">Cancelada</option>
                 </select>
-                <button className="btn-small btn-surface" onClick={() => handleNotifyTeam(activeSchedule.id)}>
-                  Avisar equipe
+                <button className="manage-action" onClick={() => handleNotifyTeam(activeSchedule.id)}>
+                  📣 Avisar equipe
                 </button>
-                <p className="filter-subtitle">{activeSchedule._count.assignments} atribuicoes</p>
+                <button className="manage-action danger" onClick={() => void handleDeleteSchedule(activeSchedule)}>
+                  🗑 Excluir
+                </button>
+                <button className="manage-close" onClick={() => setShowDetailModal(false)} aria-label="Fechar">
+                  ×
+                </button>
               </div>
             </div>
 
-            <div className="assignments-section">
-              {detailLoading ? <p className="loading">Atualizando detalhes...</p> : null}
-
-              <div className="assignments-section-header assignments-section-header-inline">
-                <h3>Preenchimento por pastoral</h3>
-                <p className="filter-subtitle">Abra a vaga pela pastoral correta para reduzir erros de alocacao.</p>
-                {managerRole && detailPastoralProgress.length > 0 && (
-                  <button className="btn-small btn-surface" onClick={openSlotsEdit}>
-                    ✏️ Editar vagas
-                  </button>
-                )}
+            <div className="manage-kpis">
+              <div className="manage-kpi">
+                <strong>{activeSchedule.assignments.length}</strong>
+                <span>Escalados</span>
               </div>
+              <div className="manage-kpi is-pending">
+                <strong>{activeSchedule.assignments.filter((a) => a.status === 'PENDING').length}</strong>
+                <span>Pendentes</span>
+              </div>
+              <div className="manage-kpi is-confirmed">
+                <strong>{activeSchedule.assignments.filter((a) => a.status === 'CONFIRMED').length}</strong>
+                <span>Confirmados</span>
+              </div>
+              <div className="manage-kpi is-declined">
+                <strong>{activeSchedule.assignments.filter((a) => a.status === 'DECLINED').length}</strong>
+                <span>Recusados</span>
+              </div>
+              <div className="manage-kpi is-present">
+                <strong>{activeSchedule.assignments.filter((a) => a.checkedIn).length}</strong>
+                <span>Presentes</span>
+              </div>
+            </div>
+
+            <div className="manage-body">
+              <aside className="manage-side">
+                {detailLoading ? <p className="loading">Atualizando detalhes...</p> : null}
+
+                <div className="manage-side-head">
+                  <h3>Pastorais & vagas</h3>
+                  {managerRole && detailPastoralProgress.length > 0 && (
+                    <button className="btn-small btn-surface" onClick={openSlotsEdit}>
+                      ✏️ Vagas
+                    </button>
+                  )}
+                </div>
+                <p className="manage-side-hint">Clique numa pastoral para preencher as vagas dela.</p>
               <div className="pastoral-progress-grid">
                 {detailPastoralProgress.length > 0 ? (
                   detailPastoralProgress.map((pastoral) => (
@@ -2523,8 +2580,18 @@ const SchedulesPage: React.FC = () => {
                 )}
               </div>
 
+                <button
+                  className="manage-fill-btn"
+                  type="button"
+                  onClick={() => void openAssign(activeSchedule)}
+                >
+                  ➕ Preencher vaga
+                </button>
+              </aside>
+
+              <section className="manage-main">
               <div className="assignments-section-header">
-                <h3>Lista de atribuicoes</h3>
+                <h3>Membros escalados</h3>
                 <div className="assignment-filters">
                   <input
                     type="text"
@@ -2620,6 +2687,17 @@ const SchedulesPage: React.FC = () => {
                           </button>
                         ) : null}
                         <button
+                          className="btn-small btn-surface"
+                          type="button"
+                          title="Escolher outro membro para esta vaga (o atual será removido)"
+                          onClick={() => {
+                            setReplaceTarget(assignment);
+                            void openAssign(activeSchedule, assignment.communityPastoral?.id || '');
+                          }}
+                        >
+                          🔁 Substituir
+                        </button>
+                        <button
                           className="btn-small btn-remove"
                           type="button"
                           onClick={() => handleRemoveAssignment(assignment)}
@@ -2631,15 +2709,7 @@ const SchedulesPage: React.FC = () => {
                   ))}
                 </div>
               )}
-            </div>
-
-            <div className="modal-actions">
-              <button className="btn-add" type="button" onClick={() => void openAssign(activeSchedule)}>
-                Preencher vaga
-              </button>
-              <button className="btn-delete" type="button" onClick={() => void handleDeleteSchedule(activeSchedule)}>
-                Excluir
-              </button>
+              </section>
             </div>
           </div>
         </div>
@@ -2651,7 +2721,16 @@ const SchedulesPage: React.FC = () => {
             <button className="modal-close" onClick={closeAssignModal}>×</button>
 
             <div className="assign-modal-header">
-              <h2>Preencher vaga</h2>
+              <h2>{replaceTarget ? 'Substituir membro' : 'Preencher vaga'}</h2>
+              {replaceTarget && (
+                <div className="assign-replace-banner">
+                  🔁 Substituindo <strong>{replaceTarget.member.fullName}</strong> — ao escalar o novo membro, o
+                  anterior será removido automaticamente.
+                  <button type="button" onClick={() => setReplaceTarget(null)}>
+                    cancelar substituição
+                  </button>
+                </div>
+              )}
               {candidates && (
                 <p className="assign-modal-context">
                   {activeSchedule.title} • {toHumanDate(activeSchedule.date)}
