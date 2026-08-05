@@ -4022,3 +4022,19 @@ tr.overview-row.is-open td {
   background: #075aa9;
   border-color: #075aa9;
 }
+
+/* Solicitação de troca na gestão da escala */
+.manage-kpi.is-swap {
+  border-left-color: #6d43a5;
+}
+
+.manage-main .assignment-item.has-swap {
+  box-shadow: inset 3px 0 0 #6d43a5;
+  background: #fbf8ff;
+  border-radius: 10px;
+}
+
+.manage-swap-chip {
+  font-size: 0.72rem;
+  white-space: nowrap;
+}

@@ -130,6 +130,8 @@ interface Assignment {
     phone?: string;
     photoUrl?: string | null;
   };
+  /** Pedidos de troca em aberto desta atribuição */
+  swapRequests?: Array<{ id: string; message?: string | null; createdAt?: string }>;
   communityPastoral?: {
     id: string;
     globalPastoral?: {
@@ -2574,6 +2576,14 @@ const SchedulesPage: React.FC = () => {
                 <strong>{activeSchedule.assignments.filter((a) => a.checkedIn).length}</strong>
                 <span>Presentes</span>
               </div>
+              {activeSchedule.assignments.filter((a) => (a.swapRequests?.length ?? 0) > 0).length > 0 && (
+                <div className="manage-kpi is-swap">
+                  <strong>
+                    {activeSchedule.assignments.filter((a) => (a.swapRequests?.length ?? 0) > 0).length}
+                  </strong>
+                  <span>🔁 Trocas</span>
+                </div>
+              )}
             </div>
 
             <div className="manage-body">
@@ -2706,7 +2716,12 @@ const SchedulesPage: React.FC = () => {
               ) : (
                 <div className="assignments-list">
                   {getFilteredAssignments.map((assignment) => (
-                    <div className={`assignment-item ${assignment.checkedIn ? 'checked-in' : ''}`} key={assignment.id}>
+                    <div
+                      className={`assignment-item ${assignment.checkedIn ? 'checked-in' : ''}${
+                        (assignment.swapRequests?.length ?? 0) > 0 ? ' has-swap' : ''
+                      }`}
+                      key={assignment.id}
+                    >
                       <div className="assignment-info">
                         <span className="member-avatar">
                           {assignment.member.photoUrl ? (
@@ -2737,6 +2752,18 @@ const SchedulesPage: React.FC = () => {
                       </div>
 
                       <div className="assignment-status">
+                        {(assignment.swapRequests?.length ?? 0) > 0 && (
+                          <span
+                            className="overview-member-status st-swap manage-swap-chip"
+                            title={
+                              assignment.swapRequests?.[0]?.message
+                                ? `Pediu troca: “${assignment.swapRequests[0].message}”`
+                                : 'Pediu troca desta escala (sem mensagem)'
+                            }
+                          >
+                            🔁 Pediu troca
+                          </span>
+                        )}
                         <span className={`status-chip ${assignment.checkedIn ? 'status-ok' : assignment.status === 'CONFIRMED' ? 'status-confirmed' : assignment.status === 'DECLINED' ? 'status-declined' : 'status-pending'}`}>
                           {statusLabel[assignment.status]}
                         </span>
