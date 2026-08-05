@@ -4098,3 +4098,10 @@ tr.overview-row.is-open td {
   background: #fdeef4;
   color: #c45f83;
 }
+
+/* Casal incompleto (escalado sem o cônjuge) */
+.couple-chip.is-warn {
+  background: #fdf3e3;
+  color: #a96a0d;
+  border-color: #f2d9ac;
+}

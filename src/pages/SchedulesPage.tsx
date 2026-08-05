@@ -26,7 +26,11 @@ interface SchedulePastoralInfo {
   role?: string | null;
   isLeader?: boolean;
   requiredPeople: number;
-  communityPastoral?: { id: string; globalPastoral?: { id: string; name: string } | null } | null;
+  communityPastoral?: {
+    id: string;
+    scheduleCouplesTogether?: boolean;
+    globalPastoral?: { id: string; name: string } | null;
+  } | null;
 }
 
 interface Schedule {
@@ -131,6 +135,7 @@ interface Assignment {
     phone?: string;
     photoUrl?: string | null;
     spouseId?: string | null;
+    spouse?: { id: string; fullName: string } | null;
   };
   /** Pedidos de troca em aberto desta atribuição */
   swapRequests?: Array<{ id: string; message?: string | null; createdAt?: string }>;
@@ -270,6 +275,7 @@ interface CandidateMember {
   phone?: string;
   photoUrl?: string;
   spouseId?: string | null;
+  spouse?: { id: string; fullName: string } | null;
   pastorals: CandidatePastoralMembership[];
   currentScheduleAssigned: boolean;
   conflicts: {
@@ -1604,7 +1610,15 @@ const SchedulesPage: React.FC = () => {
             } catch (error: any) {
               notify.error(error.response?.data?.message || 'Não foi possível escalar o cônjuge');
             }
+          } else {
+            notify.warning(`💍 ${justAssigned!.fullName} ficou escalado(a) sem o cônjuge (${spouse.fullName}).`);
           }
+        } else if (pastoralRule && justAssigned?.spouseId && !spouseAlreadyAssigned) {
+          // Casado(a), regra ativa, mas o cônjuge não é candidato desta vaga
+          const spouseName = justAssigned.spouse?.fullName || spouse?.fullName || 'o cônjuge';
+          notify.warning(
+            `💍 ${justAssigned.fullName} é casado(a) com ${spouseName}, que não está entre os candidatos desta vaga — ficará escalado(a) sem o cônjuge.`,
+          );
         }
       }
 
@@ -2874,11 +2888,28 @@ const SchedulesPage: React.FC = () => {
                                 (a) => a.member.id,
                                 (a) => a.member.fullName,
                               );
-                              return coupleName ? (
-                                <span className="couple-chip" title={`Casado(a) com ${coupleName} — escalados juntos`}>
-                                  💍 casal
-                                </span>
-                              ) : null;
+                              if (coupleName) {
+                                return (
+                                  <span className="couple-chip" title={`Casado(a) com ${coupleName} — escalados juntos`}>
+                                    💍 casal
+                                  </span>
+                                );
+                              }
+                              // Regra da pastoral ativa e cônjuge fora da escala → alerta
+                              const ruleOn = activeSchedule.pastorals?.find(
+                                (p) => p.communityPastoralId === assignment.communityPastoral?.id,
+                              )?.communityPastoral?.scheduleCouplesTogether;
+                              if (assignment.member.spouseId && ruleOn) {
+                                return (
+                                  <span
+                                    className="couple-chip is-warn"
+                                    title={`Casado(a) com ${assignment.member.spouse?.fullName || 'cônjuge'} — escalado(a) sem o cônjuge`}
+                                  >
+                                    💍 sem o cônjuge
+                                  </span>
+                                );
+                              }
+                              return null;
                             })()}
                           </span>
                           <span className="member-contacts">
@@ -3029,6 +3060,22 @@ const SchedulesPage: React.FC = () => {
                       {assignedMembersForPanel.map((assignment) => (
                         <div key={assignment.id} className="assign-already-item">
                           <span className="assign-already-member">{assignment.member.fullName}</span>
+                          {assignment.member.spouseId &&
+                            (activeSchedule.assignments.some((a) => a.member.id === assignment.member.spouseId) ? (
+                              <span
+                                className="couple-chip"
+                                title={`Casal escalado junto: ${assignment.member.fullName} e ${assignment.member.spouse?.fullName || 'cônjuge'}`}
+                              >
+                                💍
+                              </span>
+                            ) : (
+                              <span
+                                className="couple-chip is-warn"
+                                title={`Casado(a) com ${assignment.member.spouse?.fullName || 'cônjuge'} — escalado(a) sem o cônjuge`}
+                              >
+                                💍 sem o cônjuge
+                              </span>
+                            ))}
                           <span className="assign-already-role">{assignment.role}</span>
                           <span
                             className={`status-chip ${
@@ -3146,9 +3193,13 @@ const SchedulesPage: React.FC = () => {
                                       <span className="assign-row-member-copy">
                                         <strong>
                                           {member.fullName}
-                                          {spouseCandidateOf(member) && (
+                                          {member.spouseId && (
                                             <span
-                                              title={`Cônjuge: ${spouseCandidateOf(member)!.fullName} também é candidato(a)`}
+                                              title={
+                                                spouseCandidateOf(member)
+                                                  ? `Cônjuge: ${member.spouse?.fullName || 'membro'} — também é candidato(a)`
+                                                  : `Cônjuge: ${member.spouse?.fullName || 'membro'} (fora desta lista)`
+                                              }
                                             >
                                               {' '}
                                               💍
@@ -3301,12 +3352,16 @@ const SchedulesPage: React.FC = () => {
                                   Faltas {member.history.noShowCount}
                                 </span>
                                 <span className="status-pill status-rate">30d {member.load.upcoming30DaysCount}</span>
-                                {spouseCandidateOf(member) && (
+                                {member.spouseId && (
                                   <span
-                                    className="status-pill status-rate"
-                                    title={`Cônjuge: ${spouseCandidateOf(member)!.fullName} também é candidato(a)`}
+                                    className="couple-chip"
+                                    title={
+                                      spouseCandidateOf(member)
+                                        ? `Cônjuge: ${member.spouse?.fullName || 'membro'} — também é candidato(a) desta escala`
+                                        : `Cônjuge: ${member.spouse?.fullName || 'membro'} (fora desta lista)`
+                                    }
                                   >
-                                    💍 casal
+                                    💍 {member.spouse?.fullName?.split(' ')[0] || 'casado(a)'}
                                   </span>
                                 )}
                               </div>
