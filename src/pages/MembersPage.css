@@ -719,14 +719,20 @@ fieldset legend {
 }
 
 .member-form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 1.4rem;
-  align-items: start;
+  /* Colunas fluidas (masonry): cada card "flutua" para cima e preenche o
+     espaço, sem os buracos que o grid de linhas rígidas deixava. */
+  columns: 2;
+  column-gap: 1.4rem;
 }
 
 .member-form-grid fieldset {
   min-width: 0;
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  margin-top: 0;
+  margin-bottom: 1.4rem;
+  display: block;
+  width: 100%;
 }
 
 .member-modal-footer {
@@ -748,7 +754,7 @@ fieldset legend {
 
 @media (max-width: 940px) {
   .member-form-grid {
-    grid-template-columns: 1fr;
+    columns: 1;
   }
 
   .modal-content.member-modal {
