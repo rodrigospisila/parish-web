@@ -593,7 +593,6 @@ const SchedulesPage: React.FC = () => {
   const [memberPastoralFilter, setMemberPastoralFilter] = useState('all');
   const [candidateFilter, setCandidateFilter] = useState<CandidateFilter>('all');
   const [expandedCandidateId, setExpandedCandidateId] = useState('');
-  const [inlineRole, setInlineRole] = useState('');
 
   const [overviewFrom, setOverviewFrom] = useState(todayIsoDate());
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -668,7 +667,6 @@ const SchedulesPage: React.FC = () => {
     setAssignmentStatusFilter('all');
     setAssignmentSearch('');
     setExpandedCandidateId('');
-    setInlineRole('');
   };
 
   const buildCreatePastoralSettings = (eventItem?: EventItem | null): CreateSchedulePastoralSetting[] => {
@@ -1161,7 +1159,6 @@ const SchedulesPage: React.FC = () => {
     }));
     setMemberPastoralFilter(communityPastoralId || 'all');
     setExpandedCandidateId('');
-    setInlineRole(suggestedRole);
   };
 
   const getFilteredAssignments = useMemo(() => {
@@ -1499,7 +1496,78 @@ const SchedulesPage: React.FC = () => {
       : null;
   };
 
-  const createAssignment = async (memberIdOverride?: string, roleOverride?: string, keepOpen = false) => {
+  // ===== Popup de escalação (abre ao clicar "Selecionar") =====
+  const [assignTarget, setAssignTarget] = useState<CandidateMember | null>(null);
+  const [assignTargetRole, setAssignTargetRole] = useState('');
+  const [assignWithSpouse, setAssignWithSpouse] = useState(false);
+
+  /** Vagas restantes da pastoral selecionada (null = sem limite definido). */
+  const currentPastoralRemaining = () => {
+    const pastoral = candidates?.pastorals.find(
+      (p) => p.communityPastoralId === assignmentForm.communityPastoralId,
+    );
+    if (!pastoral || pastoral.requiredPeople <= 0) return null;
+    return Math.max(0, pastoral.requiredPeople - pastoral.assignedCount);
+  };
+
+  const openAssignTarget = (member: CandidateMember) => {
+    const defaultRole =
+      candidates?.pastorals.find((p) => p.communityPastoralId === assignmentForm.communityPastoralId)?.role || '';
+    setAssignTargetRole(defaultRole);
+    const spouse = spouseInCurrentPastoral(member);
+    const spouseAssigned = spouse
+      ? activeSchedule?.assignments.some((a) => a.member.id === spouse.id)
+      : false;
+    const remaining = currentPastoralRemaining();
+    const ruleOn = candidates?.pastorals.find(
+      (p) => p.communityPastoralId === assignmentForm.communityPastoralId,
+    )?.scheduleCouplesTogether;
+    // Pré-marca "escalar junto" quando a regra está ativa e há vaga para os dois
+    setAssignWithSpouse(
+      Boolean(ruleOn && spouse && !spouseAssigned && (remaining === null || remaining >= 2)),
+    );
+    setAssignTarget(member);
+  };
+
+  const confirmAssignTarget = async () => {
+    if (!assignTarget || !activeSchedule) return;
+    const role = assignTargetRole.trim();
+    if (!role) {
+      notify.warning('Informe a função para esta vaga');
+      return;
+    }
+    const spouse = spouseInCurrentPastoral(assignTarget);
+    await createAssignment(assignTarget.id, role, true, { skipSpouseOffer: true });
+    if (assignWithSpouse && spouse) {
+      try {
+        await axios.post(
+          `${API_URL}/schedules/assignments`,
+          {
+            scheduleId: activeSchedule.id,
+            memberId: spouse.id,
+            role,
+            communityPastoralId: assignmentForm.communityPastoralId || undefined,
+          },
+          { headers },
+        );
+        notify.success(`💍 Casal escalado junto: ${assignTarget.fullName} e ${spouse.fullName}.`);
+        await fetchScheduleById(activeSchedule.id);
+        await loadScheduleCandidates(activeSchedule.id, assignmentForm.communityPastoralId, {
+          preservePastoralId: assignmentForm.communityPastoralId,
+        });
+      } catch (error: any) {
+        notify.error(error.response?.data?.message || 'Não foi possível escalar o cônjuge');
+      }
+    }
+    setAssignTarget(null);
+  };
+
+  const createAssignment = async (
+    memberIdOverride?: string,
+    roleOverride?: string,
+    keepOpen = false,
+    opts: { skipSpouseOffer?: boolean } = {},
+  ) => {
     if (!activeSchedule) {
       notify.warning('Selecione uma escala');
       return;
@@ -1585,7 +1653,7 @@ const SchedulesPage: React.FC = () => {
       }
 
       // 💍 Casais juntos: oferece escalar o cônjuge quando a regra da pastoral está ativa
-      if (!replaceTarget && candidates) {
+      if (!replaceTarget && candidates && !opts.skipSpouseOffer) {
         const justAssigned = candidates.members.find((m) => m.id === memberId);
         const pastoralRule = candidates.pastorals.find(
           (p) => p.communityPastoralId === assignmentForm.communityPastoralId,
@@ -1631,7 +1699,6 @@ const SchedulesPage: React.FC = () => {
 
       if (keepOpen) {
         setExpandedCandidateId('');
-        setInlineRole('');
         await fetchData();
         await fetchScheduleById(activeSchedule.id);
         await loadScheduleCandidates(activeSchedule.id, assignmentForm.communityPastoralId, {
@@ -1651,15 +1718,7 @@ const SchedulesPage: React.FC = () => {
   };
 
   const handleExpandMember = (memberId: string) => {
-    if (expandedCandidateId === memberId) {
-      setExpandedCandidateId('');
-      setInlineRole('');
-      return;
-    }
-    const defaultRole =
-      candidates?.pastorals.find((p) => p.communityPastoralId === assignmentForm.communityPastoralId)?.role || '';
-    setExpandedCandidateId(memberId);
-    setInlineRole(defaultRole);
+    setExpandedCandidateId(expandedCandidateId === memberId ? '' : memberId);
   };
 
   const handleRemoveAssignment = async (assignment: Assignment) => {
@@ -3252,13 +3311,13 @@ const SchedulesPage: React.FC = () => {
                                   <td className="assign-row-action">
                                     <button
                                       type="button"
-                                      className="btn-small btn-surface"
+                                      className="btn-small btn-submit"
                                       onClick={(event) => {
                                         event.stopPropagation();
-                                        handleExpandMember(member.id);
+                                        openAssignTarget(member);
                                       }}
                                     >
-                                      {isExpanded ? 'Fechar' : 'Selecionar'}
+                                      Selecionar
                                     </button>
                                   </td>
                                 </tr>
@@ -3269,44 +3328,6 @@ const SchedulesPage: React.FC = () => {
                                         {member.recommendation.reasons[0] || 'Sem alertas para esta vaga'} •{' '}
                                         {member.availability.summary[0] || 'Disponibilidade nao informada'}
                                       </p>
-                                      <div className="candidate-inline-form">
-                                        <div className="candidate-inline-role">
-                                          <label htmlFor={`list-role-${member.id}`}>Funcao para esta vaga</label>
-                                          <input
-                                            id={`list-role-${member.id}`}
-                                            type="text"
-                                            list="inline-roles"
-                                            value={inlineRole}
-                                            onChange={(event) => setInlineRole(event.target.value)}
-                                            placeholder="Ex: Leitor, Cantor, Slide"
-                                          />
-                                          <datalist id="inline-roles">
-                                            {roleSuggestions.map((role) => (
-                                              <option key={role} value={role} />
-                                            ))}
-                                          </datalist>
-                                        </div>
-                                        <div className="candidate-inline-actions">
-                                          <button
-                                            type="button"
-                                            className="btn-small btn-surface"
-                                            onClick={() => {
-                                              setExpandedCandidateId('');
-                                              setInlineRole('');
-                                            }}
-                                          >
-                                            Cancelar
-                                          </button>
-                                          <button
-                                            type="button"
-                                            className="btn-small btn-submit"
-                                            disabled={assignSubmitting || !inlineRole.trim()}
-                                            onClick={() => void createAssignment(member.id, inlineRole, true)}
-                                          >
-                                            {assignSubmitting ? 'Salvando...' : 'Escalar'}
-                                          </button>
-                                        </div>
-                                      </div>
                                     </td>
                                   </tr>
                                 )}
@@ -3433,51 +3454,16 @@ const SchedulesPage: React.FC = () => {
                           </div>
 
                           <div className="candidate-card-actions">
-                            {isExpanded ? (
-                              <div className="candidate-inline-form" onClick={(event) => event.stopPropagation()}>
-                                <div className="candidate-inline-role">
-                                  <label htmlFor={`inline-role-${member.id}`}>Funcao para esta vaga</label>
-                                  <input
-                                    id={`inline-role-${member.id}`}
-                                    type="text"
-                                    list="inline-roles"
-                                    value={inlineRole}
-                                    onChange={(event) => setInlineRole(event.target.value)}
-                                    placeholder="Ex: Leitor, Cantor, Slide"
-                                  />
-                                  <datalist id="inline-roles">
-                                    {roleSuggestions.map((role) => (
-                                      <option key={role} value={role} />
-                                    ))}
-                                  </datalist>
-                                </div>
-                                <div className="candidate-inline-actions">
-                                  <button
-                                    type="button"
-                                    className="btn-small btn-surface"
-                                    onClick={() => { setExpandedCandidateId(''); setInlineRole(''); }}
-                                  >
-                                    Cancelar
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="btn-small btn-submit"
-                                    disabled={assignSubmitting || !inlineRole.trim()}
-                                    onClick={() => void createAssignment(member.id, inlineRole, true)}
-                                  >
-                                    {assignSubmitting ? 'Salvando...' : 'Escalar'}
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                className="btn-small btn-surface"
-                                onClick={() => handleExpandMember(member.id)}
-                              >
-                                Selecionar
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              className="btn-small btn-submit"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openAssignTarget(member);
+                              }}
+                            >
+                              Selecionar
+                            </button>
                           </div>
                         </article>
                       );
@@ -3584,6 +3570,104 @@ const SchedulesPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {assignTarget && activeSchedule && (
+        <div className="modal-overlay assign-target-overlay" onClick={() => setAssignTarget(null)}>
+          <div className="modal-content assign-target-modal" onClick={(event) => event.stopPropagation()}>
+            <button className="modal-close" onClick={() => setAssignTarget(null)}>
+              ×
+            </button>
+            <h2>Escalar membro</h2>
+            <div className="assign-target-member">
+              <span className="member-avatar candidate-avatar">
+                {assignTarget.fullName.charAt(0).toUpperCase()}
+              </span>
+              <div>
+                <strong>{assignTarget.fullName}</strong>
+                <small>{assignTarget.email || assignTarget.phone || 'Sem contato'}</small>
+                <small>
+                  {candidates?.pastorals.find((p) => p.communityPastoralId === assignmentForm.communityPastoralId)
+                    ?.name || 'Pastoral'}{' '}
+                  · {activeSchedule.title}
+                </small>
+              </div>
+            </div>
+
+            {(() => {
+              const spouse = spouseInCurrentPastoral(assignTarget);
+              if (!spouse) return null;
+              const spouseAssigned = activeSchedule.assignments.some((a) => a.member.id === spouse.id);
+              const remaining = currentPastoralRemaining();
+              if (spouseAssigned) {
+                return (
+                  <div className="assign-target-note is-ok">
+                    💍 Cônjuge de <strong>{spouse.fullName}</strong>, que já está escalado(a) — servirão juntos.
+                  </div>
+                );
+              }
+              if (remaining !== null && remaining < 2) {
+                return (
+                  <div className="assign-target-note is-warn">
+                    💍 Cônjuge de <strong>{spouse.fullName}</strong> — só resta {remaining === 1 ? '1 vaga' : 'vaga insuficiente'},
+                    então o cônjuge ficará de fora desta escala.
+                  </div>
+                );
+              }
+              return (
+                <label className="assign-target-note is-choice">
+                  <input
+                    type="checkbox"
+                    checked={assignWithSpouse}
+                    onChange={(event) => setAssignWithSpouse(event.target.checked)}
+                  />
+                  💍 Escalar também o cônjuge (<strong>{spouse.fullName}</strong>) na mesma função — há vagas para os dois
+                </label>
+              );
+            })()}
+
+            <p className="candidate-inline-summary">
+              {assignTarget.recommendation.reasons[0] || 'Sem alertas para esta vaga'} •{' '}
+              {assignTarget.availability.summary[0] || 'Disponibilidade nao informada'}
+            </p>
+
+            <div className="form-group">
+              <label htmlFor="assign-target-role">Função para esta vaga</label>
+              <input
+                id="assign-target-role"
+                type="text"
+                list="assign-target-roles"
+                value={assignTargetRole}
+                onChange={(event) => setAssignTargetRole(event.target.value)}
+                placeholder="Ex: Leitor, Cantor, Slide"
+                autoFocus
+              />
+              <datalist id="assign-target-roles">
+                {roleSuggestions.map((role) => (
+                  <option key={role} value={role} />
+                ))}
+              </datalist>
+            </div>
+
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" onClick={() => setAssignTarget(null)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn-submit"
+                disabled={assignSubmitting || !assignTargetRole.trim()}
+                onClick={() => void confirmAssignTarget()}
+              >
+                {assignSubmitting
+                  ? 'Salvando...'
+                  : assignWithSpouse && spouseInCurrentPastoral(assignTarget)
+                    ? '💍 Escalar casal (2)'
+                    : 'Escalar'}
+              </button>
+            </div>
           </div>
         </div>
       )}

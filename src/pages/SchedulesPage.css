@@ -4105,3 +4105,69 @@ tr.overview-row.is-open td {
   color: #a96a0d;
   border-color: #f2d9ac;
 }
+
+/* ===== Popup de escalação (Selecionar → Escalar membro) ===== */
+.assign-target-modal {
+  max-width: 540px;
+  width: min(540px, calc(100vw - 2.5rem));
+}
+
+.assign-target-member {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 0.4rem 0 0.9rem;
+  padding: 0.7rem 0.85rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.assign-target-member strong {
+  display: block;
+  color: #17324d;
+  font-size: 1.02rem;
+}
+
+.assign-target-member small {
+  display: block;
+  color: #8b97a4;
+  font-size: 0.8rem;
+}
+
+.assign-target-note {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.88rem;
+  margin-bottom: 0.8rem;
+}
+
+.assign-target-note.is-ok {
+  background: #fdeef4;
+  border: 1px solid #f5cede;
+  color: #8d3a5d;
+}
+
+.assign-target-note.is-warn {
+  background: #fdf3e3;
+  border: 1px solid #f2d9ac;
+  color: #a96a0d;
+}
+
+.assign-target-note.is-choice {
+  background: #eaf4ff;
+  border: 1px solid #b6d4fe;
+  color: #17324d;
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 0.8rem;
+}
+
+.assign-target-note.is-choice input {
+  width: 17px;
+  height: 17px;
+}
