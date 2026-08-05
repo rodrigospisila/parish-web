@@ -3717,3 +3717,91 @@ tr.overview-row.is-open td {
     border-bottom: 1px solid #e2e8f0;
   }
 }
+
+/* Gestão da escala — refinamentos */
+.modal-manage .manage-title-block h2 {
+  color: #fff;
+}
+
+.modal-manage .manage-kicker {
+  color: #8ecdf7;
+}
+
+/* Linha do membro: info | status | ações (status deixa de "flutuar" no meio) */
+.manage-main .assignment-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 1.1rem;
+  align-items: center;
+}
+
+.manage-main .assignment-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  justify-self: end;
+  min-width: 110px;
+}
+
+.manage-main .assignment-actions {
+  display: flex;
+  gap: 0.45rem;
+  justify-self: end;
+}
+
+.member-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.member-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.member-pastoral {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #8b97a4;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.member-contacts {
+  display: flex;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  margin-top: 3px;
+}
+
+.member-contacts a {
+  color: #075aa9;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.member-contacts a:hover {
+  text-decoration: underline;
+}
+
+.member-contacts .muted {
+  color: #b3bcc7;
+}
+
+@media (max-width: 720px) {
+  .manage-main .assignment-item {
+    grid-template-columns: 1fr;
+  }
+
+  .manage-main .assignment-status,
+  .manage-main .assignment-actions {
+    justify-self: start;
+    align-items: flex-start;
+  }
+}

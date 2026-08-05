@@ -127,6 +127,7 @@ interface Assignment {
     fullName: string;
     email?: string;
     phone?: string;
+    photoUrl?: string | null;
   };
   communityPastoral?: {
     id: string;
@@ -2657,12 +2658,30 @@ const SchedulesPage: React.FC = () => {
                   {getFilteredAssignments.map((assignment) => (
                     <div className={`assignment-item ${assignment.checkedIn ? 'checked-in' : ''}`} key={assignment.id}>
                       <div className="assignment-info">
-                        <span className="member-avatar">{assignment.member.fullName.charAt(0).toUpperCase()}</span>
+                        <span className="member-avatar">
+                          {assignment.member.photoUrl ? (
+                            <img src={assignment.member.photoUrl} alt="" />
+                          ) : (
+                            assignment.member.fullName.charAt(0).toUpperCase()
+                          )}
+                        </span>
                         <div className="member-details">
                           <strong>{assignment.member.fullName}</strong>
-                          <span className="role-badge">{assignment.role}</span>
-                          <span className="member-phone">
-                            {assignment.communityPastoral?.globalPastoral?.name || 'Pastoral'}
+                          <span className="member-meta-row">
+                            <span className="role-badge">{assignment.role}</span>
+                            <span className="member-pastoral">
+                              {assignment.communityPastoral?.globalPastoral?.name || 'Pastoral'}
+                            </span>
+                          </span>
+                          <span className="member-contacts">
+                            {assignment.member.phone ? (
+                              <a href={`tel:${assignment.member.phone}`}>📞 {assignment.member.phone}</a>
+                            ) : (
+                              <span className="muted">📞 sem telefone</span>
+                            )}
+                            {assignment.member.email && (
+                              <a href={`mailto:${assignment.member.email}`}>✉️ {assignment.member.email}</a>
+                            )}
                           </span>
                         </div>
                       </div>
