@@ -69,6 +69,7 @@ interface RotationPreviewItem {
   pastorals?: Array<{ communityPastoralId: string; name: string; requiredPeople: number }>;
   noPastorals?: boolean;
   noSlots?: boolean;
+  allFilled?: boolean;
 }
 
 interface RotationResponse {
@@ -3464,6 +3465,10 @@ const SchedulesPage: React.FC = () => {
                           </li>
                         ))}
                       </ul>
+                    ) : item.allFilled ? (
+                      <p style={{ margin: '0.35rem 0 0 0', color: '#2e9d62', fontSize: '0.9rem' }}>
+                        ✓ Todas as vagas desta escala já estão preenchidas — nada a completar.
+                      </p>
                     ) : item.noPastorals ? (
                       <p style={{ margin: '0.35rem 0 0 0', color: '#b26a00', fontSize: '0.9rem' }}>
                         ⚠️ Sem pastorais vinculadas a esta escala.
