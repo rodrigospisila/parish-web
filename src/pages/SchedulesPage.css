@@ -3417,3 +3417,32 @@ tr.overview-row.is-open td {
     display: none;
   }
 }
+
+/* Alerta de pedido de troca em aberto */
+.overview-swap-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  background: #f0e9fb;
+  color: #6d43a5;
+  border: 1px solid #ddcbf2;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.overview-member-status.st-swap,
+.cal-member-badge.st-swap {
+  background: #f0e9fb;
+  color: #6d43a5;
+}
+
+.cal-pill-swap {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  line-height: 1;
+}

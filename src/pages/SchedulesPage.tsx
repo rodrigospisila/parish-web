@@ -149,6 +149,8 @@ interface OverviewAssignment {
   status: AssignmentStatus;
   checkedIn: boolean;
   checkedInAt?: string;
+  /** O membro tem pedido de troca em aberto para esta atribuição */
+  hasPendingSwap?: boolean;
 }
 
 interface OverviewItem {
@@ -162,6 +164,8 @@ interface OverviewItem {
     confirmed: number;
     declined: number;
     checkedIn: number;
+    /** Atribuições com pedido de troca em aberto */
+    swapsPending?: number;
   };
   attendanceRate: number;
   assignments: OverviewAssignment[];
@@ -1763,6 +1767,11 @@ const SchedulesPage: React.FC = () => {
                             >
                               {time !== '00:00' && <span className="cal-pill-time">{time}</span>}
                               <span className="cal-pill-title">{item.title.replace(/^Escala - /, '')}</span>
+                              {(item.counts.swapsPending ?? 0) > 0 && (
+                                <span className="cal-pill-swap" title={`${item.counts.swapsPending} pedido(s) de troca em aberto`}>
+                                  🔁
+                                </span>
+                              )}
                               <span className="cal-pill-count">
                                 {item.counts.total === 0 ? '⚠' : item.counts.total}
                               </span>
@@ -1775,8 +1784,15 @@ const SchedulesPage: React.FC = () => {
                                   item.assignments.map((assignment) => {
                                     const status = statusOf(assignment);
                                     return (
-                                      <span key={assignment.id} className="cal-member-row" title={`${assignment.memberName} — ${assignment.role}`}>
+                                      <span
+                                        key={assignment.id}
+                                        className="cal-member-row"
+                                        title={`${assignment.memberName} — ${assignment.role}${assignment.hasPendingSwap ? ' · pediu troca' : ''}`}
+                                      >
                                         <span className="cal-member-name">{assignment.memberName}</span>
+                                        {assignment.hasPendingSwap && (
+                                          <span className="cal-member-badge st-swap">🔁</span>
+                                        )}
                                         <span className={`cal-member-badge ${status.cls}`}>{status.label}</span>
                                       </span>
                                     );
@@ -1820,6 +1836,11 @@ const SchedulesPage: React.FC = () => {
                             <strong>{assignment.memberName}</strong>
                             <em>{assignment.role}</em>
                             <span className={`overview-member-status ${status.cls}`}>{status.label}</span>
+                            {assignment.hasPendingSwap && (
+                              <span className="overview-member-status st-swap" title="Este membro pediu troca desta escala">
+                                🔁 Troca
+                              </span>
+                            )}
                           </div>
                         );
                       })}
@@ -1876,6 +1897,14 @@ const SchedulesPage: React.FC = () => {
                                       ⚠️ Sem atribuições
                                     </span>
                                   )}
+                                  {(item.counts.swapsPending ?? 0) > 0 && (
+                                    <span
+                                      className="overview-swap-chip"
+                                      title="Há membro(s) com pedido de troca em aberto nesta escala"
+                                    >
+                                      🔁 {item.counts.swapsPending} troca{(item.counts.swapsPending ?? 0) > 1 ? 's' : ''}
+                                    </span>
+                                  )}
                                 </span>
                                 <small>{item.event.title}</small>
                               </span>
@@ -1904,6 +1933,11 @@ const SchedulesPage: React.FC = () => {
                                         <strong>{assignment.memberName}</strong>
                                         <em>{assignment.role}</em>
                                         <span className={`overview-member-status ${status.cls}`}>{status.label}</span>
+                                        {assignment.hasPendingSwap && (
+                                          <span className="overview-member-status st-swap" title="Este membro pediu troca desta escala">
+                                            🔁 Troca
+                                          </span>
+                                        )}
                                       </div>
                                     );
                                   })}
@@ -1933,6 +1967,11 @@ const SchedulesPage: React.FC = () => {
                       {item.counts.total === 0 && (
                         <span className="overview-alert-chip" title="Nenhum membro foi atribuído a esta escala">
                           ⚠️ Sem atribuições
+                        </span>
+                      )}
+                      {(item.counts.swapsPending ?? 0) > 0 && (
+                        <span className="overview-swap-chip" title="Há membro(s) com pedido de troca em aberto nesta escala">
+                          🔁 {item.counts.swapsPending} troca{(item.counts.swapsPending ?? 0) > 1 ? 's' : ''}
                         </span>
                       )}
                     </div>
