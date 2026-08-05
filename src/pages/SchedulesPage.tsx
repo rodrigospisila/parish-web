@@ -2748,22 +2748,25 @@ const SchedulesPage: React.FC = () => {
                               <a href={`mailto:${assignment.member.email}`}>✉️ {assignment.member.email}</a>
                             )}
                           </span>
+                          {(assignment.swapRequests?.length ?? 0) > 0 && (
+                            <span className="member-swap-note">
+                              🔁 <strong>Pediu troca</strong>
+                              {assignment.swapRequests?.[0]?.message ? (
+                                <>
+                                  : <q>{assignment.swapRequests[0].message}</q>
+                                </>
+                              ) : (
+                                <em> (sem mensagem)</em>
+                              )}
+                              {assignment.swapRequests?.[0]?.createdAt && (
+                                <em className="swap-date"> · {toShortDate(assignment.swapRequests[0].createdAt!)}</em>
+                              )}
+                            </span>
+                          )}
                         </div>
                       </div>
 
                       <div className="assignment-status">
-                        {(assignment.swapRequests?.length ?? 0) > 0 && (
-                          <span
-                            className="overview-member-status st-swap manage-swap-chip"
-                            title={
-                              assignment.swapRequests?.[0]?.message
-                                ? `Pediu troca: “${assignment.swapRequests[0].message}”`
-                                : 'Pediu troca desta escala (sem mensagem)'
-                            }
-                          >
-                            🔁 Pediu troca
-                          </span>
-                        )}
                         <span className={`status-chip ${assignment.checkedIn ? 'status-ok' : assignment.status === 'CONFIRMED' ? 'status-confirmed' : assignment.status === 'DECLINED' ? 'status-declined' : 'status-pending'}`}>
                           {statusLabel[assignment.status]}
                         </span>

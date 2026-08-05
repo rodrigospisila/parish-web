@@ -4038,3 +4038,38 @@ tr.overview-row.is-open td {
   font-size: 0.72rem;
   white-space: nowrap;
 }
+
+/* Callout do pedido de troca na linha do membro (gestão) */
+.member-swap-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  max-width: fit-content;
+  background: #f0e9fb;
+  border: 1px solid #ddcbf2;
+  border-radius: 9px;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.8rem;
+  color: #4d2f78;
+  line-height: 1.4;
+}
+
+.member-swap-note strong {
+  color: #6d43a5;
+}
+
+.member-swap-note q {
+  font-style: italic;
+  quotes: '“' '”';
+}
+
+.member-swap-note em {
+  color: #8b97a4;
+  font-style: normal;
+}
+
+.member-swap-note .swap-date {
+  font-size: 0.72rem;
+}
