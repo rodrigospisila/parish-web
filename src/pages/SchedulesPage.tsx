@@ -917,9 +917,16 @@ const SchedulesPage: React.FC = () => {
 
   // ===== Gerador de rodízio =====
 
+  /** Escala elegível ao rodízio: aberta e de hoje em diante (dia inteiro conta). */
+  const isRotationEligible = (schedule: Schedule) => {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    return schedule.status === 'OPEN' && new Date(schedule.date).getTime() >= startOfToday.getTime();
+  };
+
   const openRotation = () => {
     const openIds = schedules
-      .filter((schedule) => schedule.status === 'OPEN' && new Date(schedule.date).getTime() >= Date.now())
+      .filter((schedule) => isRotationEligible(schedule))
       .map((schedule) => schedule.id);
     setRotationSelection(openIds);
     setRotationPreview(null);
@@ -3380,11 +3387,12 @@ const SchedulesPage: React.FC = () => {
             </p>
 
             <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid #eee', borderRadius: 8, padding: '0.6rem', marginBottom: '1rem' }}>
-              {schedules.filter((schedule) => schedule.status === 'OPEN' && new Date(schedule.date).getTime() >= Date.now()).length === 0 && (
+              {schedules.filter((schedule) => isRotationEligible(schedule) || rotationSelection.includes(schedule.id)).length === 0 && (
                 <p style={{ color: '#888' }}>Nenhuma escala aberta futura para gerar rodízio.</p>
               )}
               {schedules
-                .filter((schedule) => schedule.status === 'OPEN' && new Date(schedule.date).getTime() >= Date.now())
+                // Elegíveis + a escala focada (ex.: aberta via "Preencher automático")
+                .filter((schedule) => isRotationEligible(schedule) || rotationSelection.includes(schedule.id))
                 .map((schedule) => (
                   <label key={schedule.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0' }}>
                     <input
