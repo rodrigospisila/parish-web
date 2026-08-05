@@ -4171,3 +4171,15 @@ tr.overview-row.is-open td {
   width: 17px;
   height: 17px;
 }
+
+/* Chip de casal como botão de ação (escalar cônjuge em 1 clique) */
+button.couple-chip.is-action {
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+button.couple-chip.is-action:hover {
+  background: #f8e3bd;
+  border-color: #c78216;
+}

@@ -1562,6 +1562,35 @@ const SchedulesPage: React.FC = () => {
     setAssignTarget(null);
   };
 
+  /** Escala o cônjuge do membro em 1 clique (mesma pastoral e mesma função). */
+  const quickAssignSpouse = async (assignment: Assignment) => {
+    if (!activeSchedule || !assignment.member.spouseId) return;
+    try {
+      await axios.post(
+        `${API_URL}/schedules/assignments`,
+        {
+          scheduleId: activeSchedule.id,
+          memberId: assignment.member.spouseId,
+          role: assignment.role,
+          communityPastoralId: assignment.communityPastoral?.id || undefined,
+        },
+        { headers },
+      );
+      notify.success(
+        `💍 Cônjuge ${assignment.member.spouse?.fullName || ''} escalado(a) junto de ${assignment.member.fullName}.`,
+      );
+      await fetchScheduleById(activeSchedule.id, true);
+      fetchData();
+      if (showAssignModal) {
+        await loadScheduleCandidates(activeSchedule.id, assignmentForm.communityPastoralId, {
+          preservePastoralId: assignmentForm.communityPastoralId,
+        });
+      }
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Não foi possível escalar o cônjuge');
+    }
+  };
+
   const createAssignment = async (
     memberIdOverride?: string,
     roleOverride?: string,
@@ -2967,13 +2996,16 @@ const SchedulesPage: React.FC = () => {
                                 (p) => p.communityPastoralId === assignment.communityPastoral?.id,
                               )?.communityPastoral?.scheduleCouplesTogether;
                               if (assignment.member.spouseId && ruleOn && assignment.spouseInSamePastoral) {
+                                const spouseName = assignment.member.spouse?.fullName || 'cônjuge';
                                 return (
-                                  <span
-                                    className="couple-chip is-warn"
-                                    title={`Casado(a) com ${assignment.member.spouse?.fullName || 'cônjuge'} — escalado(a) sem o cônjuge`}
+                                  <button
+                                    type="button"
+                                    className="couple-chip is-warn is-action"
+                                    onClick={() => void quickAssignSpouse(assignment)}
+                                    title={`Casado(a) com ${spouseName} — clique para escalar o cônjuge nesta escala`}
                                   >
-                                    💍 sem o cônjuge
-                                  </span>
+                                    💍 Escalar cônjuge: {spouseName.split(' ')[0]}
+                                  </button>
                                 );
                               }
                               return null;
@@ -3150,13 +3182,16 @@ const SchedulesPage: React.FC = () => {
                               (p) => p.communityPastoralId === assignment.communityPastoral?.id,
                             );
                             if (samePastoral) {
+                              const spouseName = assignment.member.spouse?.fullName || 'cônjuge';
                               return (
-                                <span
-                                  className="couple-chip is-warn"
-                                  title={`Casado(a) com ${assignment.member.spouse?.fullName || 'cônjuge'} — escalado(a) sem o cônjuge`}
+                                <button
+                                  type="button"
+                                  className="couple-chip is-warn is-action"
+                                  onClick={() => void quickAssignSpouse(assignment)}
+                                  title={`Casado(a) com ${spouseName} — clique para escalar o cônjuge nesta escala`}
                                 >
-                                  💍 sem o cônjuge
-                                </span>
+                                  💍 Escalar cônjuge: {spouseName.split(' ')[0]}
+                                </button>
                               );
                             }
                             return null;
