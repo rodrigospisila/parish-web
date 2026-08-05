@@ -775,9 +775,27 @@ const MembersPage: React.FC = () => {
 
       {showModal && (
         <div className="modal-overlay" onClick={() => { setShowModal(false); resetForm(); }}>
-          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
-            <h2>{editingMember ? 'Editar Membro' : 'Novo Membro'}</h2>
-            <form onSubmit={handleSubmit}>
+          <div className="modal-content modal-large member-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="member-modal-header">
+              <div className="member-modal-heading">
+                <span className="member-modal-kicker">{editingMember ? 'Editar membro' : 'Cadastro'}</span>
+                <h2>{editingMember ? editingMember.fullName : 'Novo membro'}</h2>
+              </div>
+              <button
+                type="button"
+                className="member-modal-close"
+                aria-label="Fechar"
+                onClick={() => {
+                  setShowModal(false);
+                  resetForm();
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="member-modal-form">
+              <div className="member-modal-body">
+                <div className="member-form-grid">
               {/* Dados Pessoais */}
               <fieldset>
                 <legend>📋 Dados Pessoais</legend>
@@ -1103,7 +1121,10 @@ const MembersPage: React.FC = () => {
                 </div>
               </fieldset>
 
-              <div className="modal-actions">
+                </div>
+              </div>
+
+              <div className="modal-actions member-modal-footer">
                 <button type="button" className="btn-cancel" onClick={() => { setShowModal(false); resetForm(); }}>
                   Cancelar
                 </button>
