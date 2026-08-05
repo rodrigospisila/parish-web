@@ -53,6 +53,7 @@ interface RotationSuggestion {
   memberId: string;
   memberName: string;
   score: number;
+  spouseId?: string | null;
 }
 
 interface RotationGap {
@@ -129,6 +130,7 @@ interface Assignment {
     email?: string;
     phone?: string;
     photoUrl?: string | null;
+    spouseId?: string | null;
   };
   /** Pedidos de troca em aberto desta atribuição */
   swapRequests?: Array<{ id: string; message?: string | null; createdAt?: string }>;
@@ -157,7 +159,21 @@ interface OverviewAssignment {
   hasPendingSwap?: boolean;
   /** Mensagem do pedido de troca mais recente (motivo informado pelo membro) */
   pendingSwapMessage?: string | null;
+  /** Cônjuge (para destacar casais escalados juntos) */
+  spouseId?: string | null;
 }
+
+/** Cônjuge do membro quando também está escalado no mesmo grupo. */
+const coupleIn = <T,>(
+  spouseId: string | null | undefined,
+  list: T[],
+  idOf: (item: T) => string,
+  nameOf: (item: T) => string,
+): string | null => {
+  if (!spouseId) return null;
+  const match = list.find((item) => idOf(item) === spouseId);
+  return match ? nameOf(match) : null;
+};
 
 /** Link do WhatsApp a partir de um telefone BR (adiciona 55 quando faltar o DDI). */
 const whatsappUrl = (phone: string) => {
@@ -1932,6 +1948,24 @@ const SchedulesPage: React.FC = () => {
                                         }`}
                                       >
                                         <span className="cal-member-name">{assignment.memberName}</span>
+                                        {coupleIn(
+                                          assignment.spouseId,
+                                          item.assignments,
+                                          (a) => a.memberId,
+                                          (a) => a.memberName,
+                                        ) && (
+                                          <span
+                                            className="cal-member-badge st-couple"
+                                            title={`Casal escalado junto: ${assignment.memberName} e ${coupleIn(
+                                              assignment.spouseId,
+                                              item.assignments,
+                                              (a) => a.memberId,
+                                              (a) => a.memberName,
+                                            )}`}
+                                          >
+                                            💍
+                                          </span>
+                                        )}
                                         {assignment.hasPendingSwap && (
                                           <span className="cal-member-badge st-swap" title={swapTooltip(assignment)}>
                                             🔁
@@ -1985,6 +2019,19 @@ const SchedulesPage: React.FC = () => {
                                 🔁 Troca
                               </span>
                             )}
+                            {(() => {
+                              const coupleName = coupleIn(
+                                assignment.spouseId,
+                                calSelected.assignments,
+                                (a) => a.memberId,
+                                (a) => a.memberName,
+                              );
+                              return coupleName ? (
+                                <span className="overview-member-status st-couple" title={`Casal escalado junto: ${assignment.memberName} e ${coupleName}`}>
+                                  💍
+                                </span>
+                              ) : null;
+                            })()}
                           </div>
                         );
                       })}
@@ -2082,6 +2129,19 @@ const SchedulesPage: React.FC = () => {
                                             🔁 Troca
                                           </span>
                                         )}
+                                        {(() => {
+                                          const coupleName = coupleIn(
+                                            assignment.spouseId,
+                                            item.assignments,
+                                            (a) => a.memberId,
+                                            (a) => a.memberName,
+                                          );
+                                          return coupleName ? (
+                                            <span className="overview-member-status st-couple" title={`Casal escalado junto: ${assignment.memberName} e ${coupleName}`}>
+                                              💍
+                                            </span>
+                                          ) : null;
+                                        })()}
                                       </div>
                                     );
                                   })}
@@ -2392,7 +2452,15 @@ const SchedulesPage: React.FC = () => {
                               className={`member-chip ${assignment.status === 'CONFIRMED' ? 'status-confirmed' : assignment.status === 'DECLINED' ? 'status-declined' : 'status-pending'}`}
                               title={assignment.role ? `${assignment.member.fullName} - ${assignment.role}` : assignment.member.fullName}
                             >
-                              <span className="member-chip-name">{assignment.member.fullName}</span>
+                              <span className="member-chip-name">
+                                {assignment.member.fullName}
+                                {coupleIn(
+                                  assignment.member.spouseId,
+                                  schedule.assignments,
+                                  (a) => a.member.id,
+                                  (a) => a.member.fullName,
+                                ) && ' 💍'}
+                              </span>
                               {assignment.role ? <span className="member-chip-role">{assignment.role}</span> : null}
                             </span>
                           ))}
@@ -2799,6 +2867,19 @@ const SchedulesPage: React.FC = () => {
                             <span className="member-pastoral">
                               {assignment.communityPastoral?.globalPastoral?.name || 'Pastoral'}
                             </span>
+                            {(() => {
+                              const coupleName = coupleIn(
+                                assignment.member.spouseId,
+                                activeSchedule.assignments,
+                                (a) => a.member.id,
+                                (a) => a.member.fullName,
+                              );
+                              return coupleName ? (
+                                <span className="couple-chip" title={`Casado(a) com ${coupleName} — escalados juntos`}>
+                                  💍 casal
+                                </span>
+                              ) : null;
+                            })()}
                           </span>
                           <span className="member-contacts">
                             {assignment.member.phone ? (
@@ -3600,11 +3681,24 @@ const SchedulesPage: React.FC = () => {
                     )}
                     {item.suggestions.length > 0 ? (
                       <ul style={{ margin: '0.35rem 0 0 1rem', padding: 0 }}>
-                        {item.suggestions.map((suggestion, index) => (
-                          <li key={index} style={{ fontSize: '0.9rem', color: '#444' }}>
-                            {suggestion.memberName} — {suggestion.role}
-                          </li>
-                        ))}
+                        {item.suggestions.map((suggestion, index) => {
+                          const coupleName = coupleIn(
+                            suggestion.spouseId,
+                            item.suggestions,
+                            (s2) => s2.memberId,
+                            (s2) => s2.memberName,
+                          );
+                          return (
+                            <li key={index} style={{ fontSize: '0.9rem', color: '#444' }}>
+                              {suggestion.memberName} — {suggestion.role}
+                              {coupleName && (
+                                <span className="couple-chip" title={`Casal escalado junto: ${suggestion.memberName} e ${coupleName}`}>
+                                  💍 casal
+                                </span>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     ) : item.allFilled ? (
                       <p style={{ margin: '0.35rem 0 0 0', color: '#2e9d62', fontSize: '0.9rem' }}>

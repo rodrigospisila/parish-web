@@ -4073,3 +4073,28 @@ tr.overview-row.is-open td {
 .member-swap-note .swap-date {
   font-size: 0.72rem;
 }
+
+/* Destaque de casal escalado junto */
+.couple-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: 0.5rem;
+  background: #fdeef4;
+  color: #c45f83;
+  border: 1px solid #f5cede;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.14rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.overview-member-status.st-couple,
+.cal-member-badge.st-couple {
+  background: #fdeef4;
+  color: #c45f83;
+}
