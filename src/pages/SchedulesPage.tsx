@@ -139,6 +139,8 @@ interface Assignment {
   };
   /** Pedidos de troca em aberto desta atribuição */
   swapRequests?: Array<{ id: string; message?: string | null; createdAt?: string }>;
+  /** O cônjuge participa da mesma pastoral desta atribuição */
+  spouseInSamePastoral?: boolean;
   communityPastoral?: {
     id: string;
     globalPastoral?: {
@@ -1488,6 +1490,15 @@ const SchedulesPage: React.FC = () => {
   const spouseCandidateOf = (member: CandidateMember) =>
     member.spouseId ? (candidates?.members.find((m) => m.id === member.spouseId) ?? null) : null;
 
+  /** Cônjuge do candidato quando participa da MESMA pastoral da vaga selecionada. */
+  const spouseInCurrentPastoral = (member: CandidateMember) => {
+    const spouse = spouseCandidateOf(member);
+    if (!spouse || !assignmentForm.communityPastoralId) return null;
+    return spouse.pastorals?.some((p) => p.communityPastoralId === assignmentForm.communityPastoralId)
+      ? spouse
+      : null;
+  };
+
   const createAssignment = async (memberIdOverride?: string, roleOverride?: string, keepOpen = false) => {
     if (!activeSchedule) {
       notify.warning('Selecione uma escala');
@@ -1613,13 +1624,9 @@ const SchedulesPage: React.FC = () => {
           } else {
             notify.warning(`💍 ${justAssigned!.fullName} ficou escalado(a) sem o cônjuge (${spouse.fullName}).`);
           }
-        } else if (pastoralRule && justAssigned?.spouseId && !spouseAlreadyAssigned) {
-          // Casado(a), regra ativa, mas o cônjuge não é candidato desta vaga
-          const spouseName = justAssigned.spouse?.fullName || spouse?.fullName || 'o cônjuge';
-          notify.warning(
-            `💍 ${justAssigned.fullName} é casado(a) com ${spouseName}, que não está entre os candidatos desta vaga — ficará escalado(a) sem o cônjuge.`,
-          );
         }
+        // Cônjuge fora da pastoral: sem alerta — o vínculo só importa quando
+        // os dois participam da mesma pastoral.
       }
 
       if (keepOpen) {
@@ -2895,11 +2902,12 @@ const SchedulesPage: React.FC = () => {
                                   </span>
                                 );
                               }
-                              // Regra da pastoral ativa e cônjuge fora da escala → alerta
+                              // Regra da pastoral ativa + cônjuge participa da MESMA
+                              // pastoral, mas está fora da escala → alerta
                               const ruleOn = activeSchedule.pastorals?.find(
                                 (p) => p.communityPastoralId === assignment.communityPastoral?.id,
                               )?.communityPastoral?.scheduleCouplesTogether;
-                              if (assignment.member.spouseId && ruleOn) {
+                              if (assignment.member.spouseId && ruleOn && assignment.spouseInSamePastoral) {
                                 return (
                                   <span
                                     className="couple-chip is-warn"
@@ -3060,22 +3068,40 @@ const SchedulesPage: React.FC = () => {
                       {assignedMembersForPanel.map((assignment) => (
                         <div key={assignment.id} className="assign-already-item">
                           <span className="assign-already-member">{assignment.member.fullName}</span>
-                          {assignment.member.spouseId &&
-                            (activeSchedule.assignments.some((a) => a.member.id === assignment.member.spouseId) ? (
-                              <span
-                                className="couple-chip"
-                                title={`Casal escalado junto: ${assignment.member.fullName} e ${assignment.member.spouse?.fullName || 'cônjuge'}`}
-                              >
-                                💍
-                              </span>
-                            ) : (
-                              <span
-                                className="couple-chip is-warn"
-                                title={`Casado(a) com ${assignment.member.spouse?.fullName || 'cônjuge'} — escalado(a) sem o cônjuge`}
-                              >
-                                💍 sem o cônjuge
-                              </span>
-                            ))}
+                          {(() => {
+                            if (!assignment.member.spouseId) return null;
+                            const together = activeSchedule.assignments.some(
+                              (a) => a.member.id === assignment.member.spouseId,
+                            );
+                            if (together) {
+                              return (
+                                <span
+                                  className="couple-chip"
+                                  title={`Casal escalado junto: ${assignment.member.fullName} e ${assignment.member.spouse?.fullName || 'cônjuge'}`}
+                                >
+                                  💍
+                                </span>
+                              );
+                            }
+                            // Alerta apenas se o cônjuge participa da MESMA pastoral
+                            const spouseMember = candidates?.members.find(
+                              (m) => m.id === assignment.member.spouseId,
+                            );
+                            const samePastoral = spouseMember?.pastorals?.some(
+                              (p) => p.communityPastoralId === assignment.communityPastoral?.id,
+                            );
+                            if (samePastoral) {
+                              return (
+                                <span
+                                  className="couple-chip is-warn"
+                                  title={`Casado(a) com ${assignment.member.spouse?.fullName || 'cônjuge'} — escalado(a) sem o cônjuge`}
+                                >
+                                  💍 sem o cônjuge
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
                           <span className="assign-already-role">{assignment.role}</span>
                           <span
                             className={`status-chip ${
@@ -3193,13 +3219,9 @@ const SchedulesPage: React.FC = () => {
                                       <span className="assign-row-member-copy">
                                         <strong>
                                           {member.fullName}
-                                          {member.spouseId && (
+                                          {spouseInCurrentPastoral(member) && (
                                             <span
-                                              title={
-                                                spouseCandidateOf(member)
-                                                  ? `Cônjuge: ${member.spouse?.fullName || 'membro'} — também é candidato(a)`
-                                                  : `Cônjuge: ${member.spouse?.fullName || 'membro'} (fora desta lista)`
-                                              }
+                                              title={`Cônjuge: ${member.spouse?.fullName || 'membro'} — também participa desta pastoral`}
                                             >
                                               {' '}
                                               💍
@@ -3352,14 +3374,10 @@ const SchedulesPage: React.FC = () => {
                                   Faltas {member.history.noShowCount}
                                 </span>
                                 <span className="status-pill status-rate">30d {member.load.upcoming30DaysCount}</span>
-                                {member.spouseId && (
+                                {spouseInCurrentPastoral(member) && (
                                   <span
                                     className="couple-chip"
-                                    title={
-                                      spouseCandidateOf(member)
-                                        ? `Cônjuge: ${member.spouse?.fullName || 'membro'} — também é candidato(a) desta escala`
-                                        : `Cônjuge: ${member.spouse?.fullName || 'membro'} (fora desta lista)`
-                                    }
+                                    title={`Cônjuge: ${member.spouse?.fullName || 'membro'} — também participa desta pastoral`}
                                   >
                                     💍 {member.spouse?.fullName?.split(' ')[0] || 'casado(a)'}
                                   </span>
