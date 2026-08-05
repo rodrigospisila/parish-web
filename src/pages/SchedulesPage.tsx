@@ -209,6 +209,8 @@ interface CandidatePastoralSummary {
   requiredPeople: number;
   assignedCount: number;
   remainingPeople: number | null;
+  /** Regra da pastoral: casais servem juntos */
+  scheduleCouplesTogether?: boolean;
 }
 
 interface CandidatePastoralMembership {
@@ -251,6 +253,7 @@ interface CandidateMember {
   email?: string;
   phone?: string;
   photoUrl?: string;
+  spouseId?: string | null;
   pastorals: CandidatePastoralMembership[];
   currentScheduleAssigned: boolean;
   conflicts: {
@@ -593,6 +596,8 @@ const SchedulesPage: React.FC = () => {
   const [rotationLoading, setRotationLoading] = useState(false);
   // Vagas definidas na geração do rodízio: scheduleId -> (communityPastoralId -> vagas)
   const [rotationSlots, setRotationSlots] = useState<Record<string, Record<string, number>>>({});
+  // Casais juntos (aplica nas pastorais com a regra ativa)
+  const [rotationCouples, setRotationCouples] = useState(true);
 
   // Edição de vagas da escala (detalhe)
   const [slotsEdit, setSlotsEdit] = useState<null | {
@@ -1026,7 +1031,12 @@ const SchedulesPage: React.FC = () => {
     try {
       const response = await axios.post<RotationResponse>(
         `${API_URL}/schedules/generate`,
-        { scheduleIds: rotationSelection, dryRun, slotOverrides: buildSlotOverrides() },
+        {
+          scheduleIds: rotationSelection,
+          dryRun,
+          slotOverrides: buildSlotOverrides(),
+          couplesTogether: rotationCouples,
+        },
         { headers },
       );
       setRotationPreview(response.data);
@@ -1452,6 +1462,10 @@ const SchedulesPage: React.FC = () => {
     }
   };
 
+  /** Cônjuge do candidato quando ele também está na lista de candidatos. */
+  const spouseCandidateOf = (member: CandidateMember) =>
+    member.spouseId ? (candidates?.members.find((m) => m.id === member.spouseId) ?? null) : null;
+
   const createAssignment = async (memberIdOverride?: string, roleOverride?: string, keepOpen = false) => {
     if (!activeSchedule) {
       notify.warning('Selecione uma escala');
@@ -1535,6 +1549,47 @@ const SchedulesPage: React.FC = () => {
           notify.error('Novo membro escalado, mas não foi possível remover o anterior — remova manualmente.');
         }
         setReplaceTarget(null);
+      }
+
+      // 💍 Casais juntos: oferece escalar o cônjuge quando a regra da pastoral está ativa
+      if (!replaceTarget && candidates) {
+        const justAssigned = candidates.members.find((m) => m.id === memberId);
+        const pastoralRule = candidates.pastorals.find(
+          (p) => p.communityPastoralId === assignmentForm.communityPastoralId,
+        )?.scheduleCouplesTogether;
+        const spouse = justAssigned?.spouseId
+          ? candidates.members.find((m) => m.id === justAssigned.spouseId)
+          : null;
+        const spouseInPastoral = spouse?.pastorals?.some(
+          (p) => p.communityPastoralId === assignmentForm.communityPastoralId,
+        );
+        const spouseAlreadyAssigned = spouse
+          ? activeSchedule.assignments.some((a) => a.member.id === spouse.id)
+          : false;
+        if (pastoralRule && spouse && spouseInPastoral && !spouseAlreadyAssigned) {
+          const wantsSpouse = await confirm.action(
+            '💍 Escalar o casal junto?',
+            `${justAssigned!.fullName} é casado(a) com ${spouse.fullName}, que também é candidato(a) desta pastoral. Escalar o cônjuge na mesma função?`,
+            'Escalar cônjuge',
+          );
+          if (wantsSpouse) {
+            try {
+              await axios.post(
+                `${API_URL}/schedules/assignments`,
+                {
+                  scheduleId: activeSchedule.id,
+                  memberId: spouse.id,
+                  role: role.trim(),
+                  communityPastoralId: assignmentForm.communityPastoralId || undefined,
+                },
+                { headers },
+              );
+              notify.success(`Cônjuge ${spouse.fullName} escalado(a) junto.`);
+            } catch (error: any) {
+              notify.error(error.response?.data?.message || 'Não foi possível escalar o cônjuge');
+            }
+          }
+        }
       }
 
       if (keepOpen) {
@@ -3008,7 +3063,17 @@ const SchedulesPage: React.FC = () => {
                                         {member.fullName.charAt(0).toUpperCase()}
                                       </span>
                                       <span className="assign-row-member-copy">
-                                        <strong>{member.fullName}</strong>
+                                        <strong>
+                                          {member.fullName}
+                                          {spouseCandidateOf(member) && (
+                                            <span
+                                              title={`Cônjuge: ${spouseCandidateOf(member)!.fullName} também é candidato(a)`}
+                                            >
+                                              {' '}
+                                              💍
+                                            </span>
+                                          )}
+                                        </strong>
                                         <small>{member.email || member.phone || 'Sem contato'}</small>
                                       </span>
                                     </div>
@@ -3155,6 +3220,14 @@ const SchedulesPage: React.FC = () => {
                                   Faltas {member.history.noShowCount}
                                 </span>
                                 <span className="status-pill status-rate">30d {member.load.upcoming30DaysCount}</span>
+                                {spouseCandidateOf(member) && (
+                                  <span
+                                    className="status-pill status-rate"
+                                    title={`Cônjuge: ${spouseCandidateOf(member)!.fullName} também é candidato(a)`}
+                                  >
+                                    💍 casal
+                                  </span>
+                                )}
                               </div>
 
                               <p className="candidate-inline-summary">{primaryReason} • {availabilitySummary}</p>
@@ -3452,6 +3525,30 @@ const SchedulesPage: React.FC = () => {
                   </label>
                 ))}
             </div>
+
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                margin: '0 0 1rem',
+                cursor: 'pointer',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                color: '#33475b',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={rotationCouples}
+                onChange={(event) => {
+                  setRotationCouples(event.target.checked);
+                  setRotationPreview(null);
+                }}
+                style={{ width: 16, height: 16 }}
+              />
+              💍 Escalar casais juntos (nas pastorais com a regra ativa)
+            </label>
 
             {rotationPreview && (
               <div style={{ marginBottom: '1rem' }}>

@@ -38,6 +38,8 @@ interface Member {
   state?: string;
   fatherName?: string;
   motherName?: string;
+  spouseId?: string;
+  spouse?: { id: string; fullName: string };
   photoUrl?: string;
   memberType?: MemberType;
   emergencyContactName?: string;
@@ -174,6 +176,7 @@ const MembersPage: React.FC = () => {
     state: '',
     fatherName: '',
     motherName: '',
+    spouseId: '',
     communityId: '',
     status: 'ACTIVE' as MemberStatus,
     memberType: '' as '' | MemberType,
@@ -227,6 +230,8 @@ const MembersPage: React.FC = () => {
         maritalStatus: formData.maritalStatus || undefined,
         memberType: formData.memberType || undefined,
         birthDate: formData.birthDate ? new Date(formData.birthDate).toISOString() : undefined,
+        // Cônjuge: null remove o vínculo (o backend sincroniza os dois lados)
+        spouseId: formData.spouseId || null,
       };
 
       if (editingMember) {
@@ -273,6 +278,7 @@ const MembersPage: React.FC = () => {
       state: member.state || '',
       fatherName: member.fatherName || '',
       motherName: member.motherName || '',
+      spouseId: member.spouseId || member.spouse?.id || '',
       communityId: member.community.id,
       status: member.status,
       memberType: member.memberType || '',
@@ -320,6 +326,7 @@ const MembersPage: React.FC = () => {
       state: '',
       fatherName: '',
       motherName: '',
+      spouseId: '',
       communityId: '',
       status: 'ACTIVE',
       memberType: '',
@@ -880,6 +887,24 @@ const MembersPage: React.FC = () => {
                       onChange={(e) => setFormData({ ...formData, motherName: e.target.value })}
                     />
                   </div>
+                </div>
+
+                <div className="form-group">
+                  <label>💍 Cônjuge (membro cadastrado)</label>
+                  <SearchSelect
+                    options={members
+                      .filter((m) => m.id !== editingMember?.id)
+                      .filter((m) => !formData.communityId || m.community?.id === formData.communityId)
+                      .map((m) => ({ value: m.id, label: m.fullName, sublabel: m.community?.name }))}
+                    value={formData.spouseId}
+                    onChange={(spouseId) => setFormData({ ...formData, spouseId })}
+                    placeholder="Sem cônjuge vinculado"
+                    allOption
+                    searchPlaceholder="Buscar membro..."
+                  />
+                  <small style={{ color: '#8b97a4' }}>
+                    O vínculo vale nos dois sentidos e é usado pela regra “casais servem juntos” das escalas.
+                  </small>
                 </div>
               </fieldset>
 

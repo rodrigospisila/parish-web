@@ -34,6 +34,7 @@ interface CommunityPastoral {
   notes?: string;
   foundedAt?: string;
   status: string;
+  scheduleCouplesTogether?: boolean;
   globalPastoral: GlobalPastoral;
   community: Community;
   members: any[];
@@ -61,6 +62,7 @@ const CommunityPastoralsPage: React.FC = () => {
     notes: '',
     foundedAt: '',
     status: 'ACTIVE',
+    scheduleCouplesTogether: false,
   });
 
   // Verificar se o usuário pode gerenciar pastorais
@@ -144,6 +146,7 @@ const CommunityPastoralsPage: React.FC = () => {
         photoUrl: formData.photoUrl.trim() || null,
         notes: formData.notes.trim() || null,
         foundedAt: formData.foundedAt || null,
+        scheduleCouplesTogether: formData.scheduleCouplesTogether,
       };
 
       await axios[method](url, payload, {
@@ -171,6 +174,7 @@ const CommunityPastoralsPage: React.FC = () => {
       notes: pastoral.notes || '',
       foundedAt: pastoral.foundedAt ? pastoral.foundedAt.split('T')[0] : '',
       status: pastoral.status,
+      scheduleCouplesTogether: pastoral.scheduleCouplesTogether ?? false,
     });
     setShowModal(true);
   };
@@ -202,6 +206,7 @@ const CommunityPastoralsPage: React.FC = () => {
       notes: '',
       foundedAt: '',
       status: 'ACTIVE',
+      scheduleCouplesTogether: false,
     });
     setEditingPastoral(null);
   };
@@ -427,6 +432,22 @@ const CommunityPastoralsPage: React.FC = () => {
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   rows={2}
                 />
+              </div>
+
+              <div className="form-group" style={{ background: '#eaf4ff', border: '1px solid #b6d4fe', borderRadius: 10, padding: '10px 12px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, margin: 0, cursor: 'pointer', fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    checked={formData.scheduleCouplesTogether}
+                    onChange={(e) => setFormData({ ...formData, scheduleCouplesTogether: e.target.checked })}
+                    style={{ width: 18, height: 18 }}
+                  />
+                  💍 Casais servem juntos
+                </label>
+                <small style={{ display: 'block', color: '#52606d', marginTop: 4, marginLeft: 28 }}>
+                  O rodízio/preenchimento automático tenta escalar o cônjuge na mesma escala (quando houver vaga).
+                  Os cônjuges são vinculados no cadastro de membros.
+                </small>
               </div>
 
               <div className="form-actions">
