@@ -151,7 +151,25 @@ interface OverviewAssignment {
   checkedInAt?: string;
   /** O membro tem pedido de troca em aberto para esta atribuição */
   hasPendingSwap?: boolean;
+  /** Mensagem do pedido de troca mais recente (motivo informado pelo membro) */
+  pendingSwapMessage?: string | null;
 }
+
+/** Texto do tooltip do alerta de troca (inclui a mensagem, quando houver). */
+const swapTooltip = (assignment: OverviewAssignment) =>
+  assignment.pendingSwapMessage
+    ? `Pediu troca: “${assignment.pendingSwapMessage}”`
+    : 'Pediu troca desta escala (sem mensagem)';
+
+/** Resumo dos pedidos de troca de uma escala, um por linha (tooltip do cabeçalho). */
+const swapSummaryTooltip = (assignments: OverviewAssignment[]) =>
+  assignments
+    .filter((assignment) => assignment.hasPendingSwap)
+    .map(
+      (assignment) =>
+        `${assignment.memberName}${assignment.pendingSwapMessage ? `: “${assignment.pendingSwapMessage}”` : ''}`,
+    )
+    .join('\n');
 
 interface OverviewItem {
   scheduleId: string;
@@ -1768,7 +1786,10 @@ const SchedulesPage: React.FC = () => {
                               {time !== '00:00' && <span className="cal-pill-time">{time}</span>}
                               <span className="cal-pill-title">{item.title.replace(/^Escala - /, '')}</span>
                               {(item.counts.swapsPending ?? 0) > 0 && (
-                                <span className="cal-pill-swap" title={`${item.counts.swapsPending} pedido(s) de troca em aberto`}>
+                                <span
+                                  className="cal-pill-swap"
+                                  title={`Pedido(s) de troca em aberto:\n${swapSummaryTooltip(item.assignments)}`}
+                                >
                                   🔁
                                 </span>
                               )}
@@ -1787,11 +1808,15 @@ const SchedulesPage: React.FC = () => {
                                       <span
                                         key={assignment.id}
                                         className="cal-member-row"
-                                        title={`${assignment.memberName} — ${assignment.role}${assignment.hasPendingSwap ? ' · pediu troca' : ''}`}
+                                        title={`${assignment.memberName} — ${assignment.role}${
+                                          assignment.hasPendingSwap ? ` · ${swapTooltip(assignment)}` : ''
+                                        }`}
                                       >
                                         <span className="cal-member-name">{assignment.memberName}</span>
                                         {assignment.hasPendingSwap && (
-                                          <span className="cal-member-badge st-swap">🔁</span>
+                                          <span className="cal-member-badge st-swap" title={swapTooltip(assignment)}>
+                                            🔁
+                                          </span>
                                         )}
                                         <span className={`cal-member-badge ${status.cls}`}>{status.label}</span>
                                       </span>
@@ -1837,7 +1862,7 @@ const SchedulesPage: React.FC = () => {
                             <em>{assignment.role}</em>
                             <span className={`overview-member-status ${status.cls}`}>{status.label}</span>
                             {assignment.hasPendingSwap && (
-                              <span className="overview-member-status st-swap" title="Este membro pediu troca desta escala">
+                              <span className="overview-member-status st-swap" title={swapTooltip(assignment)}>
                                 🔁 Troca
                               </span>
                             )}
@@ -1900,7 +1925,7 @@ const SchedulesPage: React.FC = () => {
                                   {(item.counts.swapsPending ?? 0) > 0 && (
                                     <span
                                       className="overview-swap-chip"
-                                      title="Há membro(s) com pedido de troca em aberto nesta escala"
+                                      title={`Pedido(s) de troca em aberto:\n${swapSummaryTooltip(item.assignments)}`}
                                     >
                                       🔁 {item.counts.swapsPending} troca{(item.counts.swapsPending ?? 0) > 1 ? 's' : ''}
                                     </span>
@@ -1934,7 +1959,7 @@ const SchedulesPage: React.FC = () => {
                                         <em>{assignment.role}</em>
                                         <span className={`overview-member-status ${status.cls}`}>{status.label}</span>
                                         {assignment.hasPendingSwap && (
-                                          <span className="overview-member-status st-swap" title="Este membro pediu troca desta escala">
+                                          <span className="overview-member-status st-swap" title={swapTooltip(assignment)}>
                                             🔁 Troca
                                           </span>
                                         )}
@@ -1970,7 +1995,10 @@ const SchedulesPage: React.FC = () => {
                         </span>
                       )}
                       {(item.counts.swapsPending ?? 0) > 0 && (
-                        <span className="overview-swap-chip" title="Há membro(s) com pedido de troca em aberto nesta escala">
+                        <span
+                          className="overview-swap-chip"
+                          title={`Pedido(s) de troca em aberto:\n${swapSummaryTooltip(item.assignments)}`}
+                        >
                           🔁 {item.counts.swapsPending} troca{(item.counts.swapsPending ?? 0) > 1 ? 's' : ''}
                         </span>
                       )}
