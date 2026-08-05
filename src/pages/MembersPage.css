@@ -755,3 +755,10 @@ fieldset legend {
     max-height: 96vh;
   }
 }
+
+/* Título branco no header navy — especificidade reforçada: vários CSS de página
+   definem ".modal-content h2 { color: #2c3e50 }" e a ordem do bundle varia. */
+.modal-content.member-modal .member-modal-header h2 {
+  color: #fff;
+  margin: 0;
+}
