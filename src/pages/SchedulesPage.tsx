@@ -159,6 +159,13 @@ interface OverviewAssignment {
   pendingSwapMessage?: string | null;
 }
 
+/** Link do WhatsApp a partir de um telefone BR (adiciona 55 quando faltar o DDI). */
+const whatsappUrl = (phone: string) => {
+  const digits = phone.replace(/\D/g, '');
+  const full = digits.startsWith('55') && digits.length >= 12 ? digits : `55${digits}`;
+  return `https://wa.me/${full}`;
+};
+
 /** Texto do tooltip do alerta de troca (inclui a mensagem, quando houver). */
 const swapTooltip = (assignment: OverviewAssignment) =>
   assignment.pendingSwapMessage
@@ -2740,7 +2747,14 @@ const SchedulesPage: React.FC = () => {
                           </span>
                           <span className="member-contacts">
                             {assignment.member.phone ? (
-                              <a href={`tel:${assignment.member.phone}`}>📞 {assignment.member.phone}</a>
+                              <a
+                                href={whatsappUrl(assignment.member.phone)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Conversar no WhatsApp"
+                              >
+                                💬 {assignment.member.phone}
+                              </a>
                             ) : (
                               <span className="muted">📞 sem telefone</span>
                             )}
