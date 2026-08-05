@@ -3805,3 +3805,53 @@ tr.overview-row.is-open td {
     align-items: flex-start;
   }
 }
+
+/* Cards de pastoral: destaque de vagas em aberto / completa / sem limite */
+.pastoral-progress-card.has-open {
+  border-color: #f2c063;
+  background: #fffaf0;
+  box-shadow: inset 3px 0 0 #c78216;
+}
+
+.pastoral-open-cta {
+  display: inline-block;
+  margin-top: 4px;
+  color: #075aa9;
+  font-weight: 800;
+}
+
+.pastoral-progress-card.has-open:hover {
+  border-color: #c78216;
+}
+
+.pastoral-progress-card.is-full {
+  border-color: #cdebd9;
+  background: #f4fbf7;
+}
+
+.pastoral-full-tag {
+  display: inline-block;
+  margin-top: 4px;
+  color: #2e9d62;
+  font-weight: 800;
+}
+
+/* Botão discreto para pastorais sem limite de vagas */
+.manage-add-people {
+  width: 100%;
+  margin-top: 0.9rem;
+  min-height: 42px;
+  border: 1.5px dashed #b6cbe0;
+  border-radius: 10px;
+  background: transparent;
+  color: #075aa9;
+  font-weight: 800;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.manage-add-people:hover {
+  background: #eaf4ff;
+  border-color: #075aa9;
+}

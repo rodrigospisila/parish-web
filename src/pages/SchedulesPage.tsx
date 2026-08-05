@@ -2556,38 +2556,53 @@ const SchedulesPage: React.FC = () => {
                 <p className="manage-side-hint">Clique numa pastoral para preencher as vagas dela.</p>
               <div className="pastoral-progress-grid">
                 {detailPastoralProgress.length > 0 ? (
-                  detailPastoralProgress.map((pastoral) => (
-                    <button
-                      key={pastoral.communityPastoralId}
-                      type="button"
-                      className="pastoral-progress-card"
-                      onClick={() => void openAssign(activeSchedule, pastoral.communityPastoralId)}
-                    >
-                      <strong>{pastoral.name}</strong>
-                      <span>
-                        {pastoral.requiredPeople > 0
-                          ? `${pastoral.assignedCount}/${pastoral.requiredPeople} preenchidos`
-                          : `${pastoral.assignedCount} membros escalados`}
-                      </span>
-                      <small>
-                        {pastoral.remainingPeople !== null
-                          ? `${pastoral.remainingPeople} vaga(s) restante(s)`
-                          : pastoral.role || 'Sem limite definido'}
-                      </small>
-                    </button>
-                  ))
+                  detailPastoralProgress.map((pastoral) => {
+                    const hasOpenSlots = pastoral.remainingPeople !== null && pastoral.remainingPeople > 0;
+                    const isFull = pastoral.requiredPeople > 0 && pastoral.remainingPeople === 0;
+                    return (
+                      <button
+                        key={pastoral.communityPastoralId}
+                        type="button"
+                        className={`pastoral-progress-card${hasOpenSlots ? ' has-open' : ''}${isFull ? ' is-full' : ''}`}
+                        onClick={() => void openAssign(activeSchedule, pastoral.communityPastoralId)}
+                        title={
+                          hasOpenSlots
+                            ? `Preencher as vagas de ${pastoral.name}`
+                            : `Escalar pessoas em ${pastoral.name}`
+                        }
+                      >
+                        <strong>{pastoral.name}</strong>
+                        <span>
+                          {pastoral.requiredPeople > 0
+                            ? `${pastoral.assignedCount}/${pastoral.requiredPeople} preenchidos`
+                            : `${pastoral.assignedCount} membro(s) escalado(s)`}
+                        </span>
+                        {hasOpenSlots ? (
+                          <small className="pastoral-open-cta">
+                            ➕ Preencher {pastoral.remainingPeople} vaga{(pastoral.remainingPeople ?? 0) > 1 ? 's' : ''} em aberto
+                          </small>
+                        ) : isFull ? (
+                          <small className="pastoral-full-tag">✓ Completa</small>
+                        ) : (
+                          <small>{pastoral.role || 'Sem limite de vagas definido'}</small>
+                        )}
+                      </button>
+                    );
+                  })
                 ) : (
                   <p className="coordinator-no-members">Sem pastoral vinculada para esta escala.</p>
                 )}
               </div>
 
-                <button
-                  className="manage-fill-btn"
-                  type="button"
-                  onClick={() => void openAssign(activeSchedule)}
-                >
-                  ➕ Preencher vaga
-                </button>
+                {detailPastoralProgress.some((pastoral) => pastoral.requiredPeople === 0) && (
+                  <button
+                    className="manage-add-people"
+                    type="button"
+                    onClick={() => void openAssign(activeSchedule)}
+                  >
+                    ➕ Adicionar mais pessoas
+                  </button>
+                )}
               </aside>
 
               <section className="manage-main">
