@@ -35,6 +35,7 @@ interface CommunityPastoral {
   foundedAt?: string;
   status: string;
   scheduleCouplesTogether?: boolean;
+  scheduleByGroup?: boolean;
   globalPastoral: GlobalPastoral;
   community: Community;
   members: any[];
@@ -63,6 +64,7 @@ const CommunityPastoralsPage: React.FC = () => {
     foundedAt: '',
     status: 'ACTIVE',
     scheduleCouplesTogether: false,
+    scheduleByGroup: false,
   });
 
   // Verificar se o usuário pode gerenciar pastorais
@@ -147,6 +149,7 @@ const CommunityPastoralsPage: React.FC = () => {
         notes: formData.notes.trim() || null,
         foundedAt: formData.foundedAt || null,
         scheduleCouplesTogether: formData.scheduleCouplesTogether,
+        scheduleByGroup: formData.scheduleByGroup,
       };
 
       await axios[method](url, payload, {
@@ -175,6 +178,7 @@ const CommunityPastoralsPage: React.FC = () => {
       foundedAt: pastoral.foundedAt ? pastoral.foundedAt.split('T')[0] : '',
       status: pastoral.status,
       scheduleCouplesTogether: pastoral.scheduleCouplesTogether ?? false,
+      scheduleByGroup: pastoral.scheduleByGroup ?? false,
     });
     setShowModal(true);
   };
@@ -207,6 +211,7 @@ const CommunityPastoralsPage: React.FC = () => {
       foundedAt: '',
       status: 'ACTIVE',
       scheduleCouplesTogether: false,
+      scheduleByGroup: false,
     });
     setEditingPastoral(null);
   };
@@ -447,6 +452,22 @@ const CommunityPastoralsPage: React.FC = () => {
                 <small style={{ display: 'block', color: '#52606d', marginTop: 4, marginLeft: 28 }}>
                   O rodízio/preenchimento automático tenta escalar o cônjuge na mesma escala (quando houver vaga).
                   Os cônjuges são vinculados no cadastro de membros.
+                </small>
+              </div>
+
+              <div className="form-group" style={{ background: '#fdf6e9', border: '1px solid #f2dcae', borderRadius: 10, padding: '10px 12px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, margin: 0, cursor: 'pointer', fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    checked={formData.scheduleByGroup}
+                    onChange={(e) => setFormData({ ...formData, scheduleByGroup: e.target.checked })}
+                    style={{ width: 18, height: 18 }}
+                  />
+                  🎵 Escala por grupos/equipes
+                </label>
+                <small style={{ display: 'block', color: '#52606d', marginTop: 4, marginLeft: 28 }}>
+                  As escalas desta pastoral escalam GRUPOS inteiros (ex.: bandas, corais) em vez de pessoas — as
+                  vagas passam a contar grupos. Os grupos são cadastrados no detalhe da pastoral.
                 </small>
               </div>
 

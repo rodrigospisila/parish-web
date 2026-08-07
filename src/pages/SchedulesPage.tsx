@@ -29,6 +29,7 @@ interface SchedulePastoralInfo {
   communityPastoral?: {
     id: string;
     scheduleCouplesTogether?: boolean;
+    scheduleByGroup?: boolean;
     globalPastoral?: { id: string; name: string } | null;
   } | null;
 }
@@ -142,6 +143,8 @@ interface Assignment {
   swapRequests?: Array<{ id: string; message?: string | null; createdAt?: string }>;
   /** O cônjuge participa da mesma pastoral desta atribuição */
   spouseInSamePastoral?: boolean;
+  /** Grupo escalado como unidade (pastorais por grupos) */
+  pastoralGroup?: { id: string; name: string } | null;
   communityPastoral?: {
     id: string;
     globalPastoral?: {
@@ -235,6 +238,17 @@ interface CandidatePastoralSummary {
   remainingPeople: number | null;
   /** Regra da pastoral: casais servem juntos */
   scheduleCouplesTogether?: boolean;
+  /** Regra da pastoral: escala grupos/equipes em vez de pessoas */
+  scheduleByGroup?: boolean;
+}
+
+interface CandidateGroupSummary {
+  id: string;
+  name: string;
+  communityPastoralId: string;
+  membersCount: number;
+  leaderName?: string | null;
+  alreadyAssigned: boolean;
 }
 
 interface CandidatePastoralMembership {
@@ -331,6 +345,8 @@ interface ScheduleCandidatesResponse {
     };
   };
   pastorals: CandidatePastoralSummary[];
+  /** Grupos das pastorais que escalam por grupo */
+  groups?: CandidateGroupSummary[];
   hasPastorals: boolean;
   availabilityFeatureEnabled: boolean;
   members: CandidateMember[];
@@ -507,10 +523,33 @@ const getPastoralProgress = (schedule: Schedule) => {
     const assignedCount = schedule.assignments.filter(
       (assignment) => assignment.communityPastoral?.id === item.communityPastoralId,
     ).length;
+
+    // Pastoral que escala por GRUPOS: o progresso conta grupos distintos
+    const byGroup = Boolean(
+      schedule.pastorals?.find(
+        (pastoral) => pastoral.communityPastoralId === item.communityPastoralId,
+      )?.communityPastoral?.scheduleByGroup,
+    );
+    const groupsAssigned = byGroup
+      ? new Set(
+          schedule.assignments
+            .filter(
+              (assignment) =>
+                assignment.communityPastoral?.id === item.communityPastoralId &&
+                assignment.pastoralGroup,
+            )
+            .map((assignment) => assignment.pastoralGroup!.id),
+        ).size
+      : 0;
+    const effectiveAssigned = byGroup ? groupsAssigned : assignedCount;
+
     return {
       ...item,
-      assignedCount,
-      remainingPeople: item.requiredPeople > 0 ? Math.max(item.requiredPeople - assignedCount, 0) : null,
+      assignedCount: effectiveAssigned,
+      remainingPeople:
+        item.requiredPeople > 0 ? Math.max(item.requiredPeople - effectiveAssigned, 0) : null,
+      byGroup,
+      peopleAssigned: assignedCount,
     };
   });
 };
@@ -1565,6 +1604,83 @@ const SchedulesPage: React.FC = () => {
       }
     }
     setAssignTarget(null);
+  };
+
+  // ===== 🎵 Grupos/equipes (pastorais com scheduleByGroup) =====
+  const [groupPickerPastoralId, setGroupPickerPastoralId] = useState<string | null>(null);
+  const [assigningGroupId, setAssigningGroupId] = useState<string | null>(null);
+
+  const openGroupPicker = async (pastoralId: string) => {
+    if (!activeSchedule) return;
+    setGroupPickerPastoralId(pastoralId);
+    if (!candidates || candidates.scheduleId !== activeSchedule.id) {
+      await loadScheduleCandidates(activeSchedule.id, pastoralId, { preservePastoralId: pastoralId });
+    }
+  };
+
+  const handleAssignGroup = async (group: CandidateGroupSummary) => {
+    if (!activeSchedule) return;
+    setAssigningGroupId(group.id);
+    try {
+      const response = await axios.post(
+        `${API_URL}/schedules/assignments/group`,
+        { scheduleId: activeSchedule.id, pastoralGroupId: group.id },
+        { headers },
+      );
+      const created = response.data?.created ?? 0;
+      notify.success(`🎵 Grupo "${group.name}" escalado (${created} integrante(s)).`);
+      setGroupPickerPastoralId(null);
+      await fetchScheduleById(activeSchedule.id, true);
+      fetchData();
+      await loadScheduleCandidates(activeSchedule.id, group.communityPastoralId, {
+        preservePastoralId: group.communityPastoralId,
+      });
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Não foi possível escalar o grupo');
+    } finally {
+      setAssigningGroupId(null);
+    }
+  };
+
+  const handleRemoveGroup = async (groupId: string, groupName: string) => {
+    if (!activeSchedule) return;
+    const ok = await confirm.action(
+      'Remover grupo da escala',
+      `Remover o grupo "${groupName}" e todos os seus integrantes desta escala?`,
+      'Remover grupo',
+    );
+    if (!ok) return;
+    try {
+      await axios.delete(`${API_URL}/schedules/assignments/group`, {
+        headers,
+        params: { scheduleId: activeSchedule.id, pastoralGroupId: groupId },
+      });
+      notify.success(`Grupo "${groupName}" removido da escala.`);
+      await fetchScheduleById(activeSchedule.id, true);
+      fetchData();
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Não foi possível remover o grupo');
+    }
+  };
+
+  /** Grupos escalados numa pastoral (nome + nº de integrantes), a partir das atribuições. */
+  const assignedGroupsFor = (pastoralId: string) => {
+    if (!activeSchedule) return [] as Array<{ id: string; name: string; count: number }>;
+    const map = new Map<string, { id: string; name: string; count: number }>();
+    for (const assignment of activeSchedule.assignments) {
+      if (assignment.communityPastoral?.id !== pastoralId || !assignment.pastoralGroup) continue;
+      const current = map.get(assignment.pastoralGroup.id);
+      if (current) {
+        current.count += 1;
+      } else {
+        map.set(assignment.pastoralGroup.id, {
+          id: assignment.pastoralGroup.id,
+          name: assignment.pastoralGroup.name,
+          count: 1,
+        });
+      }
+    }
+    return Array.from(map.values());
   };
 
   /** Escala o cônjuge do membro em 1 clique (mesma pastoral e mesma função). */
@@ -2848,34 +2964,69 @@ const SchedulesPage: React.FC = () => {
                   detailPastoralProgress.map((pastoral) => {
                     const hasOpenSlots = pastoral.remainingPeople !== null && pastoral.remainingPeople > 0;
                     const isFull = pastoral.requiredPeople > 0 && pastoral.remainingPeople === 0;
+                    const unit = pastoral.byGroup ? 'grupo(s)' : 'preenchidos';
+                    const scheduledGroups = pastoral.byGroup
+                      ? assignedGroupsFor(pastoral.communityPastoralId)
+                      : [];
                     return (
-                      <button
-                        key={pastoral.communityPastoralId}
-                        type="button"
-                        className={`pastoral-progress-card${hasOpenSlots ? ' has-open' : ''}${isFull ? ' is-full' : ''}`}
-                        onClick={() => void openAssign(activeSchedule, pastoral.communityPastoralId)}
-                        title={
-                          hasOpenSlots
-                            ? `Preencher as vagas de ${pastoral.name}`
-                            : `Escalar pessoas em ${pastoral.name}`
-                        }
-                      >
-                        <strong>{pastoral.name}</strong>
-                        <span>
-                          {pastoral.requiredPeople > 0
-                            ? `${pastoral.assignedCount}/${pastoral.requiredPeople} preenchidos`
-                            : `${pastoral.assignedCount} membro(s) escalado(s)`}
-                        </span>
-                        {hasOpenSlots ? (
-                          <small className="pastoral-open-cta">
-                            ➕ Preencher {pastoral.remainingPeople} vaga{(pastoral.remainingPeople ?? 0) > 1 ? 's' : ''} em aberto
-                          </small>
-                        ) : isFull ? (
-                          <small className="pastoral-full-tag">✓ Completa</small>
-                        ) : (
-                          <small>{pastoral.role || 'Sem limite de vagas definido'}</small>
+                      <div key={pastoral.communityPastoralId} className="pastoral-progress-item">
+                        <button
+                          type="button"
+                          className={`pastoral-progress-card${hasOpenSlots ? ' has-open' : ''}${isFull ? ' is-full' : ''}`}
+                          onClick={() =>
+                            pastoral.byGroup
+                              ? void openGroupPicker(pastoral.communityPastoralId)
+                              : void openAssign(activeSchedule, pastoral.communityPastoralId)
+                          }
+                          title={
+                            pastoral.byGroup
+                              ? `Escalar um grupo em ${pastoral.name}`
+                              : hasOpenSlots
+                                ? `Preencher as vagas de ${pastoral.name}`
+                                : `Escalar pessoas em ${pastoral.name}`
+                          }
+                        >
+                          <strong>
+                            {pastoral.byGroup ? '🎵 ' : ''}
+                            {pastoral.name}
+                          </strong>
+                          <span>
+                            {pastoral.requiredPeople > 0
+                              ? `${pastoral.assignedCount}/${pastoral.requiredPeople} ${unit}`
+                              : pastoral.byGroup
+                                ? `${pastoral.assignedCount} grupo(s) escalado(s)`
+                                : `${pastoral.assignedCount} membro(s) escalado(s)`}
+                          </span>
+                          {hasOpenSlots ? (
+                            <small className="pastoral-open-cta">
+                              {pastoral.byGroup
+                                ? `➕ Escalar grupo (${pastoral.remainingPeople} vaga${(pastoral.remainingPeople ?? 0) > 1 ? 's' : ''})`
+                                : `➕ Preencher ${pastoral.remainingPeople} vaga${(pastoral.remainingPeople ?? 0) > 1 ? 's' : ''} em aberto`}
+                            </small>
+                          ) : isFull ? (
+                            <small className="pastoral-full-tag">✓ Completa</small>
+                          ) : (
+                            <small>{pastoral.role || 'Sem limite de vagas definido'}</small>
+                          )}
+                        </button>
+                        {scheduledGroups.length > 0 && (
+                          <div className="side-group-chips">
+                            {scheduledGroups.map((group) => (
+                              <span key={group.id} className="side-group-chip">
+                                🎵 {group.name} ({group.count})
+                                <button
+                                  type="button"
+                                  className="side-group-remove"
+                                  title={`Remover o grupo ${group.name} da escala`}
+                                  onClick={() => void handleRemoveGroup(group.id, group.name)}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
                         )}
-                      </button>
+                      </div>
                     );
                   })
                 ) : (
@@ -2981,6 +3132,11 @@ const SchedulesPage: React.FC = () => {
                             <span className="member-pastoral">
                               {assignment.communityPastoral?.globalPastoral?.name || 'Pastoral'}
                             </span>
+                            {assignment.pastoralGroup && (
+                              <span className="group-chip" title={`Escalado com o grupo ${assignment.pastoralGroup.name}`}>
+                                🎵 {assignment.pastoralGroup.name}
+                              </span>
+                            )}
                             {(() => {
                               const coupleName = coupleIn(
                                 assignment.member.spouseId,
@@ -3115,6 +3271,15 @@ const SchedulesPage: React.FC = () => {
                   </button>
                 </div>
               )}
+              {!replaceTarget &&
+                candidates?.pastorals.find(
+                  (p) => p.communityPastoralId === assignmentForm.communityPastoralId,
+                )?.scheduleByGroup && (
+                  <div className="assign-replace-banner" style={{ background: '#fdf6e9', borderColor: '#f2dcae', color: '#8a6d1b' }}>
+                    🎵 Esta pastoral escala por <strong>grupos</strong> — prefira “Escalar grupo” no painel de
+                    pastorais. Aqui você adiciona integrantes avulsos.
+                  </div>
+                )}
               {candidates && (
                 <p className="assign-modal-context">
                   {activeSchedule.title} • {toHumanDate(activeSchedule.date)}
@@ -3610,6 +3775,66 @@ const SchedulesPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {groupPickerPastoralId && activeSchedule && (
+        <div className="modal-overlay assign-target-overlay" onClick={() => setGroupPickerPastoralId(null)}>
+          <div className="modal-content assign-target-modal" onClick={(event) => event.stopPropagation()}>
+            <button className="modal-close" onClick={() => setGroupPickerPastoralId(null)}>
+              ×
+            </button>
+            <h2>🎵 Escalar grupo</h2>
+            <p className="assign-modal-context">
+              {candidates?.pastorals.find((p) => p.communityPastoralId === groupPickerPastoralId)?.name ||
+                'Pastoral'}{' '}
+              • {activeSchedule.title}
+            </p>
+            {!candidates ? (
+              <p className="loading">Carregando grupos...</p>
+            ) : (
+              (() => {
+                const pastoralGroups = (candidates.groups ?? []).filter(
+                  (group) => group.communityPastoralId === groupPickerPastoralId,
+                );
+                if (pastoralGroups.length === 0) {
+                  return (
+                    <p className="coordinator-no-members">
+                      Nenhum grupo cadastrado nesta pastoral. Cadastre os grupos no detalhe da pastoral
+                      (aba Pastorais).
+                    </p>
+                  );
+                }
+                return (
+                  <div className="group-picker-list">
+                    {pastoralGroups.map((group) => (
+                      <div key={group.id} className={`group-picker-row${group.alreadyAssigned ? ' is-assigned' : ''}`}>
+                        <div className="group-picker-info">
+                          <strong>🎵 {group.name}</strong>
+                          <small>
+                            {group.membersCount} integrante(s)
+                            {group.leaderName ? ` • Líder: ${group.leaderName}` : ''}
+                          </small>
+                        </div>
+                        {group.alreadyAssigned ? (
+                          <span className="pastoral-full-tag">✓ Escalado</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-small btn-submit"
+                            disabled={assigningGroupId === group.id || group.membersCount === 0}
+                            onClick={() => void handleAssignGroup(group)}
+                          >
+                            {assigningGroupId === group.id ? 'Escalando...' : 'Escalar grupo'}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()
+            )}
           </div>
         </div>
       )}

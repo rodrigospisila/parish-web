@@ -4183,3 +4183,84 @@ button.couple-chip.is-action:hover {
   background: #f8e3bd;
   border-color: #c78216;
 }
+
+/* ===== 🎵 Escala por grupos/equipes ===== */
+.pastoral-progress-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.side-group-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.side-group-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #fdf6e9;
+  border: 1px solid #f2dcae;
+  color: #8a6d1b;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.side-group-remove {
+  border: none;
+  background: transparent;
+  color: #b03a2e;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.group-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #fdf6e9;
+  border: 1px solid #f2dcae;
+  color: #8a6d1b;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.group-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.group-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.group-picker-row.is-assigned {
+  opacity: 0.75;
+}
+
+.group-picker-info strong {
+  display: block;
+  color: #17324d;
+}
+
+.group-picker-info small {
+  color: #8b97a4;
+}
