@@ -59,6 +59,8 @@ interface RotationSuggestion {
   memberName: string;
   score: number;
   spouseId?: string | null;
+  /** Sugestão de GRUPO (pastorais que escalam por grupo) */
+  pastoralGroupId?: string | null;
 }
 
 interface RotationGap {
@@ -77,6 +79,7 @@ interface RotationPreviewItem {
   noSlots?: boolean;
   allFilled?: boolean;
   coupleWarnings?: string[];
+  groupWarnings?: string[];
 }
 
 interface RotationResponse {
@@ -1107,6 +1110,10 @@ const SchedulesPage: React.FC = () => {
         const allCoupleWarnings = response.data.preview.flatMap((item) => item.coupleWarnings ?? []);
         if (allCoupleWarnings.length > 0) {
           notify.warning(`💍 ${allCoupleWarnings.join(' | ')}`);
+        }
+        const allGroupWarnings = response.data.preview.flatMap((item) => item.groupWarnings ?? []);
+        if (allGroupWarnings.length > 0) {
+          notify.warning(`🎵 ${allGroupWarnings.join(' | ')}`);
         }
         setShowRotationModal(false);
         setRotationPreview(null);
@@ -4153,6 +4160,15 @@ const SchedulesPage: React.FC = () => {
                           style={{ margin: '0.35rem 0 0 0', color: '#a96a0d', fontSize: '0.88rem' }}
                         >
                           💍 {warning} — abra a gestão para escalar o cônjuge (ou aumente as vagas).
+                        </p>
+                      ))}
+                    {(item.groupWarnings?.length ?? 0) > 0 &&
+                      item.groupWarnings!.map((warning, warningIndex) => (
+                        <p
+                          key={`g-${warningIndex}`}
+                          style={{ margin: '0.35rem 0 0 0', color: '#a96a0d', fontSize: '0.88rem' }}
+                        >
+                          🎵 {warning}.
                         </p>
                       ))}
                   </div>
