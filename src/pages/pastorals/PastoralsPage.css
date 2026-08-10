@@ -1498,3 +1498,99 @@
   background: #fdeaea;
   border-color: #c53b42;
 }
+
+/* ===== Página de detalhe da pastoral — botões no padrão compacto ===== */
+.community-pastoral-page .add-button,
+.community-pastoral-page .edit-button,
+.community-pastoral-page .remove-button,
+.community-pastoral-page .back-button,
+.community-pastoral-page .toggle-status-button {
+  width: auto;
+  flex: 0 0 auto;
+  border: 1px solid #d8dee6;
+  background: #fff;
+  color: #52606d;
+  border-radius: 9px;
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-family: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+  transform: none !important;
+  box-shadow: none !important;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.community-pastoral-page .edit-button:hover,
+.community-pastoral-page .back-button:hover {
+  background: #f5f7fa;
+  border-color: #b6c3d1;
+  color: #17324d;
+}
+
+/* Ação principal (adicionar) — primário azul da marca */
+.community-pastoral-page .add-button {
+  background: #075aa9;
+  border-color: #075aa9;
+  color: #fff;
+}
+
+.community-pastoral-page .add-button:hover {
+  background: #0a84ff;
+  border-color: #0a84ff;
+}
+
+/* Remover — vermelho discreto (outline) */
+.community-pastoral-page .remove-button {
+  color: #c53b42;
+  border-color: #f0c4c6;
+  background: #fff;
+}
+
+.community-pastoral-page .remove-button:hover {
+  background: #fdeaea;
+  border-color: #c53b42;
+}
+
+/* Desativar/Ativar — âmbar/verde discretos */
+.community-pastoral-page .toggle-status-button--warning {
+  color: #a96a0d;
+  border-color: #f2d9ac;
+  background: #fff;
+}
+
+.community-pastoral-page .toggle-status-button--warning:hover {
+  background: #fdf3e3;
+  border-color: #c78216;
+}
+
+.community-pastoral-page .toggle-status-button--success {
+  color: #2e9d62;
+  border-color: #cdebd9;
+  background: #fff;
+}
+
+.community-pastoral-page .toggle-status-button--success:hover {
+  background: #f4fbf7;
+  border-color: #2e9d62;
+}
+
+/* Voltar — ghost discreto */
+.community-pastoral-page .back-button {
+  background: transparent;
+  border-color: transparent;
+  color: #52606d;
+  padding-left: 8px;
+}
+
+/* Ações do topo: linha compacta alinhada à direita (antes empilhavam) */
+.community-pastoral-page .community-pastoral-hero-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: flex-end;
+  align-content: flex-start;
+}
