@@ -35,6 +35,13 @@ interface Community {
   name: string;
 }
 
+interface PastoralGroupMember {
+  id: string;
+  role?: string;
+  isActive: boolean;
+  member: { id: string; fullName: string };
+}
+
 interface PastoralGroup {
   id: string;
   name: string;
@@ -43,7 +50,12 @@ interface PastoralGroup {
   status: string;
   communityPastoralId: string;
   parentGroupId?: string;
+  members?: PastoralGroupMember[];
 }
+
+/** Papéis dentro do grupo — "Coordenador" é reconhecido como LÍDER da equipe
+ *  (aparece no escalar grupo e habilita a resposta pelo grupo no app). */
+const GROUP_MEMBER_ROLES = ['Membro', 'Coordenador', 'Vice-Coordenador'];
 
 interface Meeting {
   id: string;
@@ -141,6 +153,10 @@ const CommunityPastoralDetailsPage: React.FC = () => {
   const [members, setMembers] = useState<PastoralMember[]>([]);
   const [allMembers, setAllMembers] = useState<Member[]>([]);
   const [groups, setGroups] = useState<PastoralGroup[]>([]);
+  // Modal de integrantes do sub-grupo
+  const [groupMembersId, setGroupMembersId] = useState<string | null>(null);
+  const [groupMemberToAdd, setGroupMemberToAdd] = useState('');
+  const [groupMemberRole, setGroupMemberRole] = useState('Membro');
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
@@ -265,6 +281,67 @@ const CommunityPastoralDetailsPage: React.FC = () => {
       setGroups(response.data);
     } catch (error) {
       console.error('Erro ao carregar sub-grupos:', error);
+    }
+  };
+
+  const handleAddGroupMember = async () => {
+    if (!groupMembersId || !groupMemberToAdd) {
+      notify.warning('Selecione o membro para adicionar ao grupo');
+      return;
+    }
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `${API_URL}/pastorals/members`,
+        {
+          memberId: groupMemberToAdd,
+          pastoralGroupId: groupMembersId,
+          role: groupMemberRole || 'Membro',
+        },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      notify.success('Integrante adicionado ao grupo!');
+      setGroupMemberToAdd('');
+      setGroupMemberRole('Membro');
+      fetchGroups();
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Erro ao adicionar integrante');
+    }
+  };
+
+  const handleChangeGroupMemberRole = async (groupMember: PastoralGroupMember, role: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.patch(
+        `${API_URL}/pastorals/members/${groupMember.id}`,
+        { role },
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      notify.success(
+        /coorden|líder/i.test(role)
+          ? `${groupMember.member.fullName} agora é líder do grupo.`
+          : 'Papel atualizado.',
+      );
+      fetchGroups();
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Erro ao atualizar papel');
+    }
+  };
+
+  const handleRemoveGroupMember = async (groupMember: PastoralGroupMember) => {
+    const confirmed = await confirmDialog.delete(
+      `${groupMember.member.fullName} do grupo`,
+    );
+    if (!confirmed) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`${API_URL}/pastorals/members/${groupMember.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      notify.success('Integrante removido do grupo.');
+      fetchGroups();
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Erro ao remover integrante');
     }
   };
 
@@ -1198,7 +1275,27 @@ const CommunityPastoralDetailsPage: React.FC = () => {
                     {group.description || 'Sem descrição cadastrada para este sub-grupo.'}
                   </p>
 
+                  <p className="community-pastoral-collection-description">
+                    👥 {(group.members ?? []).filter((m) => m.isActive).length} integrante(s)
+                    {(() => {
+                      const leader = (group.members ?? []).find(
+                        (m) => m.isActive && /coorden|líder/i.test(m.role || ''),
+                      );
+                      return leader ? ` · Líder: ${leader.member.fullName}` : ' · ⚠ sem líder definido';
+                    })()}
+                  </p>
+
                   <div className="community-pastoral-action-row">
+                    <button
+                      onClick={() => {
+                        setGroupMembersId(group.id);
+                        setGroupMemberToAdd('');
+                        setGroupMemberRole('Membro');
+                      }}
+                      className="add-button"
+                    >
+                      Integrantes
+                    </button>
                     <button onClick={() => handleEditGroup(group)} className="edit-button">
                       Editar
                     </button>
@@ -1215,6 +1312,116 @@ const CommunityPastoralDetailsPage: React.FC = () => {
           )}
         </section>
       </div>
+
+      {groupMembersId && (() => {
+        const activeGroup = groups.find((g) => g.id === groupMembersId);
+        if (!activeGroup) return null;
+        const groupMembers = (activeGroup.members ?? []).filter((m) => m.isActive);
+        const availableMembers = members.filter(
+          (pm: any) =>
+            pm.isActive !== false &&
+            pm.member?.id &&
+            !groupMembers.some((gm) => gm.member.id === pm.member.id),
+        );
+        return (
+          <div className="modal-overlay" onClick={() => setGroupMembersId(null)}>
+            <div className="modal-content" onClick={(event) => event.stopPropagation()}>
+              <h2>Integrantes — {activeGroup.name}</h2>
+              <p style={{ color: '#666', fontSize: '0.88rem', margin: '0 0 1rem' }}>
+                O papel <strong>Coordenador</strong> define o líder: ele aparece no “Escalar grupo”
+                e pode confirmar/recusar a escala pelo grupo no aplicativo.
+              </p>
+
+              {groupMembers.length === 0 ? (
+                <p style={{ color: '#888', fontStyle: 'italic' }}>Nenhum integrante ainda.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto', marginBottom: '1rem' }}>
+                  {groupMembers.map((gm) => (
+                    <div
+                      key={gm.id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 10,
+                        padding: '8px 12px',
+                      }}
+                    >
+                      <span style={{ flex: 1, fontWeight: 600 }}>
+                        {gm.member.fullName}
+                        {/coorden|líder/i.test(gm.role || '') ? ' ⭐' : ''}
+                      </span>
+                      <select
+                        value={GROUP_MEMBER_ROLES.includes(gm.role || '') ? gm.role : 'Membro'}
+                        onChange={(event) => handleChangeGroupMemberRole(gm, event.target.value)}
+                        style={{ width: 170 }}
+                      >
+                        {GROUP_MEMBER_ROLES.map((role) => (
+                          <option key={role} value={role}>
+                            {role}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className="remove-button"
+                        style={{ padding: '6px 12px' }}
+                        onClick={() => handleRemoveGroupMember(gm)}
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="form-group">
+                <label>Adicionar integrante (membros desta pastoral)</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <select
+                    value={groupMemberToAdd}
+                    onChange={(event) => setGroupMemberToAdd(event.target.value)}
+                    style={{ flex: 1 }}
+                  >
+                    <option value="">Selecione o membro</option>
+                    {availableMembers.map((pm: any) => (
+                      <option key={pm.member.id} value={pm.member.id}>
+                        {pm.member.fullName}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={groupMemberRole}
+                    onChange={(event) => setGroupMemberRole(event.target.value)}
+                    style={{ width: 170 }}
+                  >
+                    {GROUP_MEMBER_ROLES.map((role) => (
+                      <option key={role} value={role}>
+                        {role}
+                      </option>
+                    ))}
+                  </select>
+                  <button className="add-button" onClick={handleAddGroupMember}>
+                    Adicionar
+                  </button>
+                </div>
+                {availableMembers.length === 0 && (
+                  <p style={{ color: '#888', fontSize: '0.82rem', marginTop: 6 }}>
+                    Todos os membros da pastoral já estão neste grupo — adicione novos membros à
+                    pastoral pelo botão “Adicionar membro” no topo da página.
+                  </p>
+                )}
+              </div>
+
+              <div className="modal-actions">
+                <button className="btn-cancel" onClick={() => setGroupMembersId(null)}>
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showAddMeetingModal && (
         <div className="modal-overlay" onClick={() => setShowAddMeetingModal(false)}>
