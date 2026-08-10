@@ -1258,56 +1258,72 @@ const CommunityPastoralDetailsPage: React.FC = () => {
             )
           ) : (
             <div className="community-pastoral-collection-list">
-              {sortedGroups.map((group) => (
-                <article key={group.id} className="community-pastoral-collection-card">
-                  <div className="community-pastoral-collection-header">
-                    <h3>{group.name}</h3>
-                    <span
-                      className={`community-pastoral-mini-badge ${
-                        group.status === 'ACTIVE' ? 'is-green' : 'is-slate'
-                      }`}
-                    >
-                      {group.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
-                    </span>
-                  </div>
-
-                  <p className="community-pastoral-collection-description">
-                    {group.description || 'Sem descrição cadastrada para este sub-grupo.'}
-                  </p>
-
-                  <p className="community-pastoral-collection-description">
-                    👥 {(group.members ?? []).filter((m) => m.isActive).length} integrante(s)
-                    {(() => {
-                      const leader = (group.members ?? []).find(
-                        (m) => m.isActive && /coorden|líder/i.test(m.role || ''),
-                      );
-                      return leader ? ` · Líder: ${leader.member.fullName}` : ' · ⚠ sem líder definido';
-                    })()}
-                  </p>
-
-                  <div className="community-pastoral-action-row">
-                    <button
-                      onClick={() => {
-                        setGroupMembersId(group.id);
-                        setGroupMemberToAdd('');
-                        setGroupMemberRole('Membro');
-                      }}
-                      className="add-button"
-                    >
-                      Integrantes
-                    </button>
-                    <button onClick={() => handleEditGroup(group)} className="edit-button">
-                      Editar
-                    </button>
-                    <button
-                      onClick={() => handleRemoveGroup(group.id, group.name)}
-                      className="remove-button"
-                    >
-                      Remover
-                    </button>
-                  </div>
-                </article>
-              ))}
+              {sortedGroups.map((group) => {
+                const activeMembers = (group.members ?? []).filter((m) => m.isActive);
+                const leader = activeMembers.find((m) => /coorden|líder/i.test(m.role || ''));
+                return (
+                  <article key={group.id} className="group-card">
+                    <div className="group-card-main">
+                      <div className="group-card-avatar" aria-hidden="true">
+                        {group.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="group-card-body">
+                        <div className="group-card-title-row">
+                          <h3>{group.name}</h3>
+                          <span
+                            className={`community-pastoral-mini-badge ${
+                              group.status === 'ACTIVE' ? 'is-green' : 'is-slate'
+                            }`}
+                          >
+                            {group.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
+                          </span>
+                        </div>
+                        {group.description ? (
+                          <p className="group-card-desc">{group.description}</p>
+                        ) : null}
+                        <div className="group-card-chips">
+                          <span className="group-chip">
+                            👥 {activeMembers.length} integrante{activeMembers.length === 1 ? '' : 's'}
+                          </span>
+                          {leader ? (
+                            <span className="group-chip is-leader" title="Líder do grupo (papel Coordenador)">
+                              ⭐ {leader.member.fullName}
+                            </span>
+                          ) : (
+                            <span
+                              className="group-chip is-warn"
+                              title="Defina o papel Coordenador em um integrante — ele responde pela equipe nas escalas"
+                            >
+                              ⚠ Sem líder definido
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="group-card-actions">
+                      <button
+                        onClick={() => {
+                          setGroupMembersId(group.id);
+                          setGroupMemberToAdd('');
+                          setGroupMemberRole('Membro');
+                        }}
+                        className="group-btn primary"
+                      >
+                        👥 Integrantes
+                      </button>
+                      <button onClick={() => handleEditGroup(group)} className="group-btn">
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => handleRemoveGroup(group.id, group.name)}
+                        className="group-btn danger"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>
