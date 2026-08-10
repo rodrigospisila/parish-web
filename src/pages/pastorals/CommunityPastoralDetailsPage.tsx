@@ -1375,6 +1375,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
                         {/coorden|coordin|líder/i.test(gm.role || '') ? ' ⭐' : ''}
                       </span>
                       <select
+                        className="group-select"
                         value={groupRoleLabel(gm.role)}
                         onChange={(event) => handleChangeGroupMemberRole(gm, event.target.value)}
                         style={{ width: 170 }}
@@ -1401,6 +1402,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
                 <label>Adicionar integrante (membros desta pastoral)</label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <select
+                    className="group-select"
                     value={groupMemberToAdd}
                     onChange={(event) => setGroupMemberToAdd(event.target.value)}
                     style={{ flex: 1 }}
@@ -1413,6 +1415,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
                     ))}
                   </select>
                   <select
+                    className="group-select"
                     value={groupMemberRole}
                     onChange={(event) => setGroupMemberRole(event.target.value)}
                     style={{ width: 170 }}
