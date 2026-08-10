@@ -57,6 +57,12 @@ interface PastoralGroup {
  *  (aparece no escalar grupo e habilita a resposta pelo grupo no app). */
 const GROUP_MEMBER_ROLES = ['Membro', 'Coordenador', 'Vice-Coordenador'];
 
+/** O backend normaliza "Coordenador" para o canônico COORDINATOR — exibe o rótulo pt. */
+const groupRoleLabel = (role?: string | null) => {
+  if (role === 'COORDINATOR') return 'Coordenador';
+  return role && GROUP_MEMBER_ROLES.includes(role) ? role : 'Membro';
+};
+
 interface Meeting {
   id: string;
   title: string;
@@ -318,7 +324,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
         { headers: { Authorization: `Bearer ${token}` } },
       );
       notify.success(
-        /coorden|líder/i.test(role)
+        /coorden|coordin|líder/i.test(role)
           ? `${groupMember.member.fullName} agora é líder do grupo.`
           : 'Papel atualizado.',
       );
@@ -1260,7 +1266,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
             <div className="community-pastoral-collection-list">
               {sortedGroups.map((group) => {
                 const activeMembers = (group.members ?? []).filter((m) => m.isActive);
-                const leader = activeMembers.find((m) => /coorden|líder/i.test(m.role || ''));
+                const leader = activeMembers.find((m) => /coorden|coordin|líder/i.test(m.role || ''));
                 return (
                   <article key={group.id} className="group-card">
                     <div className="group-card-main">
@@ -1366,10 +1372,10 @@ const CommunityPastoralDetailsPage: React.FC = () => {
                     >
                       <span style={{ flex: 1, fontWeight: 600 }}>
                         {gm.member.fullName}
-                        {/coorden|líder/i.test(gm.role || '') ? ' ⭐' : ''}
+                        {/coorden|coordin|líder/i.test(gm.role || '') ? ' ⭐' : ''}
                       </span>
                       <select
-                        value={GROUP_MEMBER_ROLES.includes(gm.role || '') ? gm.role : 'Membro'}
+                        value={groupRoleLabel(gm.role)}
                         onChange={(event) => handleChangeGroupMemberRole(gm, event.target.value)}
                         style={{ width: 170 }}
                       >
