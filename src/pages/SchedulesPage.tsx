@@ -7,6 +7,34 @@ import './SchedulesPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
+/** Pendencia da agenda fixa: ocorrencia projetada sem escala criada. */
+interface FixedPendingItem {
+  massScheduleId: string;
+  title: string;
+  type: string;
+  notes?: string | null;
+  date: string; // YYYY-MM-DD (relogio de parede)
+  time: string; // HH:MM
+  community: { id: string; name: string } | null;
+  pastorals: { id: string; name: string; requiredPeople?: number }[];
+}
+
+const FIXED_TYPE_LABELS: Record<string, string> = {
+  MASS: 'Missa',
+  CONFESSION: 'Confissão',
+  ADORATION: 'Adoração',
+  ROSARY: 'Terço',
+};
+
+const FIXED_WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+
+/** Formata 'YYYY-MM-DD' sem risco de deslocar o dia por fuso. */
+const fixedPendingDateLabel = (isoDate: string) => {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  const weekday = FIXED_WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+  return `${weekday}, ${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`;
+};
+
 type UserRole =
   | 'SYSTEM_ADMIN'
   | 'DIOCESAN_ADMIN'
@@ -643,6 +671,11 @@ const SchedulesPage: React.FC = () => {
 
   // Escala sem evento (Fase 4.1)
   const [communities, setCommunities] = useState<CommunityOption[]>([]);
+  const [fixedPending, setFixedPending] = useState<FixedPendingItem[]>([]);
+  const [fixedOnlyMine, setFixedOnlyMine] = useState(
+    () => currentUser?.role === 'PASTORAL_COORDINATOR',
+  );
+  const [generatingFixedKey, setGeneratingFixedKey] = useState<string | null>(null);
   const [showStandaloneModal, setShowStandaloneModal] = useState(false);
   const [standaloneSubmitting, setStandaloneSubmitting] = useState(false);
   const [standaloneForm, setStandaloneForm] = useState({
@@ -858,8 +891,19 @@ const SchedulesPage: React.FC = () => {
           .get(`${API_URL}/communities`, { headers })
           .then((res) => setCommunities(res.data || []))
           .catch(() => setCommunities([]));
+        axios
+          .get(`${API_URL}/mass-schedules/pending`, {
+            headers,
+            params: {
+              from: todayIsoDate(),
+              to: toDateTimeInput(addDays(new Date(), 30).toISOString()).slice(0, 10),
+            },
+          })
+          .then((res) => setFixedPending(res.data || []))
+          .catch(() => setFixedPending([]));
       } else {
         setOverview([]);
+        setFixedPending([]);
       }
     } catch (error: any) {
       console.error('Erro ao carregar dados de escalas', error);
@@ -959,6 +1003,50 @@ const SchedulesPage: React.FC = () => {
     setAssignmentStatusFilter('all');
     setShowDetailModal(true);
     await fetchScheduleById(schedule.id, true);
+  };
+
+  const myPastoralIds = useMemo(
+    () => new Set((currentUser?.pastorals ?? []).map((pastoral) => pastoral.id)),
+    [currentUser],
+  );
+
+  const visibleFixedPending = useMemo(
+    () =>
+      fixedPending.filter(
+        (item) =>
+          !fixedOnlyMine ||
+          myPastoralIds.size === 0 ||
+          item.pastorals.some((pastoral) => myPastoralIds.has(pastoral.id)),
+      ),
+    [fixedPending, fixedOnlyMine, myPastoralIds],
+  );
+
+  const handleGenerateFixed = async (item: FixedPendingItem) => {
+    const key = `${item.massScheduleId}-${item.date}`;
+    setGeneratingFixedKey(key);
+    try {
+      const response = await axios.post(
+        `${API_URL}/mass-schedules/${item.massScheduleId}/schedule`,
+        { date: item.date },
+        { headers },
+      );
+      notify.success('Escala criada! Agora escale os membros.');
+      await fetchData();
+      const created = response.data;
+      if (created?.id) {
+        const full = await fetchScheduleById(created.id, true);
+        if (full) {
+          setActiveSchedule(full);
+          setAssignmentSearch('');
+          setAssignmentStatusFilter('all');
+          setShowDetailModal(true);
+        }
+      }
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Erro ao gerar escala');
+    } finally {
+      setGeneratingFixedKey(null);
+    }
   };
 
   // ===== Escala sem evento (serviço contínuo) =====
@@ -1969,6 +2057,12 @@ const SchedulesPage: React.FC = () => {
             <span>Eventos sem escala</span>
             <strong>{eventsWithoutSchedule.length}</strong>
           </div>
+          {managerRole && (
+            <div className="schedule-summary-card is-red">
+              <span>Agenda fixa sem escala</span>
+              <strong>{visibleFixedPending.length}</strong>
+            </div>
+          )}
           <div className="schedule-summary-card is-green">
             <span>Membros confirmados</span>
             <strong>{confirmedAssignmentsCount}</strong>
@@ -2561,6 +2655,97 @@ const SchedulesPage: React.FC = () => {
             Limpar filtros
           </button>
         </div>
+      )}
+
+      {managerRole && (
+        <section className="events-without-schedule schedule-surface">
+          <div className="section-card-header">
+            <div>
+              <span className="section-kicker">Pendencias</span>
+              <h3>Agenda fixa sem escala</h3>
+              <p className="section-description">
+                {visibleFixedPending.length > 0
+                  ? 'Horarios fixos dos proximos 30 dias que ainda nao receberam escala.'
+                  : 'Todos os horarios fixos dos proximos 30 dias ja possuem escala.'}
+              </p>
+            </div>
+            <div className="fixed-pending-header-actions">
+              {myPastoralIds.size > 0 && (
+                <label className="fixed-pending-toggle">
+                  <input
+                    type="checkbox"
+                    checked={fixedOnlyMine}
+                    onChange={(event) => setFixedOnlyMine(event.target.checked)}
+                  />
+                  Somente minhas pastorais
+                </label>
+              )}
+              <span className="section-count-pill">{visibleFixedPending.length}</span>
+            </div>
+          </div>
+          <div className="events-list">
+            {visibleFixedPending.length === 0 ? (
+              <p className="no-events">Nenhuma pendencia da agenda fixa no periodo.</p>
+            ) : (
+              visibleFixedPending.slice(0, 10).map((item) => {
+                const itemKey = `${item.massScheduleId}-${item.date}`;
+                return (
+                  <div className="event-item" key={itemKey}>
+                    <div className="event-info">
+                      <span className="event-type-badge">
+                        {FIXED_TYPE_LABELS[item.type] ?? item.type}
+                      </span>
+                      <div className="event-copy">
+                        <div className="event-title-row">
+                          <strong>
+                            {fixedPendingDateLabel(item.date)} às {item.time}
+                          </strong>
+                          {item.notes ? <span className="event-date-chip">{item.notes}</span> : null}
+                        </div>
+                        <div className="event-meta-row">
+                          {item.community?.name ? (
+                            <span className="event-community">{item.community.name}</span>
+                          ) : null}
+                        </div>
+                        <div className="fixed-pending-pastorals">
+                          {item.pastorals.map((pastoral) => (
+                            <span
+                              key={pastoral.id}
+                              className={`fixed-pending-chip${
+                                myPastoralIds.has(pastoral.id) ? ' is-mine' : ''
+                              }`}
+                              title={
+                                myPastoralIds.has(pastoral.id)
+                                  ? 'Sua pastoral serve neste horário'
+                                  : undefined
+                              }
+                            >
+                              {pastoral.name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="event-item-actions">
+                      <button
+                        className="btn-small btn-create"
+                        disabled={generatingFixedKey === itemKey}
+                        onClick={() => handleGenerateFixed(item)}
+                      >
+                        {generatingFixedKey === itemKey ? 'Gerando...' : 'Gerar escala'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+            {visibleFixedPending.length > 10 && (
+              <p className="no-events">
+                + {visibleFixedPending.length - 10} pendencia(s) alem das listadas acima.
+              </p>
+            )}
+          </div>
+        </section>
       )}
 
       <section className="events-without-schedule schedule-surface">

@@ -92,6 +92,9 @@ const FixedSchedulePage: React.FC = () => {
   const [communityPastorals, setCommunityPastorals] = useState<CommunityPastoral[]>([]);
   const [selectedPastorals, setSelectedPastorals] = useState<SelectedPastoral[]>([]);
 
+  // Pendencias: datas dos proximos 30 dias sem escala, por horario fixo
+  const [pendingByMass, setPendingByMass] = useState<Record<string, string[]>>({});
+
   // Modal de gerar escala
   const [genTarget, setGenTarget] = useState<MassSchedule | null>(null);
   const [genDate, setGenDate] = useState('');
@@ -105,6 +108,21 @@ const FixedSchedulePage: React.FC = () => {
       ]);
       setSchedules(schedulesRes.data);
       setCommunities(communitiesRes.data);
+
+      const from = new Date().toISOString().slice(0, 10);
+      const to = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      api
+        .get('/mass-schedules/pending', {
+          params: { from, to, communityId: communityFilter || undefined },
+        })
+        .then((res) => {
+          const map: Record<string, string[]> = {};
+          for (const item of res.data || []) {
+            (map[item.massScheduleId] ??= []).push(item.date);
+          }
+          setPendingByMass(map);
+        })
+        .catch(() => setPendingByMass({}));
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao carregar a agenda fixa'));
     } finally {
@@ -250,6 +268,7 @@ const FixedSchedulePage: React.FC = () => {
       });
       notify.success('Escala gerada! Gerencie as atribuições na página Escalas.');
       setGenTarget(null);
+      fetchData();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao gerar escala'));
     } finally {
@@ -306,6 +325,7 @@ const FixedSchedulePage: React.FC = () => {
                     <th>Dia</th>
                     <th>Horário</th>
                     <th>Pastorais</th>
+                    <th>Pendências</th>
                     <th>Ações</th>
                   </tr>
                 </thead>
@@ -337,6 +357,31 @@ const FixedSchedulePage: React.FC = () => {
                               ))}
                             </div>
                           )}
+                        </td>
+                        <td>
+                          {(() => {
+                            const pendingDates = pendingByMass[schedule.id] ?? [];
+                            if (pastorals.length === 0) {
+                              return <span style={{ color: '#999' }}>—</span>;
+                            }
+                            if (pendingDates.length === 0) {
+                              return <span className="status-badge green">✓ Em dia (30d)</span>;
+                            }
+                            const [year, month, day] = pendingDates[0].split('-');
+                            return (
+                              <button
+                                className="status-badge yellow"
+                                style={{ border: 'none', cursor: 'pointer' }}
+                                title={`Próxima sem escala: ${day}/${month}/${year} — clique para gerar`}
+                                onClick={() => {
+                                  openGenerate(schedule);
+                                  setGenDate(pendingDates[0]);
+                                }}
+                              >
+                                ⚠ {pendingDates.length} sem escala
+                              </button>
+                            );
+                          })()}
                         </td>
                         <td className="actions-cell">
                           <button

@@ -4264,3 +4264,61 @@ button.couple-chip.is-action:hover {
 .group-picker-info small {
   color: #8b97a4;
 }
+
+/* ===== Agenda fixa sem escala (pendencias do coordenador) ===== */
+.schedules-hero-stats {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.schedule-summary-card.is-red::before {
+  background: #dc2626;
+}
+
+.fixed-pending-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.fixed-pending-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #48607a;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.fixed-pending-toggle input {
+  accent-color: #075aa9;
+}
+
+.fixed-pending-pastorals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+
+.fixed-pending-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid #dbe5f0;
+  background: #f4f8fc;
+  color: #48607a;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.fixed-pending-chip.is-mine {
+  border-color: #075aa9;
+  background: #e8f1fb;
+  color: #075aa9;
+}
