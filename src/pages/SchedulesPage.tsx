@@ -678,6 +678,7 @@ const SchedulesPage: React.FC = () => {
   const [generatingFixedKey, setGeneratingFixedKey] = useState<string | null>(null);
   // Pendencias da agenda fixa do mes exibido no calendario
   const [fixedPendingMonth, setFixedPendingMonth] = useState<FixedPendingItem[]>([]);
+  const [generatingAllFixed, setGeneratingAllFixed] = useState(false);
   const [showStandaloneModal, setShowStandaloneModal] = useState(false);
   const [standaloneSubmitting, setStandaloneSubmitting] = useState(false);
   const [standaloneForm, setStandaloneForm] = useState({
@@ -1054,6 +1055,50 @@ const SchedulesPage: React.FC = () => {
       notify.error(error.response?.data?.message || 'Erro ao gerar escala');
     } finally {
       setGeneratingFixedKey(null);
+    }
+  };
+
+  const handleGenerateAllFixed = async (
+    items: FixedPendingItem[],
+    range: { from: string; to: string },
+    scopeLabel: string,
+  ) => {
+    if (items.length === 0 || generatingAllFixed) return;
+    const proceed = await confirm.action(
+      'Gerar todas as escalas?',
+      `Serão criadas ${items.length} escala(s) da agenda fixa (${scopeLabel}), copiando as pastorais e vagas de cada horário. Deseja continuar?`,
+      `Gerar ${items.length} escala(s)`,
+    );
+    if (!proceed) return;
+    setGeneratingAllFixed(true);
+    try {
+      const response = await axios.post(
+        `${API_URL}/mass-schedules/generate-pending`,
+        {
+          from: range.from,
+          to: range.to,
+          pastoralIds:
+            fixedOnlyMine && myPastoralIds.size > 0 ? Array.from(myPastoralIds) : undefined,
+        },
+        { headers },
+      );
+      const { created = 0, failed = 0, schedules: createdSchedules = [] } = response.data ?? {};
+      const createdKeys = new Set(
+        createdSchedules.map((item: any) => `${item.massScheduleId}:${item.date}`),
+      );
+      setFixedPendingMonth((prev) =>
+        prev.filter((pending) => !createdKeys.has(`${pending.massScheduleId}:${pending.date}`)),
+      );
+      if (failed > 0) {
+        notify.warning(`${created} escala(s) criada(s); ${failed} falharam.`);
+      } else {
+        notify.success(`${created} escala(s) criada(s)! Agora escale os membros de cada uma.`);
+      }
+      await fetchData();
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Erro ao gerar as escalas');
+    } finally {
+      setGeneratingAllFixed(false);
     }
   };
 
@@ -1451,9 +1496,8 @@ const SchedulesPage: React.FC = () => {
     [overview, calSelectedId],
   );
 
-  // Carrega as pendencias da agenda fixa para a grade do mes exibido
-  useEffect(() => {
-    if (!managerRole || overviewView !== 'calendar') return;
+  // Range visivel da grade do calendario (a partir de hoje); null se todo no passado
+  const calFixedRange = () => {
     const first = new Date(calMonth.getFullYear(), calMonth.getMonth(), 1);
     const start = new Date(first);
     start.setDate(first.getDate() - first.getDay());
@@ -1461,38 +1505,49 @@ const SchedulesPage: React.FC = () => {
     end.setDate(start.getDate() + 41);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    if (end < today) {
+    if (end < today) return null;
+    return { from: toDayKey(start < today ? today : start), to: toDayKey(end) };
+  };
+
+  // Carrega as pendencias da agenda fixa para a grade do mes exibido
+  useEffect(() => {
+    if (!managerRole || overviewView !== 'calendar') return;
+    const range = calFixedRange();
+    if (!range) {
       setFixedPendingMonth([]);
       return;
     }
-    const from = start < today ? today : start;
     axios
       .get(`${API_URL}/mass-schedules/pending`, {
         headers,
-        params: { from: toDayKey(from), to: toDayKey(end) },
+        params: { from: range.from, to: range.to },
       })
       .then((res) => setFixedPendingMonth(res.data || []))
       .catch(() => setFixedPendingMonth([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [managerRole, overviewView, calMonth]);
 
-  // Pendencias por dia (respeita o filtro "somente minhas pastorais")
+  // Pendencias do mes visiveis (respeita o filtro "somente minhas pastorais")
+  const visibleFixedPendingMonth = useMemo(
+    () =>
+      fixedPendingMonth.filter(
+        (item) =>
+          !fixedOnlyMine ||
+          myPastoralIds.size === 0 ||
+          item.pastorals.some((pastoral) => myPastoralIds.has(pastoral.id)),
+      ),
+    [fixedPendingMonth, fixedOnlyMine, myPastoralIds],
+  );
+
   const fixedPendingByDay = useMemo(() => {
     const map = new Map<string, FixedPendingItem[]>();
-    for (const item of fixedPendingMonth) {
-      if (
-        fixedOnlyMine &&
-        myPastoralIds.size > 0 &&
-        !item.pastorals.some((pastoral) => myPastoralIds.has(pastoral.id))
-      ) {
-        continue;
-      }
+    for (const item of visibleFixedPendingMonth) {
       if (!map.has(item.date)) map.set(item.date, []);
       map.get(item.date)!.push(item);
     }
     for (const list of map.values()) list.sort((a, b) => a.time.localeCompare(b.time));
     return map;
-  }, [fixedPendingMonth, fixedOnlyMine, myPastoralIds]);
+  }, [visibleFixedPendingMonth]);
 
   const overviewTotal = overview.length;
   const overviewAssignments = overview.reduce((acc, item) => acc + item.counts.total, 0);
@@ -2242,6 +2297,28 @@ const SchedulesPage: React.FC = () => {
                   </button>
                 </div>
                 <div className="cal-toolbar-right">
+                  {visibleFixedPendingMonth.length > 0 && (
+                    <button
+                      type="button"
+                      className="cal-generate-all"
+                      disabled={generatingAllFixed}
+                      onClick={() => {
+                        const range = calFixedRange();
+                        if (range) {
+                          void handleGenerateAllFixed(
+                            visibleFixedPendingMonth,
+                            range,
+                            'mês exibido',
+                          );
+                        }
+                      }}
+                      title="Cria de uma vez todas as escalas pendentes da agenda fixa deste mês"
+                    >
+                      {generatingAllFixed
+                        ? 'Gerando...'
+                        : `⚡ Gerar todas (${visibleFixedPendingMonth.length})`}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className={`cal-members-toggle${calShowMembers ? ' active' : ''}`}
@@ -2749,6 +2826,24 @@ const SchedulesPage: React.FC = () => {
               </p>
             </div>
             <div className="fixed-pending-header-actions">
+              {visibleFixedPending.length > 0 && (
+                <button
+                  className="btn-small btn-create"
+                  disabled={generatingAllFixed}
+                  onClick={() =>
+                    handleGenerateAllFixed(
+                      visibleFixedPending,
+                      {
+                        from: todayIsoDate(),
+                        to: toDateTimeInput(addDays(new Date(), 30).toISOString()).slice(0, 10),
+                      },
+                      'próximos 30 dias',
+                    )
+                  }
+                >
+                  {generatingAllFixed ? 'Gerando...' : `⚡ Gerar todas (${visibleFixedPending.length})`}
+                </button>
+              )}
               {myPastoralIds.size > 0 && (
                 <label className="fixed-pending-toggle">
                   <input

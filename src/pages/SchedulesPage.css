@@ -4339,3 +4339,25 @@ button.couple-chip.is-action:hover {
   opacity: 0.6;
   cursor: wait;
 }
+
+/* Botao "gerar todas" na toolbar do calendario */
+.cal-generate-all {
+  border: 1px solid #d97706;
+  background: #d97706;
+  color: #fff;
+  border-radius: 9px;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cal-generate-all:hover {
+  background: #b45309;
+  border-color: #b45309;
+}
+
+.cal-generate-all:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
