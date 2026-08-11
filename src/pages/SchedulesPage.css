@@ -4322,3 +4322,20 @@ button.couple-chip.is-action:hover {
   background: #e8f1fb;
   color: #075aa9;
 }
+
+/* Pill de pendencia da agenda fixa dentro do calendario */
+.cal-pill.is-fixed-pending {
+  border: 1px dashed #d97706;
+  background: #fff7ea;
+  color: #92600a;
+}
+
+.cal-pill.is-fixed-pending:hover {
+  border-color: #b45309;
+  background: #ffedd0;
+}
+
+.cal-pill.is-fixed-pending:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}

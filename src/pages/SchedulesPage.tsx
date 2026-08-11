@@ -676,6 +676,8 @@ const SchedulesPage: React.FC = () => {
     () => currentUser?.role === 'PASTORAL_COORDINATOR',
   );
   const [generatingFixedKey, setGeneratingFixedKey] = useState<string | null>(null);
+  // Pendencias da agenda fixa do mes exibido no calendario
+  const [fixedPendingMonth, setFixedPendingMonth] = useState<FixedPendingItem[]>([]);
   const [showStandaloneModal, setShowStandaloneModal] = useState(false);
   const [standaloneSubmitting, setStandaloneSubmitting] = useState(false);
   const [standaloneForm, setStandaloneForm] = useState({
@@ -1031,6 +1033,12 @@ const SchedulesPage: React.FC = () => {
         { headers },
       );
       notify.success('Escala criada! Agora escale os membros.');
+      setFixedPendingMonth((prev) =>
+        prev.filter(
+          (pending) =>
+            !(pending.massScheduleId === item.massScheduleId && pending.date === item.date),
+        ),
+      );
       await fetchData();
       const created = response.data;
       if (created?.id) {
@@ -1442,6 +1450,49 @@ const SchedulesPage: React.FC = () => {
     () => overview.find((item) => item.scheduleId === calSelectedId) ?? null,
     [overview, calSelectedId],
   );
+
+  // Carrega as pendencias da agenda fixa para a grade do mes exibido
+  useEffect(() => {
+    if (!managerRole || overviewView !== 'calendar') return;
+    const first = new Date(calMonth.getFullYear(), calMonth.getMonth(), 1);
+    const start = new Date(first);
+    start.setDate(first.getDate() - first.getDay());
+    const end = new Date(start);
+    end.setDate(start.getDate() + 41);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (end < today) {
+      setFixedPendingMonth([]);
+      return;
+    }
+    const from = start < today ? today : start;
+    axios
+      .get(`${API_URL}/mass-schedules/pending`, {
+        headers,
+        params: { from: toDayKey(from), to: toDayKey(end) },
+      })
+      .then((res) => setFixedPendingMonth(res.data || []))
+      .catch(() => setFixedPendingMonth([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [managerRole, overviewView, calMonth]);
+
+  // Pendencias por dia (respeita o filtro "somente minhas pastorais")
+  const fixedPendingByDay = useMemo(() => {
+    const map = new Map<string, FixedPendingItem[]>();
+    for (const item of fixedPendingMonth) {
+      if (
+        fixedOnlyMine &&
+        myPastoralIds.size > 0 &&
+        !item.pastorals.some((pastoral) => myPastoralIds.has(pastoral.id))
+      ) {
+        continue;
+      }
+      if (!map.has(item.date)) map.set(item.date, []);
+      map.get(item.date)!.push(item);
+    }
+    for (const list of map.values()) list.sort((a, b) => a.time.localeCompare(b.time));
+    return map;
+  }, [fixedPendingMonth, fixedOnlyMine, myPastoralIds]);
 
   const overviewTotal = overview.length;
   const overviewAssignments = overview.reduce((acc, item) => acc + item.counts.total, 0);
@@ -2310,6 +2361,28 @@ const SchedulesPage: React.FC = () => {
                               </div>
                             )}
                           </div>
+                        );
+                      })}
+                      {(fixedPendingByDay.get(cell.key) ?? []).map((item) => {
+                        const itemKey = `${item.massScheduleId}-${item.date}`;
+                        const label = FIXED_TYPE_LABELS[item.type] ?? item.type;
+                        return (
+                          <button
+                            key={itemKey}
+                            type="button"
+                            className="cal-pill is-fixed-pending"
+                            disabled={generatingFixedKey === itemKey}
+                            onClick={() => handleGenerateFixed(item)}
+                            title={`${label} das ${item.time} sem escala — ${item.pastorals
+                              .map((pastoral) => pastoral.name)
+                              .join(', ')} · clique para gerar a escala`}
+                          >
+                            <span className="cal-pill-time">{item.time}</span>
+                            <span className="cal-pill-title">
+                              {generatingFixedKey === itemKey ? 'Gerando...' : `${label} sem escala`}
+                            </span>
+                            <span className="cal-pill-count">⚠</span>
+                          </button>
                         );
                       })}
                     </div>
