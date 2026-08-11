@@ -2211,10 +2211,16 @@ const SchedulesPage: React.FC = () => {
             </div>
           </div>
 
-          {overview.length === 0 ? (
+          {overview.length === 0 && overviewView !== 'calendar' ? (
             <p className="coordinator-empty">Nenhuma escala encontrada no periodo selecionado.</p>
           ) : overviewView === 'calendar' ? (
             <div className="coordinator-calendar">
+              {overview.length === 0 && (
+                <p className="coordinator-empty">
+                  Nenhuma escala no período — os avisos ⚠ em âmbar mostram a agenda fixa ainda sem
+                  escala. Clique em um deles para gerar.
+                </p>
+              )}
               <div className="cal-toolbar">
                 <div className="cal-nav">
                   <button
