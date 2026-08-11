@@ -555,11 +555,15 @@ const getPastoralProgress = (schedule: Schedule) => {
       (assignment) => assignment.communityPastoral?.id === item.communityPastoralId,
     ).length;
 
-    // Pastoral que escala por GRUPOS: o progresso conta grupos distintos
+    // Pastoral que escala por GRUPOS: o progresso conta grupos distintos.
+    // O payload normalizado entrega as pastorais da escala em event.eventPastorals.
     const byGroup = Boolean(
       schedule.pastorals?.find(
         (pastoral) => pastoral.communityPastoralId === item.communityPastoralId,
-      )?.communityPastoral?.scheduleByGroup,
+      )?.communityPastoral?.scheduleByGroup ??
+        ((schedule.event.eventPastorals || []) as any[]).find(
+          (eventPastoral) => eventPastoral.communityPastoralId === item.communityPastoralId,
+        )?.communityPastoral?.scheduleByGroup,
     );
     const groupsAssigned = byGroup
       ? new Set(
