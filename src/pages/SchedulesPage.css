@@ -4361,3 +4361,21 @@ button.couple-chip.is-action:hover {
   opacity: 0.6;
   cursor: wait;
 }
+
+/* Picker de grupos: capacidade e acoes da linha */
+.group-picker-capacity {
+  margin: 0 0 0.7rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  background: #f4f8fc;
+  border: 1px solid #dbe5f0;
+  color: #48607a;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.group-picker-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}

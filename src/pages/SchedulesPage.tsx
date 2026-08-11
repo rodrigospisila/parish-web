@@ -1864,6 +1864,46 @@ const SchedulesPage: React.FC = () => {
     }
   };
 
+  /** Troca o ministério/grupo escalado: remove o atual e escala o novo em sequência. */
+  const handleSwapGroup = async (
+    newGroup: CandidateGroupSummary,
+    currentGroup: { id: string; name: string; count: number },
+  ) => {
+    if (!activeSchedule) return;
+    const ok = await confirm.action(
+      'Trocar ministério',
+      `Remover "${currentGroup.name}" (${currentGroup.count} integrante(s)) e escalar "${newGroup.name}" (${newGroup.membersCount} integrante(s)) nesta escala?`,
+      '🔁 Trocar',
+    );
+    if (!ok) return;
+    setAssigningGroupId(newGroup.id);
+    try {
+      await axios.delete(`${API_URL}/schedules/assignments/group`, {
+        headers,
+        params: { scheduleId: activeSchedule.id, pastoralGroupId: currentGroup.id },
+      });
+      const response = await axios.post(
+        `${API_URL}/schedules/assignments/group`,
+        { scheduleId: activeSchedule.id, pastoralGroupId: newGroup.id },
+        { headers },
+      );
+      const created = response.data?.created ?? 0;
+      notify.success(`🔁 Troca feita: "${newGroup.name}" escalado (${created} integrante(s)).`);
+      setGroupPickerPastoralId(null);
+      await fetchScheduleById(activeSchedule.id, true);
+      fetchData();
+      await loadScheduleCandidates(activeSchedule.id, newGroup.communityPastoralId, {
+        preservePastoralId: newGroup.communityPastoralId,
+      });
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Não foi possível trocar o ministério');
+      // O grupo atual pode já ter sido removido — recarrega o estado real
+      await fetchScheduleById(activeSchedule.id, true);
+    } finally {
+      setAssigningGroupId(null);
+    }
+  };
+
   /** Grupos escalados numa pastoral (nome + nº de integrantes), a partir das atribuições. */
   const assignedGroupsFor = (pastoralId: string) => {
     if (!activeSchedule) return [] as Array<{ id: string; name: string; count: number }>;
@@ -4172,32 +4212,80 @@ const SchedulesPage: React.FC = () => {
                     </p>
                   );
                 }
+                const progress = detailPastoralProgress.find(
+                  (pastoral) => pastoral.communityPastoralId === groupPickerPastoralId,
+                );
+                const assignedGroups = assignedGroupsFor(groupPickerPastoralId);
+                const isFull =
+                  !!progress && progress.requiredPeople > 0 && progress.remainingPeople === 0;
+                const swapSource = isFull && assignedGroups.length === 1 ? assignedGroups[0] : null;
                 return (
-                  <div className="group-picker-list">
-                    {pastoralGroups.map((group) => (
-                      <div key={group.id} className={`group-picker-row${group.alreadyAssigned ? ' is-assigned' : ''}`}>
-                        <div className="group-picker-info">
-                          <strong>🎵 {group.name}</strong>
-                          <small>
-                            {group.membersCount} integrante(s)
-                            {group.leaderName ? ` • Líder: ${group.leaderName}` : ''}
-                          </small>
+                  <>
+                    {progress && progress.requiredPeople > 0 && (
+                      <p className="group-picker-capacity">
+                        {progress.byGroup
+                          ? `${assignedGroups.length}/${progress.requiredPeople} vaga(s) de ministério ocupada(s)`
+                          : `${progress.assignedCount}/${progress.requiredPeople} vaga(s) ocupada(s)`}
+                        {swapSource
+                          ? ' — use 🔁 Trocar para substituir o ministério escalado.'
+                          : ''}
+                      </p>
+                    )}
+                    <div className="group-picker-list">
+                      {pastoralGroups.map((group) => (
+                        <div key={group.id} className={`group-picker-row${group.alreadyAssigned ? ' is-assigned' : ''}`}>
+                          <div className="group-picker-info">
+                            <strong>🎵 {group.name}</strong>
+                            <small>
+                              {group.membersCount} integrante(s)
+                              {group.leaderName ? ` • Líder: ${group.leaderName}` : ''}
+                            </small>
+                          </div>
+                          {group.alreadyAssigned ? (
+                            <span className="group-picker-actions">
+                              <span className="pastoral-full-tag">✓ Escalado</span>
+                              <button
+                                type="button"
+                                className="btn-small btn-remove"
+                                onClick={() => void handleRemoveGroup(group.id, group.name)}
+                                title={`Remover o grupo ${group.name} desta escala`}
+                              >
+                                Remover
+                              </button>
+                            </span>
+                          ) : swapSource ? (
+                            <button
+                              type="button"
+                              className="btn-small btn-submit"
+                              disabled={assigningGroupId === group.id || group.membersCount === 0}
+                              onClick={() => void handleSwapGroup(group, swapSource)}
+                              title={`Substituir ${swapSource.name} por ${group.name}`}
+                            >
+                              {assigningGroupId === group.id ? 'Trocando...' : '🔁 Trocar'}
+                            </button>
+                          ) : isFull ? (
+                            <button
+                              type="button"
+                              className="btn-small btn-surface"
+                              disabled
+                              title="Vagas completas — remova um dos ministérios escalados para liberar"
+                            >
+                              Sem vaga
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn-small btn-submit"
+                              disabled={assigningGroupId === group.id || group.membersCount === 0}
+                              onClick={() => void handleAssignGroup(group)}
+                            >
+                              {assigningGroupId === group.id ? 'Escalando...' : 'Escalar grupo'}
+                            </button>
+                          )}
                         </div>
-                        {group.alreadyAssigned ? (
-                          <span className="pastoral-full-tag">✓ Escalado</span>
-                        ) : (
-                          <button
-                            type="button"
-                            className="btn-small btn-submit"
-                            disabled={assigningGroupId === group.id || group.membersCount === 0}
-                            onClick={() => void handleAssignGroup(group)}
-                          >
-                            {assigningGroupId === group.id ? 'Escalando...' : 'Escalar grupo'}
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  </>
                 );
               })()
             )}
