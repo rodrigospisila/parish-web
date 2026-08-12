@@ -1778,6 +1778,61 @@ const SchedulesPage: React.FC = () => {
     setAssignTarget(member);
   };
 
+  // ===== ⚠ Conflito global (já escalado em outra escala/comunidade) =====
+  const isGlobalConflict = (error: any) =>
+    error?.response?.status === 409 && error?.response?.data?.code === 'GLOBAL_CONFLICT';
+
+  const confirmGlobalConflict = async (error: any) => {
+    const conflicts = error?.response?.data?.conflicts ?? [];
+    const lines = conflicts
+      .slice(0, 6)
+      .map(
+        (conflict: any) =>
+          `${conflict.memberName}: "${conflict.scheduleTitle}"${
+            conflict.communityName ? ` (${conflict.communityName})` : ''
+          } — ${conflict.type === 'OVERLAP' ? 'horário sobreposto' : 'mesmo dia'}`,
+      )
+      .join(' • ');
+    return confirm.action(
+      '⚠ Já escalado em outra escala',
+      `${lines || error?.response?.data?.message || 'Conflito de agenda detectado.'}. Escalar mesmo assim?`,
+      'Escalar mesmo assim',
+    );
+  };
+
+  /** POST de atribuição; em conflito global, confirma e reenvia com override. */
+  const postAssignment = async (payload: Record<string, unknown>) => {
+    try {
+      await axios.post(`${API_URL}/schedules/assignments`, payload, { headers });
+    } catch (error: any) {
+      if (isGlobalConflict(error) && (await confirmGlobalConflict(error))) {
+        await axios.post(
+          `${API_URL}/schedules/assignments`,
+          { ...payload, overrideConflict: true },
+          { headers },
+        );
+        return;
+      }
+      throw error;
+    }
+  };
+
+  /** POST de grupo/ministério com a mesma confirmação de conflito. */
+  const postGroupAssignment = async (payload: Record<string, unknown>) => {
+    try {
+      return await axios.post(`${API_URL}/schedules/assignments/group`, payload, { headers });
+    } catch (error: any) {
+      if (isGlobalConflict(error) && (await confirmGlobalConflict(error))) {
+        return await axios.post(
+          `${API_URL}/schedules/assignments/group`,
+          { ...payload, overrideConflict: true },
+          { headers },
+        );
+      }
+      throw error;
+    }
+  };
+
   const confirmAssignTarget = async () => {
     if (!assignTarget || !activeSchedule) return;
     const role = assignTargetRole.trim();
@@ -1789,16 +1844,12 @@ const SchedulesPage: React.FC = () => {
     await createAssignment(assignTarget.id, role, true, { skipSpouseOffer: true });
     if (assignWithSpouse && spouse) {
       try {
-        await axios.post(
-          `${API_URL}/schedules/assignments`,
-          {
-            scheduleId: activeSchedule.id,
-            memberId: spouse.id,
-            role,
-            communityPastoralId: assignmentForm.communityPastoralId || undefined,
-          },
-          { headers },
-        );
+        await postAssignment({
+          scheduleId: activeSchedule.id,
+          memberId: spouse.id,
+          role,
+          communityPastoralId: assignmentForm.communityPastoralId || undefined,
+        });
         notify.success(`💍 Casal escalado junto: ${assignTarget.fullName} e ${spouse.fullName}.`);
         await fetchScheduleById(activeSchedule.id);
         await loadScheduleCandidates(activeSchedule.id, assignmentForm.communityPastoralId, {
@@ -1827,11 +1878,10 @@ const SchedulesPage: React.FC = () => {
     if (!activeSchedule) return;
     setAssigningGroupId(group.id);
     try {
-      const response = await axios.post(
-        `${API_URL}/schedules/assignments/group`,
-        { scheduleId: activeSchedule.id, pastoralGroupId: group.id },
-        { headers },
-      );
+      const response = await postGroupAssignment({
+        scheduleId: activeSchedule.id,
+        pastoralGroupId: group.id,
+      });
       const created = response.data?.created ?? 0;
       notify.success(`🎵 Grupo "${group.name}" escalado (${created} integrante(s)).`);
       setGroupPickerPastoralId(null);
@@ -1886,11 +1936,10 @@ const SchedulesPage: React.FC = () => {
         headers,
         params: { scheduleId: activeSchedule.id, pastoralGroupId: currentGroup.id },
       });
-      const response = await axios.post(
-        `${API_URL}/schedules/assignments/group`,
-        { scheduleId: activeSchedule.id, pastoralGroupId: newGroup.id },
-        { headers },
-      );
+      const response = await postGroupAssignment({
+        scheduleId: activeSchedule.id,
+        pastoralGroupId: newGroup.id,
+      });
       const created = response.data?.created ?? 0;
       notify.success(`🔁 Troca feita: "${newGroup.name}" escalado (${created} integrante(s)).`);
       setGroupPickerPastoralId(null);
@@ -1932,16 +1981,12 @@ const SchedulesPage: React.FC = () => {
   const quickAssignSpouse = async (assignment: Assignment) => {
     if (!activeSchedule || !assignment.member.spouseId) return;
     try {
-      await axios.post(
-        `${API_URL}/schedules/assignments`,
-        {
-          scheduleId: activeSchedule.id,
-          memberId: assignment.member.spouseId,
-          role: assignment.role,
-          communityPastoralId: assignment.communityPastoral?.id || undefined,
-        },
-        { headers },
-      );
+      await postAssignment({
+        scheduleId: activeSchedule.id,
+        memberId: assignment.member.spouseId,
+        role: assignment.role,
+        communityPastoralId: assignment.communityPastoral?.id || undefined,
+      });
       notify.success(
         `💍 Cônjuge ${assignment.member.spouse?.fullName || ''} escalado(a) junto de ${assignment.member.fullName}.`,
       );
@@ -2024,16 +2069,12 @@ const SchedulesPage: React.FC = () => {
 
     setAssignSubmitting(true);
     try {
-      await axios.post(
-        `${API_URL}/schedules/assignments`,
-        {
-          scheduleId: activeSchedule.id,
-          memberId,
-          role: role.trim(),
-          communityPastoralId: assignmentForm.communityPastoralId || undefined,
-        },
-        { headers },
-      );
+      await postAssignment({
+        scheduleId: activeSchedule.id,
+        memberId,
+        role: role.trim(),
+        communityPastoralId: assignmentForm.communityPastoralId || undefined,
+      });
       notify.success('Membro escalado');
 
       // Fluxo de substituição: remove o membro anterior automaticamente
@@ -2070,16 +2111,12 @@ const SchedulesPage: React.FC = () => {
           );
           if (wantsSpouse) {
             try {
-              await axios.post(
-                `${API_URL}/schedules/assignments`,
-                {
-                  scheduleId: activeSchedule.id,
-                  memberId: spouse.id,
-                  role: role.trim(),
-                  communityPastoralId: assignmentForm.communityPastoralId || undefined,
-                },
-                { headers },
-              );
+              await postAssignment({
+                scheduleId: activeSchedule.id,
+                memberId: spouse.id,
+                role: role.trim(),
+                communityPastoralId: assignmentForm.communityPastoralId || undefined,
+              });
               notify.success(`Cônjuge ${spouse.fullName} escalado(a) junto.`);
             } catch (error: any) {
               notify.error(error.response?.data?.message || 'Não foi possível escalar o cônjuge');

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
-import { notify } from '../../services/notification.service';
+import { notify, confirm } from '../../services/notification.service';
 import './ModulePages.css';
 
 interface SwapRow {
@@ -93,7 +93,29 @@ const SwapsPage: React.FC = () => {
       await api.patch(`/swaps/${swapId}/${action}`);
       notify.success(messages[action]);
       fetchData();
-    } catch (error) {
+    } catch (error: any) {
+      // Conflito global: você já serve em outra escala no mesmo dia/horário
+      if (
+        action === 'accept' &&
+        error?.response?.status === 409 &&
+        error?.response?.data?.code === 'GLOBAL_CONFLICT'
+      ) {
+        const proceed = await confirm.action(
+          '⚠ Você já está escalado neste dia',
+          `${error.response.data.message || 'Conflito de agenda detectado.'} Aceitar a troca mesmo assim?`,
+          'Aceitar mesmo assim',
+        );
+        if (proceed) {
+          try {
+            await api.patch(`/swaps/${swapId}/accept`, { overrideConflict: true });
+            notify.success(messages.accept);
+            fetchData();
+          } catch (retryError) {
+            notify.error(getErrorMessage(retryError, 'Não foi possível aceitar a troca'));
+          }
+        }
+        return;
+      }
       notify.error(getErrorMessage(error, 'Não foi possível concluir — verifique conflitos de horário'));
     }
   };
