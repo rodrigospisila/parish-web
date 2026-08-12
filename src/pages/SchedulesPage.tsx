@@ -578,6 +578,17 @@ const getPastoralProgress = (schedule: Schedule) => {
       : 0;
     const effectiveAssigned = byGroup ? groupsAssigned : assignedCount;
 
+    // Selo de origem: pastoral/ministério de OUTRA comunidade servindo aqui
+    const linkedPastoral = ((schedule.event.eventPastorals || []) as any[]).find(
+      (eventPastoral) => eventPastoral.communityPastoralId === item.communityPastoralId,
+    );
+    const scheduleCommunityId = schedule.event.community?.id ?? null;
+    const pastoralCommunity = linkedPastoral?.communityPastoral?.community ?? null;
+    const foreignCommunityName =
+      pastoralCommunity && scheduleCommunityId && pastoralCommunity.id !== scheduleCommunityId
+        ? pastoralCommunity.name
+        : null;
+
     return {
       ...item,
       assignedCount: effectiveAssigned,
@@ -585,6 +596,7 @@ const getPastoralProgress = (schedule: Schedule) => {
         item.requiredPeople > 0 ? Math.max(item.requiredPeople - effectiveAssigned, 0) : null,
       byGroup,
       peopleAssigned: assignedCount,
+      foreignCommunityName,
     };
   });
 };
@@ -3438,6 +3450,14 @@ const SchedulesPage: React.FC = () => {
                             {pastoral.byGroup ? '🎵 ' : ''}
                             {pastoral.name}
                           </strong>
+                          {pastoral.foreignCommunityName && (
+                            <small
+                              className="pastoral-origin-tag"
+                              title={`Ministério de ${pastoral.foreignCommunityName} servindo nesta escala`}
+                            >
+                              🏘 de {pastoral.foreignCommunityName}
+                            </small>
+                          )}
                           <span>
                             {pastoral.requiredPeople > 0
                               ? `${pastoral.assignedCount}/${pastoral.requiredPeople} ${unit}`

@@ -21,12 +21,18 @@ interface CommunityPastoral {
   name?: string;
   globalPastoral?: { id: string; name: string };
   communityId?: string;
+  community?: { id: string; name: string };
 }
 
 interface MassPastoral {
   id: string;
   requiredPeople: number;
-  communityPastoral: { id: string; globalPastoral?: { id: string; name: string } | null };
+  communityPastoral: {
+    id: string;
+    communityId?: string;
+    community?: { id: string; name: string } | null;
+    globalPastoral?: { id: string; name: string } | null;
+  };
 }
 
 interface MassSchedule {
@@ -141,8 +147,12 @@ const FixedSchedulePage: React.FC = () => {
       return;
     }
     let active = true;
+    // Ministérios de outras comunidades da MESMA paróquia também podem servir
+    const parish = communities.find((c) => c.id === form.communityId)?.parish;
     api
-      .get('/pastorals/community', { params: { communityId: form.communityId } })
+      .get('/pastorals/community', {
+        params: parish ? { parishId: parish.id } : { communityId: form.communityId },
+      })
       .then((res) => {
         if (active) setCommunityPastorals(res.data || []);
       })
@@ -350,8 +360,22 @@ const FixedSchedulePage: React.FC = () => {
                           ) : (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                               {pastorals.map((p) => (
-                                <span key={p.id} className="status-badge blue" style={{ fontSize: '0.72rem' }}>
+                                <span
+                                  key={p.id}
+                                  className="status-badge blue"
+                                  style={{ fontSize: '0.72rem' }}
+                                  title={
+                                    p.communityPastoral.communityId &&
+                                    p.communityPastoral.communityId !== schedule.community.id
+                                      ? `Ministério de ${p.communityPastoral.community?.name ?? 'outra comunidade'}`
+                                      : undefined
+                                  }
+                                >
                                   {p.communityPastoral.globalPastoral?.name || 'Pastoral'}
+                                  {p.communityPastoral.communityId &&
+                                  p.communityPastoral.communityId !== schedule.community.id
+                                    ? ` (${p.communityPastoral.community?.name ?? 'outra'})`
+                                    : ''}
                                   {p.requiredPeople ? ` · ${p.requiredPeople}` : ''}
                                 </span>
                               ))}
@@ -538,6 +562,12 @@ const FixedSchedulePage: React.FC = () => {
                             </span>
                             <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {pastoralName(p)}
+                              {p.communityId && p.communityId !== form.communityId && (
+                                <small style={{ color: '#8a6d1b', fontWeight: 600 }}>
+                                  {' '}
+                                  · {p.community?.name ?? 'outra comunidade'}
+                                </small>
+                              )}
                             </span>
                           </button>
                           {sel && (

@@ -4379,3 +4379,16 @@ button.couple-chip.is-action:hover {
   align-items: center;
   gap: 0.5rem;
 }
+
+/* Selo de origem: ministério de outra comunidade servindo na escala */
+.pastoral-origin-tag {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #fdf3e3;
+  border: 1px solid #f2d9ac;
+  color: #8a6d1b;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
