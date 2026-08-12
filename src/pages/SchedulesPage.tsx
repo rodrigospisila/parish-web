@@ -1841,8 +1841,8 @@ const SchedulesPage: React.FC = () => {
       return;
     }
     const spouse = spouseInCurrentPastoral(assignTarget);
-    await createAssignment(assignTarget.id, role, true, { skipSpouseOffer: true });
-    if (assignWithSpouse && spouse) {
+    const assigned = await createAssignment(assignTarget.id, role, true, { skipSpouseOffer: true });
+    if (assigned && assignWithSpouse && spouse) {
       try {
         await postAssignment({
           scheduleId: activeSchedule.id,
@@ -1932,13 +1932,12 @@ const SchedulesPage: React.FC = () => {
     if (!ok) return;
     setAssigningGroupId(newGroup.id);
     try {
-      await axios.delete(`${API_URL}/schedules/assignments/group`, {
-        headers,
-        params: { scheduleId: activeSchedule.id, pastoralGroupId: currentGroup.id },
-      });
+      // Troca atômica no backend: se houver conflito e o usuário cancelar,
+      // o grupo atual permanece escalado (nada foi removido).
       const response = await postGroupAssignment({
         scheduleId: activeSchedule.id,
         pastoralGroupId: newGroup.id,
+        replaceGroupId: currentGroup.id,
       });
       const created = response.data?.created ?? 0;
       notify.success(`🔁 Troca feita: "${newGroup.name}" escalado (${created} integrante(s)).`);
@@ -2010,7 +2009,7 @@ const SchedulesPage: React.FC = () => {
   ) => {
     if (!activeSchedule) {
       notify.warning('Selecione uma escala');
-      return;
+      return false;
     }
 
     const memberId = memberIdOverride || assignmentForm.memberId;
@@ -2018,13 +2017,13 @@ const SchedulesPage: React.FC = () => {
 
     if (!memberId || !role.trim()) {
       notify.warning('Defina a funcao e selecione o membro');
-      return;
+      return false;
     }
 
     const eventPastoralsCount = activeSchedule.event.eventPastorals?.length ?? 0;
     if (eventPastoralsCount > 1 && !assignmentForm.communityPastoralId) {
       notify.warning('Selecione a pastoral da vaga');
-      return;
+      return false;
     }
 
     const candidate = candidates?.members.find((item) => item.id === memberId);
@@ -2037,12 +2036,12 @@ const SchedulesPage: React.FC = () => {
 
     if (!matchesSelectedPastoral) {
       notify.warning('O membro selecionado nao pertence a pastoral desta vaga');
-      return;
+      return false;
     }
 
     if (candidate?.currentScheduleAssigned) {
       notify.warning('Este membro ja esta atribuido nesta mesma escala');
-      return;
+      return false;
     }
 
     const warnings: string[] = [];
@@ -2063,7 +2062,7 @@ const SchedulesPage: React.FC = () => {
         'Escalar mesmo assim',
       );
       if (!shouldContinue) {
-        return;
+        return false;
       }
     }
 
@@ -2141,9 +2140,11 @@ const SchedulesPage: React.FC = () => {
         await fetchData();
         await fetchScheduleById(activeSchedule.id);
       }
+      return true;
     } catch (error: any) {
       console.error('Erro ao adicionar atribuicao', error);
       notify.error(error.response?.data?.message || 'Erro ao adicionar membro');
+      return false;
     } finally {
       setAssignSubmitting(false);
     }
