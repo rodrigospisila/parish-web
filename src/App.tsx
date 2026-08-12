@@ -9,6 +9,7 @@ import DiocesesPage from './pages/DiocesesPage';
 import ParishesPage from './pages/ParishesPage';
 import CommunitiesPage from './pages/CommunitiesPage';
 import MembersPage from './pages/MembersPage';
+import MyAccountPage from './pages/MyAccountPage';
 import EventsPage from './pages/EventsPage';
 import UsersPage from './pages/UsersPage';
 import SchedulesPage from './pages/SchedulesPage';
@@ -114,6 +115,7 @@ const App: React.FC = () => {
             } />
             <Route path="communities" element={<CommunitiesPage />} />
             <Route path="members" element={<MembersPage />} />
+            <Route path="account" element={<MyAccountPage />} />
             <Route path="events" element={<EventsPage />} />
             <Route path="fixed-schedule" element={
               <RoleProtectedRoute allowedRoles={FIXED_SCHEDULE_ROLES}>

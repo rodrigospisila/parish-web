@@ -27,6 +27,8 @@ interface AuthContextType {
   token: string | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  /** Recarrega o perfil do servidor (vínculos/pastorais novos sem relogin) */
+  refreshUser: () => Promise<void>;
   loading: boolean;
 }
 
@@ -82,8 +84,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     delete axios.defaults.headers.common['Authorization'];
   };
 
+  const refreshUser = async () => {
+    const storedToken = localStorage.getItem('token');
+    if (!storedToken) return;
+    try {
+      const response = await axios.get(`${API_URL}/users/me`, {
+        headers: { Authorization: `Bearer ${storedToken}` },
+      });
+      const fresh = response.data;
+      const mapped: User = {
+        id: fresh.id,
+        email: fresh.email,
+        name: fresh.name,
+        phone: fresh.phone ?? undefined,
+        role: fresh.role,
+        dioceseId: fresh.dioceseId ?? undefined,
+        parishId: fresh.parishId ?? undefined,
+        communityId: fresh.communityId ?? undefined,
+        pastoralIds: fresh.pastoralIds ?? [],
+        pastorals: fresh.pastorals ?? [],
+        forcePasswordChange: fresh.forcePasswordChange ?? false,
+      };
+      setUser(mapped);
+      localStorage.setItem('user', JSON.stringify(mapped));
+    } catch {
+      // Sessão inválida é tratada pelo interceptor de refresh
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, login, logout, refreshUser, loading }}>
       {children}
     </AuthContext.Provider>
   );

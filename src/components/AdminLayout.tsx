@@ -66,7 +66,12 @@ const AdminLayout: React.FC = () => {
             <img src="/brand/parish-simbolo-cor.svg" alt="" className="sidebar-logo-mark" />
             <span className="sidebar-logo-word">Parish</span>
           </div>
-          <div className="sidebar-user">
+          <div
+            className="sidebar-user"
+            onClick={() => navigate('/admin/account')}
+            style={{ cursor: 'pointer' }}
+            title="Minha conta"
+          >
             <div className="sidebar-user-top">
               <div className="sidebar-user-avatar" style={{ background: avatarColor(displayName) }}>
                 {initials(displayName)}
