@@ -93,6 +93,9 @@ const MyAccountPage: React.FC = () => {
 
   const communities = parishes.find((parish) => parish.id === parishId)?.communities ?? [];
   const alreadyLinked = new Set(links.map((link) => link.communityId));
+  // Papéis de gestão têm o escopo atrelado à comunidade — a troca de principal
+  // é feita por um administrador (o backend também bloqueia).
+  const canChangePrimary = ['FAITHFUL', 'VOLUNTEER'].includes(user?.role ?? '');
 
   const handleAdd = async () => {
     if (!communityId) {
@@ -243,14 +246,16 @@ const MyAccountPage: React.FC = () => {
                   </span>
                   {!link.isPrimary && (
                     <span style={{ display: 'inline-flex', gap: 8 }}>
-                      <button
-                        type="button"
-                        className="btn-small btn-surface"
-                        disabled={busy}
-                        onClick={() => void handleMakePrimary(link)}
-                      >
-                        Tornar principal
-                      </button>
+                      {canChangePrimary && (
+                        <button
+                          type="button"
+                          className="btn-small btn-surface"
+                          disabled={busy}
+                          onClick={() => void handleMakePrimary(link)}
+                        >
+                          Tornar principal
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="remove-button"
