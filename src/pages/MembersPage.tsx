@@ -6,6 +6,7 @@ import SacramentsModal from '../components/SacramentsModal';
 import SaintAvatar, { avatarColor, initials } from '../components/SaintAvatar';
 import SearchSelect from '../components/SearchSelect';
 import { usePatronSaints } from '../components/PatronSaintsManager';
+import { useAuth } from '../contexts/AuthContext';
 import './MembersPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -47,6 +48,12 @@ interface Member {
   emergencyContactRelation?: string;
   status: MemberStatus;
   community: Community;
+  communityLinks?: {
+    id: string;
+    communityId: string;
+    isPrimary: boolean;
+    community: { id: string; name: string };
+  }[];
   createdAt: string;
 }
 
@@ -114,12 +121,18 @@ type SortField = 'fullName' | 'email' | 'community' | 'status' | 'createdAt';
 type SortDirection = 'asc' | 'desc';
 
 const MembersPage: React.FC = () => {
+  const { user: authUser } = useAuth();
   const [members, setMembers] = useState<Member[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [sacramentsFor, setSacramentsFor] = useState<Member | null>(null);
+  // Vínculos multi-comunidade do membro em edição
+  const [memberLinks, setMemberLinks] = useState<Member['communityLinks']>([]);
+  const [linkCommunityToAdd, setLinkCommunityToAdd] = useState('');
+  const [linkConsent, setLinkConsent] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   // Estados para visualização híbrida (preferência persistida por página)
@@ -287,6 +300,100 @@ const MembersPage: React.FC = () => {
       emergencyContactRelation: member.emergencyContactRelation || '',
     });
     setShowModal(true);
+    setLinkCommunityToAdd('');
+    setLinkConsent(false);
+    void loadMemberLinks(member.id);
+  };
+
+  // ===== Vínculos multi-comunidade (Fase 2) =====
+  const authHeaders = () => ({
+    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+  });
+
+  const loadMemberLinks = async (memberId: string) => {
+    try {
+      const response = await axios.get(`${API_URL}/members/${memberId}/communities`, authHeaders());
+      setMemberLinks((response.data || []).filter((link: any) => link.isActive !== false));
+    } catch {
+      setMemberLinks([]);
+    }
+  };
+
+  const handleAddLink = async () => {
+    if (!editingMember || !linkCommunityToAdd) {
+      notify.warning('Selecione a comunidade para vincular');
+      return;
+    }
+    if (!linkConsent) {
+      notify.warning('Confirme o consentimento do membro (LGPD) para criar o vínculo');
+      return;
+    }
+    setLinkBusy(true);
+    try {
+      await axios.post(
+        `${API_URL}/members/${editingMember.id}/communities`,
+        { communityId: linkCommunityToAdd, consentGiven: true },
+        authHeaders(),
+      );
+      notify.success('Vínculo criado — o membro agora é visível para os coordenadores dessa comunidade.');
+      setLinkCommunityToAdd('');
+      setLinkConsent(false);
+      await loadMemberLinks(editingMember.id);
+      fetchData();
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Erro ao criar vínculo');
+    } finally {
+      setLinkBusy(false);
+    }
+  };
+
+  const handleRemoveLink = async (communityId: string, communityName: string) => {
+    if (!editingMember) return;
+    const ok = await confirm.action(
+      'Remover vínculo',
+      `Remover o vínculo de ${editingMember.fullName} com ${communityName}? O membro deixa de ser visível/escalável nessa comunidade.`,
+      'Remover vínculo',
+    );
+    if (!ok) return;
+    setLinkBusy(true);
+    try {
+      await axios.delete(
+        `${API_URL}/members/${editingMember.id}/communities/${communityId}`,
+        authHeaders(),
+      );
+      notify.success('Vínculo removido.');
+      await loadMemberLinks(editingMember.id);
+      fetchData();
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Erro ao remover vínculo');
+    } finally {
+      setLinkBusy(false);
+    }
+  };
+
+  const handleMakePrimary = async (communityId: string, communityName: string) => {
+    if (!editingMember) return;
+    const ok = await confirm.action(
+      'Trocar comunidade principal',
+      `Tornar ${communityName} a comunidade PRINCIPAL de ${editingMember.fullName}? A comunidade atual (${editingMember.community.name}) vira vínculo secundário.`,
+      'Tornar principal',
+    );
+    if (!ok) return;
+    setLinkBusy(true);
+    try {
+      await axios.patch(
+        `${API_URL}/members/${editingMember.id}/communities/${communityId}/primary`,
+        {},
+        authHeaders(),
+      );
+      notify.success(`${communityName} agora é a comunidade principal.`);
+      await loadMemberLinks(editingMember.id);
+      fetchData();
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Erro ao trocar a comunidade principal');
+    } finally {
+      setLinkBusy(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -590,6 +697,27 @@ const MembersPage: React.FC = () => {
                     <div className="entity-chips">
                       <span className="entity-chip soft-blue">{member.community.name}</span>
                       {statusChip(member.status)}
+                      {(member.communityLinks?.filter((link) => !link.isPrimary).length ?? 0) > 0 && (
+                        <span
+                          className="entity-chip"
+                          style={{ background: '#eef4fb', color: '#075aa9' }}
+                          title={`Vínculos secundários: ${member.communityLinks
+                            ?.filter((link) => !link.isPrimary)
+                            .map((link) => link.community.name)
+                            .join(', ')}`}
+                        >
+                          🔗 +{member.communityLinks?.filter((link) => !link.isPrimary).length}
+                        </span>
+                      )}
+                      {authUser?.communityId && member.community.id !== authUser.communityId && (
+                        <span
+                          className="entity-chip"
+                          style={{ background: '#fdf3e3', color: '#a96a0d' }}
+                          title={`Comunidade principal: ${member.community.name} — aparece aqui por vínculo secundário`}
+                        >
+                          Vínculo secundário
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1120,6 +1248,110 @@ const MembersPage: React.FC = () => {
                   </div>
                 </div>
               </fieldset>
+
+              {editingMember && (
+                <fieldset>
+                  <legend>⛪ Comunidades do membro</legend>
+                  <p style={{ color: '#66788c', fontSize: '0.85rem', margin: '0 0 0.8rem' }}>
+                    A <strong>principal</strong> é a comunidade de referência do cadastro. Vínculos
+                    secundários tornam o membro visível e escalável para os coordenadores daquela
+                    comunidade (com consentimento LGPD).
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: '0.9rem' }}>
+                    {(memberLinks ?? []).map((link) => (
+                      <div
+                        key={link.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 10,
+                          padding: '8px 12px',
+                        }}
+                      >
+                        <span style={{ flex: 1, fontWeight: 600 }}>
+                          {link.isPrimary ? '⭐ ' : '🔗 '}
+                          {link.community.name}
+                          {link.isPrimary && (
+                            <small style={{ color: '#66788c', fontWeight: 500 }}> · principal</small>
+                          )}
+                        </span>
+                        {!link.isPrimary && (
+                          <>
+                            <button
+                              type="button"
+                              className="btn-small btn-surface"
+                              disabled={linkBusy}
+                              onClick={() => handleMakePrimary(link.communityId, link.community.name)}
+                            >
+                              Tornar principal
+                            </button>
+                            <button
+                              type="button"
+                              className="remove-button"
+                              style={{ padding: '6px 12px' }}
+                              disabled={linkBusy}
+                              onClick={() => handleRemoveLink(link.communityId, link.community.name)}
+                            >
+                              Remover
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="form-group">
+                    <label>Adicionar vínculo secundário</label>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <select
+                        value={linkCommunityToAdd}
+                        onChange={(e) => setLinkCommunityToAdd(e.target.value)}
+                        style={{ flex: 1, minWidth: 220 }}
+                      >
+                        <option value="">Selecione a comunidade</option>
+                        {communities
+                          .filter(
+                            (community) =>
+                              !(memberLinks ?? []).some((link) => link.communityId === community.id),
+                          )
+                          .map((community) => (
+                            <option key={community.id} value={community.id}>
+                              {community.name}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn-small btn-submit"
+                        disabled={linkBusy || !linkCommunityToAdd || !linkConsent}
+                        onClick={handleAddLink}
+                      >
+                        {linkBusy ? 'Salvando...' : 'Adicionar'}
+                      </button>
+                    </div>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        marginTop: 8,
+                        fontSize: '0.85rem',
+                        color: '#48607a',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={linkConsent}
+                        onChange={(e) => setLinkConsent(e.target.checked)}
+                      />
+                      O membro consentiu (LGPD) em ficar visível para os coordenadores desta
+                      comunidade
+                    </label>
+                  </div>
+                </fieldset>
+              )}
 
                 </div>
               </div>
