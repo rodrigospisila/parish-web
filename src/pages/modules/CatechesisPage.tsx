@@ -248,7 +248,9 @@ const CatechesisPage: React.FC = () => {
     if (!selectedClass) return;
     try {
       const res = await api.post(`/catechesis/classes/${selectedClass.id}/sessions`, {
-        date: new Date(sessionForm.date).toISOString(),
+        // Date-only (00:00Z), como o app — toISOString() de datetime-local
+        // deslocava encontros noturnos para o dia seguinte
+        date: sessionForm.date,
         topic: sessionForm.topic || undefined,
       });
       notify.success('Encontro registrado! Agora faça a chamada.');
@@ -700,8 +702,8 @@ const CatechesisPage: React.FC = () => {
             <h2>Novo encontro</h2>
             <form onSubmit={handleCreateSession}>
               <div className="form-group">
-                <label>Data e hora *</label>
-                <input type="datetime-local" required value={sessionForm.date} onChange={(e) => setSessionForm({ ...sessionForm, date: e.target.value })} />
+                <label>Data *</label>
+                <input type="date" required value={sessionForm.date} onChange={(e) => setSessionForm({ ...sessionForm, date: e.target.value })} />
               </div>
               <div className="form-group">
                 <label>Tema</label>
