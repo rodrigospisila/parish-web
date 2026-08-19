@@ -29,6 +29,7 @@ interface ClassReport {
   active: number;
   dropouts: number;
   completed: number;
+  pending: number;
   students: Array<{
     enrollmentId: string;
     member: { id: string; fullName: string };
@@ -36,6 +37,19 @@ interface ClassReport {
     pendingDocuments?: string | null;
     attendanceRate: number | null;
     sessions: number;
+  }>;
+}
+
+interface RenewalPreview {
+  classId: string;
+  stage: { id: string; name: string };
+  nextStage: { id: string; name: string; sacramentType?: string | null } | null;
+  targetClasses: Array<{ id: string; name: string; year: number; weekday?: number | null; time?: string | null; capacity: number | null }>;
+  students: Array<{
+    enrollmentId: string;
+    member: { id: string; fullName: string };
+    eligible: boolean;
+    missingDocuments: string | null;
   }>;
 }
 
@@ -65,6 +79,8 @@ const ENROLLMENT_STATUS: Record<string, { label: string; color: string }> = {
   COMPLETED: { label: 'Concluído', color: 'green' },
   DROPPED_OUT: { label: 'Desistente', color: 'red' },
   TRANSFERRED: { label: 'Transferido', color: 'gray' },
+  PENDING_APPROVAL: { label: 'Aguardando aprovação', color: 'yellow' },
+  REJECTED: { label: 'Não aprovada', color: 'red' },
 };
 
 const CatechesisPage: React.FC = () => {
@@ -91,7 +107,13 @@ const CatechesisPage: React.FC = () => {
     weekday: '',
     time: '',
     room: '',
+    capacity: '',
   });
+
+  const [renewal, setRenewal] = useState<RenewalPreview | null>(null);
+  const [renewalTarget, setRenewalTarget] = useState('');
+  const [renewalSelection, setRenewalSelection] = useState<Record<string, boolean>>({});
+  const [renewing, setRenewing] = useState(false);
 
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [enrollForm, setEnrollForm] = useState({ memberId: '', waiveBaptism: false });
@@ -176,10 +198,11 @@ const CatechesisPage: React.FC = () => {
         weekday: classForm.weekday === '' ? undefined : Number(classForm.weekday),
         time: classForm.time || undefined,
         room: classForm.room || undefined,
+        capacity: classForm.capacity === '' ? undefined : Number(classForm.capacity),
       });
       notify.success('Turma criada com sucesso!');
       setShowClassModal(false);
-      setClassForm({ name: '', year: new Date().getFullYear(), stageId: '', communityId: '', weekday: '', time: '', room: '' });
+      setClassForm({ name: '', year: new Date().getFullYear(), stageId: '', communityId: '', weekday: '', time: '', room: '', capacity: '' });
       fetchData();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao criar turma'));
@@ -280,6 +303,76 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
+  const handleApprove = async (enrollmentId: string) => {
+    try {
+      await api.patch(`/catechesis/enrollments/${enrollmentId}/approve`, {});
+      notify.success('Matrícula aprovada — a família foi avisada!');
+      refreshDetail();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao aprovar a inscrição'));
+    }
+  };
+
+  const handleReject = async (enrollmentId: string) => {
+    const reason = window.prompt('Motivo da recusa (opcional — a família será avisada):');
+    if (reason === null) return; // cancelou
+    try {
+      await api.patch(`/catechesis/enrollments/${enrollmentId}/reject`, {
+        reason: reason.trim() || undefined,
+      });
+      notify.success('Inscrição recusada — a família foi avisada.');
+      refreshDetail();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao recusar a inscrição'));
+    }
+  };
+
+  const openRenewal = async () => {
+    if (!selectedClass) return;
+    try {
+      const res = await api.get(`/catechesis/classes/${selectedClass.id}/renewal-preview`);
+      const preview: RenewalPreview = res.data;
+      const selection: Record<string, boolean> = {};
+      preview.students.forEach((s) => {
+        selection[s.enrollmentId] = s.eligible;
+      });
+      setRenewalSelection(selection);
+      setRenewalTarget(preview.targetClasses[0]?.id ?? '');
+      setRenewal(preview);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao preparar a renovação'));
+    }
+  };
+
+  const handleRenew = async () => {
+    if (!selectedClass || !renewal) return;
+    const enrollmentIds = Object.entries(renewalSelection)
+      .filter(([, checked]) => checked)
+      .map(([id]) => id);
+    if (!renewalTarget) {
+      notify.error('Escolha a turma de destino');
+      return;
+    }
+    if (enrollmentIds.length === 0) {
+      notify.error('Selecione ao menos um catequizando');
+      return;
+    }
+    setRenewing(true);
+    try {
+      const res = await api.post(`/catechesis/classes/${selectedClass.id}/renew`, {
+        targetClassId: renewalTarget,
+        enrollmentIds,
+      });
+      notify.success(`Renovação concluída: ${res.data.renewed + res.data.reactivated} matrícula(s) na nova turma!`);
+      setRenewal(null);
+      refreshDetail();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao renovar a turma'));
+    } finally {
+      setRenewing(false);
+    }
+  };
+
   if (loading) return <div className="module-page"><div className="loading">Carregando...</div></div>;
 
   return (
@@ -364,6 +457,9 @@ const CatechesisPage: React.FC = () => {
                   <button className="btn-small success" onClick={() => setShowEnrollModal(true)}>+ Matricular</button>
                   <button className="btn-small" onClick={() => setShowCatechistModal(true)}>+ Catequista</button>
                   <button className="btn-small" onClick={() => setShowSessionModal(true)}>+ Encontro (chamada)</button>
+                  {report && report.completed > 0 && (
+                    <button className="btn-small" onClick={openRenewal}>↻ Renovar turma</button>
+                  )}
                   <button className="btn-small" onClick={() => setSelectedClass(null)}>Fechar</button>
                 </div>
               </div>
@@ -375,6 +471,9 @@ const CatechesisPage: React.FC = () => {
                   <div className="summary-cards">
                     <div className="summary-card"><div className="label">Matriculados</div><div className="value">{report.total}</div></div>
                     <div className="summary-card"><div className="label">Ativos</div><div className="value positive">{report.active}</div></div>
+                    {report.pending > 0 && (
+                      <div className="summary-card"><div className="label">Aguardando aprovação</div><div className="value">{report.pending}</div></div>
+                    )}
                     <div className="summary-card"><div className="label">Concluídos</div><div className="value">{report.completed}</div></div>
                     <div className="summary-card"><div className="label">Desistências</div><div className="value negative">{report.dropouts}</div></div>
                   </div>
@@ -400,6 +499,12 @@ const CatechesisPage: React.FC = () => {
                               <td>{student.attendanceRate === null ? '—' : `${student.attendanceRate}% (${student.sessions} chamadas)`}</td>
                               <td>{student.pendingDocuments || '—'}</td>
                               <td className="actions-cell">
+                                {student.status === 'PENDING_APPROVAL' && (
+                                  <>
+                                    <button className="btn-small success" onClick={() => handleApprove(student.enrollmentId)}>Aprovar</button>
+                                    <button className="btn-small danger" onClick={() => handleReject(student.enrollmentId)}>Recusar</button>
+                                  </>
+                                )}
                                 {student.status === 'ACTIVE' && (
                                   <>
                                     <button className="btn-small success" onClick={() => handleComplete(student.enrollmentId)}>Concluir</button>
@@ -510,9 +615,21 @@ const CatechesisPage: React.FC = () => {
                   <input type="time" value={classForm.time} onChange={(e) => setClassForm({ ...classForm, time: e.target.value })} />
                 </div>
               </div>
-              <div className="form-group">
-                <label>Sala/local</label>
-                <input type="text" value={classForm.room} onChange={(e) => setClassForm({ ...classForm, room: e.target.value })} />
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Sala/local</label>
+                  <input type="text" value={classForm.room} onChange={(e) => setClassForm({ ...classForm, room: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Vagas (inscrição online)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="Sem limite"
+                    value={classForm.capacity}
+                    onChange={(e) => setClassForm({ ...classForm, capacity: e.target.value })}
+                  />
+                </div>
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn-cancel" onClick={() => setShowClassModal(false)}>Cancelar</button>
@@ -595,6 +712,64 @@ const CatechesisPage: React.FC = () => {
                 <button type="submit" className="btn-submit">Registrar e abrir chamada</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {renewal && selectedClass && (
+        <div className="module-modal-overlay" onClick={() => setRenewal(null)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Renovar turma · {selectedClass.name}</h2>
+            {!renewal.nextStage ? (
+              <p>
+                Esta é a última etapa do itinerário ({renewal.stage.name}) — não há próxima etapa
+                cadastrada para renovar.
+              </p>
+            ) : renewal.targetClasses.length === 0 ? (
+              <p>
+                Próxima etapa: <strong>{renewal.nextStage.name}</strong>. Nenhuma turma ativa dessa
+                etapa nesta comunidade — crie a turma do próximo ano antes de renovar.
+              </p>
+            ) : renewal.students.length === 0 ? (
+              <p>Nenhum catequizando concluído nesta turma para renovar.</p>
+            ) : (
+              <>
+                <div className="form-group">
+                  <label>Turma de destino ({renewal.nextStage.name}) *</label>
+                  <select value={renewalTarget} onChange={(e) => setRenewalTarget(e.target.value)}>
+                    {renewal.targetClasses.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} · {c.year}
+                        {c.capacity !== null ? ` (${c.capacity} vagas)` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="checklist">
+                  {renewal.students.map((s) => (
+                    <label key={s.enrollmentId}>
+                      <input
+                        type="checkbox"
+                        checked={!!renewalSelection[s.enrollmentId]}
+                        onChange={(e) =>
+                          setRenewalSelection({ ...renewalSelection, [s.enrollmentId]: e.target.checked })
+                        }
+                      />
+                      {s.member.fullName}
+                      {s.missingDocuments ? ` — 📄 falta: ${s.missingDocuments}` : ''}
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" onClick={() => setRenewal(null)}>Fechar</button>
+              {renewal.nextStage && renewal.targetClasses.length > 0 && renewal.students.length > 0 && (
+                <button type="button" className="btn-submit" disabled={renewing} onClick={handleRenew}>
+                  {renewing ? 'Renovando...' : 'Renovar selecionados'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
