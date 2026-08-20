@@ -4,6 +4,7 @@ import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
 import { useAuth } from '../../contexts/AuthContext';
 import './ModulePages.css';
+import './CatechesisPage.css';
 
 interface Stage {
   id: string;
@@ -179,6 +180,33 @@ interface Member {
   fullName: string;
 }
 
+interface SessionSummary {
+  id: string;
+  date: string;
+  topic?: string | null;
+  marked: number;
+  present: number;
+  late: number;
+}
+
+const STATUS_BADGE: Record<string, string> = {
+  ACTIVE: 'cate-badge--active',
+  COMPLETED: 'cate-badge--done',
+  PENDING_APPROVAL: 'cate-badge--waiting',
+  DROPPED_OUT: 'cate-badge--out',
+  REJECTED: 'cate-badge--out',
+  TRANSFERRED: 'cate-badge--moved',
+};
+
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
 const SACRAMENT_LABELS: Record<string, string> = {
   BAPTISM: 'Batismo',
   FIRST_COMMUNION: 'Primeira Eucaristia',
@@ -244,6 +272,8 @@ const CatechesisPage: React.FC = () => {
 
   const [attendanceSessionId, setAttendanceSessionId] = useState<string | null>(null);
   const [attendance, setAttendance] = useState<Record<string, boolean>>({});
+  const [attendanceMeta, setAttendanceMeta] = useState<{ date: string; topic?: string | null } | null>(null);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
 
   // Pareceres por período (Fase 5)
   const [assessmentTarget, setAssessmentTarget] = useState<{ enrollmentId: string; fullName: string } | null>(null);
@@ -295,13 +325,34 @@ const CatechesisPage: React.FC = () => {
     setSelectedClass(klass);
     setReportLoading(true);
     try {
-      const res = await api.get(`/catechesis/classes/${klass.id}/report`);
-      setReport(res.data);
+      const [reportRes, sessionsRes] = await Promise.all([
+        api.get(`/catechesis/classes/${klass.id}/report`),
+        api.get(`/catechesis/classes/${klass.id}/sessions`),
+      ]);
+      setReport(reportRes.data);
+      setSessions(sessionsRes.data ?? []);
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao carregar o relatório da turma'));
       setReport(null);
+      setSessions([]);
     } finally {
       setReportLoading(false);
+    }
+  };
+
+  // Reabre a chamada de um encontro existente (antes só dava na criação)
+  const openSessionAttendance = async (session: SessionSummary) => {
+    try {
+      const res = await api.get(`/catechesis/sessions/${session.id}/attendance`);
+      const initial: Record<string, boolean> = {};
+      (res.data?.students ?? []).forEach((student: { enrollmentId: string; present: boolean | null }) => {
+        initial[student.enrollmentId] = student.present === null ? true : student.present;
+      });
+      setAttendance(initial);
+      setAttendanceMeta({ date: session.date, topic: session.topic });
+      setAttendanceSessionId(session.id);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao abrir a chamada'));
     }
   };
 
@@ -405,6 +456,7 @@ const CatechesisPage: React.FC = () => {
           initial[s.enrollmentId] = true;
         });
       setAttendance(initial);
+      setAttendanceMeta({ date: sessionForm.date, topic: undefined });
       setAttendanceSessionId(res.data.id);
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao registrar encontro'));
@@ -419,6 +471,7 @@ const CatechesisPage: React.FC = () => {
       });
       notify.success('Chamada registrada!');
       setAttendanceSessionId(null);
+      setAttendanceMeta(null);
       refreshDetail();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao salvar a chamada'));
@@ -864,198 +917,313 @@ const CatechesisPage: React.FC = () => {
         </div>
       )}
 
-      {tab === 'classes' && (
-        <>
-          <div className="module-grid">
+      {tab === 'classes' && !selectedClass && (
+        <div className="cate-root">
+          <div className="cate-grid">
             {classes.map((klass) => (
-              <div key={klass.id} className="module-card">
-                <h3>{klass.name} · {klass.year}</h3>
-                <p><strong>Etapa:</strong> {klass.stage.name}</p>
-                <p><strong>Comunidade:</strong> {klass.community.name}</p>
-                <p>
-                  <strong>Encontros:</strong>{' '}
-                  {klass.weekday !== null && klass.weekday !== undefined ? WEEKDAYS[klass.weekday] : 'a definir'}
-                  {klass.time ? ` às ${klass.time}` : ''}
-                  {klass.room ? ` · ${klass.room}` : ''}
-                </p>
-                <p>
-                  <span className="status-badge blue">{klass._count.enrollments} matriculados</span>{' '}
-                  <span className="status-badge gray">{klass._count.sessions} encontros</span>
-                </p>
-                <div className="card-footer">
-                  <button className="btn-small" onClick={() => openClassDetail(klass)}>Abrir turma</button>
+              <div key={klass.id} className="cate-card" onClick={() => openClassDetail(klass)}>
+                <div className="cate-card__head">
+                  <div>
+                    <h3 className="cate-card__title">{klass.name}</h3>
+                    <p className="cate-card__stage">{klass.stage.name}</p>
+                  </div>
+                  <span className="cate-year">{klass.year}</span>
+                </div>
+                <div className="cate-card__meta">
+                  <span>
+                    📍 {klass.community.name}
+                    {klass.room ? ` · ${klass.room}` : ''}
+                  </span>
+                  <span>
+                    🗓 {klass.weekday !== null && klass.weekday !== undefined ? WEEKDAYS[klass.weekday] : 'Dia a definir'}
+                    {klass.time ? ` às ${klass.time}` : ''}
+                  </span>
+                </div>
+                <div className="cate-card__foot">
+                  <div className="cate-card__stats">
+                    <span><strong>{klass._count.enrollments}</strong> ativos</span>
+                    <span><strong>{klass._count.sessions}</strong> encontros</span>
+                  </div>
+                  <span className="cate-card__open">Abrir turma →</span>
                 </div>
               </div>
             ))}
           </div>
-          {classes.length === 0 && <div className="empty-state">Nenhuma turma cadastrada.</div>}
+          {classes.length === 0 && <div className="cate-empty">Nenhuma turma cadastrada — crie a primeira em “+ Nova Turma”.</div>}
+        </div>
+      )}
 
-          {selectedClass && (
-            <div className="detail-panel">
-              <h2>Turma: {selectedClass.name} · {selectedClass.year}</h2>
-              <div className="detail-section">
-                <div className="inline-form">
-                  <button className="btn-small success" onClick={() => setShowEnrollModal(true)}>+ Matricular</button>
-                  <button className="btn-small" onClick={() => setShowCatechistModal(true)}>+ Catequista</button>
-                  <button className="btn-small" onClick={() => setShowSessionModal(true)}>+ Encontro (chamada)</button>
-                  {report && report.completed > 0 && (
-                    <button className="btn-small" onClick={openRenewal}>↻ Renovar turma</button>
-                  )}
-                  <button
-                    className="btn-small"
-                    onClick={() => {
-                      // Sempre abre limpo — prévia de outra turma/período não vaza
-                      setAgendaDates({});
-                      setAgendaRange({ from: '', to: '' });
-                      setShowAgendaModal(true);
-                    }}
-                  >
-                    📅 Gerar agenda
-                  </button>
-                  <button
-                    className="btn-small"
-                    onClick={() => downloadPdf(`/catechesis/classes/${selectedClass.id}/roster.pdf`, `lista_${selectedClass.name.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
-                  >
-                    🖨 Lista da turma
-                  </button>
-                  {report && report.completed > 0 && (
-                    <button
-                      className="btn-small"
-                      onClick={() => downloadPdf(`/catechesis/classes/${selectedClass.id}/certificates.pdf`, `certificados_${selectedClass.name.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
-                    >
-                      🎓 Certificados (lote)
-                    </button>
-                  )}
-                  <button
-                    className="btn-small"
-                    onClick={() => {
-                      // Sempre abre limpo — a matriz da turma anterior não pode
-                      // receber cliques (pagamento iria para a taxa errada)
-                      setClassFees([]);
-                      setShowFees(true);
-                      loadClassFees();
-                    }}
-                  >
-                    💰 Taxas
-                  </button>
-                  <button className="btn-small" onClick={() => setSelectedClass(null)}>Fechar</button>
+      {tab === 'classes' && selectedClass && (
+        <div className="cate-root">
+          <button className="cate-back" onClick={() => setSelectedClass(null)}>← Todas as turmas</button>
+
+          <div className="cate-detail">
+            <div className="cate-detail__head">
+              <div className="cate-detail__title-row">
+                <div>
+                  <h2 className="cate-detail__title">{selectedClass.name} · {selectedClass.year}</h2>
+                  <p className="cate-detail__sub">
+                    <strong>{selectedClass.stage.name}</strong>
+                    {' · '}{selectedClass.community.name}
+                    {' · '}
+                    {selectedClass.weekday !== null && selectedClass.weekday !== undefined
+                      ? WEEKDAYS[selectedClass.weekday]
+                      : 'dia a definir'}
+                    {selectedClass.time ? ` às ${selectedClass.time}` : ''}
+                    {selectedClass.room ? ` · ${selectedClass.room}` : ''}
+                  </p>
                 </div>
               </div>
 
-              {reportLoading && <div className="loading">Carregando relatório...</div>}
-
               {report && !reportLoading && (
-                <>
-                  <p style={{ margin: '0 0 0.75rem', fontSize: '0.95rem' }}>
-                    <strong>Catequistas:</strong>{' '}
-                    {report.catechists.length === 0 && (
-                      <span style={{ color: '#b05a12' }}>
-                        nenhum vinculado — use "+ Catequista" (o membro precisa estar na pastoral da Catequese da comunidade)
-                      </span>
-                    )}
-                    {report.catechists.map((catechist, index) => (
-                      <span key={catechist.memberId}>
-                        {index > 0 && ' · '}
-                        {catechist.fullName} <em style={{ color: '#666' }}>({catechist.role})</em>{' '}
-                        <button
-                          className="btn-small danger"
-                          style={{ padding: '0 0.45rem', fontSize: '0.75rem' }}
-                          title="Remover da turma"
-                          onClick={() => handleRemoveCatechist(catechist.memberId, catechist.fullName)}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </p>
-                  <div className="summary-cards">
-                    <div className="summary-card"><div className="label">Matriculados</div><div className="value">{report.total}</div></div>
-                    <div className="summary-card"><div className="label">Ativos</div><div className="value positive">{report.active}</div></div>
-                    {report.pending > 0 && (
-                      <div className="summary-card"><div className="label">Aguardando aprovação</div><div className="value">{report.pending}</div></div>
-                    )}
-                    <div className="summary-card"><div className="label">Concluídos</div><div className="value">{report.completed}</div></div>
-                    <div className="summary-card"><div className="label">Desistências</div><div className="value negative">{report.dropouts}</div></div>
-                  </div>
-
-                  <div className="table-container">
-                    <table className="data-table">
-                      <thead>
-                        <tr>
-                          <th>Catequizando</th>
-                          <th>Status</th>
-                          <th>Frequência</th>
-                          <th>Docs pendentes</th>
-                          <th>Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {report.students.map((student) => {
-                          const st = ENROLLMENT_STATUS[student.status] ?? { label: student.status, color: 'gray' };
-                          return (
-                            <tr key={student.enrollmentId}>
-                              <td><strong>{student.member.fullName}</strong></td>
-                              <td><span className={`status-badge ${st.color}`}>{st.label}</span></td>
-                              <td>{student.attendanceRate === null ? '—' : `${student.attendanceRate}% (${student.sessions} chamadas)`}</td>
-                              <td>{student.pendingDocuments || '—'}</td>
-                              <td className="actions-cell">
-                                {student.status === 'PENDING_APPROVAL' && (
-                                  <>
-                                    <button className="btn-small success" onClick={() => handleApprove(student.enrollmentId)}>Aprovar</button>
-                                    <button className="btn-small danger" onClick={() => handleReject(student.enrollmentId)}>Recusar</button>
-                                  </>
-                                )}
-                                {(student.status === 'ACTIVE' || student.status === 'COMPLETED') && (
-                                  <button
-                                    className="btn-small"
-                                    onClick={() => openAssessments(student.enrollmentId, student.member.fullName)}
-                                  >
-                                    📝 Parecer
-                                  </button>
-                                )}
-                                {student.status === 'COMPLETED' && (
-                                  <button
-                                    className="btn-small"
-                                    onClick={() => downloadPdf(`/catechesis/enrollments/${student.enrollmentId}/certificate.pdf`, `certificado_${student.member.fullName.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
-                                  >
-                                    🎓 Certificado
-                                  </button>
-                                )}
-                                {student.status === 'ACTIVE' && (
-                                  <>
-                                    <button
-                                      className="btn-small"
-                                      onClick={() => downloadPdf(`/catechesis/enrollments/${student.enrollmentId}/declaration.pdf`, `declaracao_${student.member.fullName.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
-                                    >
-                                      📄 Declaração
-                                    </button>
-                                    <button className="btn-small success" onClick={() => handleComplete(student.enrollmentId)}>Concluir</button>
-                                    <select
-                                      className="filter-select"
-                                      style={{ minWidth: 140, padding: '0.3rem 0.4rem', fontSize: '0.85rem' }}
-                                      defaultValue=""
-                                      onChange={(e) => handleTransfer(student.enrollmentId, e.target.value)}
-                                    >
-                                      <option value="" disabled>Transferir para...</option>
-                                      {classes.filter((c) => c.id !== selectedClass.id).map((c) => (
-                                        <option key={c.id} value={c.id}>{c.name} · {c.year}</option>
-                                      ))}
-                                    </select>
-                                  </>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                    {report.students.length === 0 && <div className="empty-state">Nenhum catequizando matriculado ainda.</div>}
-                  </div>
-                </>
+                <div className="cate-team">
+                  <span className="cate-team__label">Equipe</span>
+                  {report.catechists.length === 0 && (
+                    <span className="cate-team__empty">
+                      Nenhum catequista — vincule pela pastoral da Catequese e use “+ Catequista”
+                    </span>
+                  )}
+                  {report.catechists.map((catechist) => (
+                    <span key={catechist.memberId} className="cate-chip">
+                      <span className="cate-chip__avatar">{initials(catechist.fullName)}</span>
+                      {catechist.fullName}
+                      <span className="cate-chip__role">{catechist.role}</span>
+                      <button
+                        className="cate-chip__remove"
+                        title="Remover da turma"
+                        onClick={() => handleRemoveCatechist(catechist.memberId, catechist.fullName)}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                  <button className="cate-btn cate-btn--ghost" onClick={() => setShowCatechistModal(true)}>
+                    + Catequista
+                  </button>
+                </div>
               )}
             </div>
-          )}
-        </>
+
+            <div className="cate-toolbar">
+              <button className="cate-btn cate-btn--primary" onClick={() => setShowEnrollModal(true)}>
+                + Matricular
+              </button>
+              <button className="cate-btn cate-btn--primary" onClick={() => setShowSessionModal(true)}>
+                + Encontro (chamada)
+              </button>
+              <span className="cate-toolbar__sep" />
+              <button
+                className="cate-btn"
+                onClick={() => {
+                  // Sempre abre limpo — prévia de outra turma/período não vaza
+                  setAgendaDates({});
+                  setAgendaRange({ from: '', to: '' });
+                  setShowAgendaModal(true);
+                }}
+              >
+                📅 Gerar agenda
+              </button>
+              {report && report.completed > 0 && (
+                <button className="cate-btn" onClick={openRenewal}>↻ Renovar turma</button>
+              )}
+              <button
+                className="cate-btn"
+                onClick={() => {
+                  // Sempre abre limpo — a matriz da turma anterior não pode
+                  // receber cliques (pagamento iria para a taxa errada)
+                  setClassFees([]);
+                  setShowFees(true);
+                  loadClassFees();
+                }}
+              >
+                💰 Taxas
+              </button>
+              <span className="cate-toolbar__sep" />
+              <button
+                className="cate-btn"
+                onClick={() => downloadPdf(`/catechesis/classes/${selectedClass.id}/roster.pdf`, `lista_${selectedClass.name.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
+              >
+                🖨 Lista da turma
+              </button>
+              {report && report.completed > 0 && (
+                <button
+                  className="cate-btn"
+                  onClick={() => downloadPdf(`/catechesis/classes/${selectedClass.id}/certificates.pdf`, `certificados_${selectedClass.name.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
+                >
+                  🎓 Certificados (lote)
+                </button>
+              )}
+            </div>
+
+            {reportLoading && <div className="loading">Carregando a turma...</div>}
+
+            {report && !reportLoading && (
+              <>
+                <div className="cate-stats">
+                  <div className="cate-stat">
+                    <div className="cate-stat__value">{report.total}</div>
+                    <div className="cate-stat__label">Matriculados</div>
+                  </div>
+                  <div className="cate-stat">
+                    <div className="cate-stat__value cate-stat__value--ok">{report.active}</div>
+                    <div className="cate-stat__label">Ativos</div>
+                  </div>
+                  {report.pending > 0 && (
+                    <div className="cate-stat">
+                      <div className="cate-stat__value cate-stat__value--warn">{report.pending}</div>
+                      <div className="cate-stat__label">Aguardando</div>
+                    </div>
+                  )}
+                  <div className="cate-stat">
+                    <div className="cate-stat__value">{report.completed}</div>
+                    <div className="cate-stat__label">Concluídos</div>
+                  </div>
+                  <div className="cate-stat">
+                    <div className={`cate-stat__value${report.dropouts > 0 ? ' cate-stat__value--danger' : ''}`}>{report.dropouts}</div>
+                    <div className="cate-stat__label">Desistências</div>
+                  </div>
+                  <div className="cate-stat">
+                    <div className="cate-stat__value">{sessions.length}</div>
+                    <div className="cate-stat__label">Encontros</div>
+                  </div>
+                </div>
+
+                <div className="cate-body">
+                  <section>
+                    <div className="cate-section__head">
+                      <h3 className="cate-section__title">Encontros</h3>
+                      <span className="cate-section__hint">Clique num encontro para abrir/editar a chamada</span>
+                    </div>
+                    {sessions.length === 0 ? (
+                      <div className="cate-empty">
+                        Nenhum encontro ainda — use “+ Encontro (chamada)” ou gere a agenda do ano.
+                      </div>
+                    ) : (
+                      <div className="cate-sessions">
+                        {sessions.map((session) => (
+                          <button key={session.id} className="cate-session" onClick={() => void openSessionAttendance(session)}>
+                            <span>
+                              <span className="cate-session__date">
+                                {new Date(session.date).toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                              </span>
+                              <div className="cate-session__meta">{session.topic || 'Sem tema'}</div>
+                            </span>
+                            {session.marked === 0 ? (
+                              <span className="cate-session__badge cate-session__badge--todo">sem chamada</span>
+                            ) : (
+                              <span className="cate-session__badge cate-session__badge--done">
+                                {session.present}/{session.marked} ✓
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  <section>
+                    <div className="cate-section__head">
+                      <h3 className="cate-section__title">Catequizandos</h3>
+                    </div>
+                    {report.students.length === 0 ? (
+                      <div className="cate-empty">Nenhum catequizando matriculado ainda.</div>
+                    ) : (
+                      <div className="cate-table-wrap">
+                        <table className="cate-table">
+                          <thead>
+                            <tr>
+                              <th>Catequizando</th>
+                              <th>Status</th>
+                              <th>Frequência</th>
+                              <th>Docs pendentes</th>
+                              <th style={{ textAlign: 'right' }}>Ações</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {report.students.map((student) => {
+                              const st = ENROLLMENT_STATUS[student.status] ?? { label: student.status, color: 'gray' };
+                              const badgeClass = STATUS_BADGE[student.status] ?? 'cate-badge--moved';
+                              return (
+                                <tr key={student.enrollmentId}>
+                                  <td><strong>{student.member.fullName}</strong></td>
+                                  <td><span className={`cate-badge ${badgeClass}`}>{st.label}</span></td>
+                                  <td>
+                                    {student.attendanceRate === null ? (
+                                      <span style={{ color: '#94a3b8' }}>—</span>
+                                    ) : (
+                                      <span className="cate-freq">
+                                        <span className="cate-freq__bar">
+                                          <span
+                                            className={`cate-freq__fill${student.attendanceRate < 60 ? ' cate-freq__fill--low' : ''}`}
+                                            style={{ width: `${student.attendanceRate}%`, display: 'block' }}
+                                          />
+                                        </span>
+                                        <span className="cate-freq__num">{student.attendanceRate}%</span>
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td>
+                                    {student.pendingDocuments
+                                      ? <span className="cate-doc-pending">📄 {student.pendingDocuments}</span>
+                                      : <span style={{ color: '#94a3b8' }}>—</span>}
+                                  </td>
+                                  <td>
+                                    <div className="cate-row-actions">
+                                      {student.status === 'PENDING_APPROVAL' && (
+                                        <>
+                                          <button className="cate-mini cate-mini--ok" onClick={() => handleApprove(student.enrollmentId)}>✓ Aprovar</button>
+                                          <button className="cate-mini cate-mini--danger" onClick={() => handleReject(student.enrollmentId)}>Recusar</button>
+                                        </>
+                                      )}
+                                      {(student.status === 'ACTIVE' || student.status === 'COMPLETED') && (
+                                        <button className="cate-mini" onClick={() => openAssessments(student.enrollmentId, student.member.fullName)}>
+                                          📝 Parecer
+                                        </button>
+                                      )}
+                                      {student.status === 'COMPLETED' && (
+                                        <button
+                                          className="cate-mini"
+                                          onClick={() => downloadPdf(`/catechesis/enrollments/${student.enrollmentId}/certificate.pdf`, `certificado_${student.member.fullName.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
+                                        >
+                                          🎓 Certificado
+                                        </button>
+                                      )}
+                                      {student.status === 'ACTIVE' && (
+                                        <>
+                                          <button
+                                            className="cate-mini"
+                                            onClick={() => downloadPdf(`/catechesis/enrollments/${student.enrollmentId}/declaration.pdf`, `declaracao_${student.member.fullName.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
+                                          >
+                                            📄 Declaração
+                                          </button>
+                                          <button className="cate-mini cate-mini--ok" onClick={() => handleComplete(student.enrollmentId)}>Concluir</button>
+                                          <select
+                                            className="cate-select"
+                                            defaultValue=""
+                                            onChange={(e) => handleTransfer(student.enrollmentId, e.target.value)}
+                                          >
+                                            <option value="" disabled>Transferir…</option>
+                                            {classes.filter((c) => c.id !== selectedClass.id).map((c) => (
+                                              <option key={c.id} value={c.id}>{c.name} · {c.year}</option>
+                                            ))}
+                                          </select>
+                                        </>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </section>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {showStageModal && (
@@ -1514,7 +1682,12 @@ const CatechesisPage: React.FC = () => {
       {attendanceSessionId && (
         <div className="module-modal-overlay" onClick={() => setAttendanceSessionId(null)}>
           <div className="module-modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Chamada do encontro</h2>
+            <h2>
+              Chamada
+              {attendanceMeta
+                ? ` · ${new Date(attendanceMeta.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}${attendanceMeta.topic ? ` — ${attendanceMeta.topic}` : ''}`
+                : ' do encontro'}
+            </h2>
             <div className="checklist">
               {Object.keys(attendance).length === 0 && <p>Nenhum catequizando ativo para a chamada.</p>}
               {(report?.students ?? [])
