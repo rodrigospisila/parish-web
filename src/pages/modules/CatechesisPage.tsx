@@ -119,6 +119,61 @@ const RATING_LABELS: Record<string, string> = {
 
 const money = (value: number) => `R$ ${value.toFixed(2).replace('.', ',')}`;
 
+/** Domingo de Páscoa (algoritmo de Meeus/Butcher), em UTC. */
+const easterSunday = (year: number): Date => {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(year, month - 1, day));
+};
+
+const holidayCache = new Map<number, Map<string, string>>();
+
+/** Feriados nacionais do Brasil + datas litúrgicas móveis do ano. */
+const nationalHolidays = (year: number): Map<string, string> => {
+  const cached = holidayCache.get(year);
+  if (cached) return cached;
+  const map = new Map<string, string>();
+  const fixed = (month: number, day: number, label: string) =>
+    map.set(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`, label);
+  fixed(1, 1, 'Confraternização Universal');
+  fixed(4, 21, 'Tiradentes');
+  fixed(5, 1, 'Dia do Trabalho');
+  fixed(9, 7, 'Independência do Brasil');
+  fixed(10, 12, 'Nossa Senhora Aparecida');
+  fixed(11, 2, 'Finados');
+  fixed(11, 15, 'Proclamação da República');
+  fixed(11, 20, 'Consciência Negra');
+  fixed(12, 25, 'Natal');
+  const easter = easterSunday(year);
+  const offset = (days: number) => {
+    const date = new Date(easter);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+  };
+  map.set(offset(-48), 'Carnaval (segunda)');
+  map.set(offset(-47), 'Carnaval (terça)');
+  map.set(offset(-2), 'Sexta-feira Santa');
+  map.set(offset(0), 'Páscoa');
+  map.set(offset(60), 'Corpus Christi');
+  holidayCache.set(year, map);
+  return map;
+};
+
+const holidayLabel = (isoDate: string): string | null =>
+  nationalHolidays(Number(isoDate.slice(0, 4))).get(isoDate) ?? null;
+
 interface Member {
   id: string;
   fullName: string;
@@ -555,7 +610,9 @@ const CatechesisPage: React.FC = () => {
     const dates: Record<string, boolean> = {};
     while (cursor.getTime() <= end.getTime()) {
       if (cursor.getUTCDay() === selectedClass.weekday) {
-        dates[cursor.toISOString().slice(0, 10)] = true;
+        const iso = cursor.toISOString().slice(0, 10);
+        // Feriado nacional já vem desmarcado (o rótulo explica; dá para remarcar)
+        dates[iso] = holidayLabel(iso) === null;
       }
       cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
@@ -1347,7 +1404,8 @@ const CatechesisPage: React.FC = () => {
                   ? WEEKDAYS[selectedClass.weekday]
                   : 'dia a definir'}
               </strong>{' '}
-              no período. Desmarque feriados e recessos antes de criar — as famílias recebem um
+              no período. Feriados nacionais já vêm identificados e desmarcados (remarque se
+              houver encontro); desmarque também os recessos da paróquia — as famílias recebem um
               único aviso-resumo.
             </p>
             <div className="form-row">
@@ -1363,16 +1421,22 @@ const CatechesisPage: React.FC = () => {
             <button type="button" className="btn-small" onClick={buildAgendaPreview}>Gerar prévia</button>
             {Object.keys(agendaDates).length > 0 && (
               <div className="checklist" style={{ maxHeight: 260, overflowY: 'auto', marginTop: '0.75rem' }}>
-                {Object.keys(agendaDates).sort().map((date) => (
-                  <label key={date}>
-                    <input
-                      type="checkbox"
-                      checked={agendaDates[date]}
-                      onChange={(e) => setAgendaDates({ ...agendaDates, [date]: e.target.checked })}
-                    />
-                    {new Date(date).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
-                  </label>
-                ))}
+                {Object.keys(agendaDates).sort().map((date) => {
+                  const holiday = holidayLabel(date);
+                  return (
+                    <label key={date}>
+                      <input
+                        type="checkbox"
+                        checked={agendaDates[date]}
+                        onChange={(e) => setAgendaDates({ ...agendaDates, [date]: e.target.checked })}
+                      />
+                      {new Date(date).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                      {holiday && (
+                        <span style={{ color: '#b05a12', fontWeight: 600 }}> — 🎉 {holiday}</span>
+                      )}
+                    </label>
+                  );
+                })}
               </div>
             )}
             <div className="modal-actions">
