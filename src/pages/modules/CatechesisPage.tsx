@@ -38,9 +38,22 @@ interface ClassReport {
     member: { id: string; fullName: string };
     status: string;
     pendingDocuments?: string | null;
+    submittedDocs: number;
     attendanceRate: number | null;
     sessions: number;
   }>;
+}
+
+interface EnrollmentDocument {
+  id: string;
+  kind: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: 'SUBMITTED' | 'VERIFIED' | 'REJECTED';
+  reviewNotes?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
 }
 
 interface RenewalPreview {
@@ -279,6 +292,10 @@ const CatechesisPage: React.FC = () => {
 
   // Pareceres por período (Fase 5)
   const [assessmentTarget, setAssessmentTarget] = useState<{ enrollmentId: string; fullName: string } | null>(null);
+  const [docTarget, setDocTarget] = useState<{ enrollmentId: string; fullName: string } | null>(null);
+  const [docList, setDocList] = useState<EnrollmentDocument[] | null>(null);
+  const [reviewingDoc, setReviewingDoc] = useState<string | null>(null);
+
   const [showBatchAssessment, setShowBatchAssessment] = useState(false);
   const [batchSelection, setBatchSelection] = useState<Record<string, boolean>>({});
   const [batchForm, setBatchForm] = useState({ period: '', rating: '', notes: '' });
@@ -549,6 +566,63 @@ const CatechesisPage: React.FC = () => {
       notify.error(getErrorMessage(error, 'Erro ao salvar o parecer'));
     } finally {
       setSavingAssessment(false);
+    }
+  };
+
+  const openDocuments = async (enrollmentId: string, fullName: string) => {
+    setDocList(null);
+    setDocTarget({ enrollmentId, fullName });
+    try {
+      const res = await api.get(`/catechesis/enrollments/${enrollmentId}/documents`);
+      setDocList(res.data ?? []);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao carregar os documentos'));
+      setDocList([]);
+    }
+  };
+
+  const openDocumentFile = async (documentId: string) => {
+    try {
+      const res = await api.get(`/catechesis/documents/${documentId}/file`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error: any) {
+      try {
+        if (error?.response?.data instanceof Blob) {
+          const parsed = JSON.parse(await error.response.data.text());
+          if (parsed?.message) {
+            notify.error(Array.isArray(parsed.message) ? parsed.message.join(', ') : parsed.message);
+            return;
+          }
+        }
+      } catch {
+        // segue para o genérico
+      }
+      notify.error(getErrorMessage(error, 'Erro ao abrir o arquivo'));
+    }
+  };
+
+  const handleReviewDocument = async (documentId: string, approve: boolean) => {
+    let notes: string | undefined;
+    if (!approve) {
+      const typed = window.prompt('Motivo da recusa (a família será avisada e poderá reenviar):');
+      if (typed === null) return;
+      notes = typed.trim() || undefined;
+    }
+    setReviewingDoc(documentId);
+    try {
+      await api.patch(`/catechesis/documents/${documentId}/review`, { approve, notes });
+      notify.success(approve ? 'Documento conferido — pendência baixada e arquivo removido.' : 'Documento recusado — a família foi avisada.');
+      if (docTarget) {
+        const res = await api.get(`/catechesis/enrollments/${docTarget.enrollmentId}/documents`);
+        setDocList(res.data ?? []);
+      }
+      refreshDetail();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao conferir o documento'));
+    } finally {
+      setReviewingDoc(null);
     }
   };
 
@@ -1227,9 +1301,18 @@ const CatechesisPage: React.FC = () => {
                                     )}
                                   </td>
                                   <td>
-                                    {student.pendingDocuments
-                                      ? <span className="cate-doc-pending">📄 {student.pendingDocuments}</span>
-                                      : <span style={{ color: '#94a3b8' }}>—</span>}
+                                    {student.submittedDocs > 0 ? (
+                                      <button
+                                        className="cate-mini cate-mini--ok"
+                                        onClick={() => openDocuments(student.enrollmentId, student.member.fullName)}
+                                      >
+                                        📎 Conferir documento{student.submittedDocs > 1 ? 's' : ''} ({student.submittedDocs})
+                                      </button>
+                                    ) : student.pendingDocuments ? (
+                                      <span className="cate-doc-pending">📄 {student.pendingDocuments}</span>
+                                    ) : (
+                                      <span style={{ color: '#94a3b8' }}>—</span>
+                                    )}
                                   </td>
                                   <td>
                                     <div className="cate-row-actions">
@@ -1479,6 +1562,68 @@ const CatechesisPage: React.FC = () => {
                 <button type="submit" className="btn-submit">Registrar e abrir chamada</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {docTarget && (
+        <div className="module-modal-overlay" onClick={() => setDocTarget(null)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Documentos · {docTarget.fullName}</h2>
+            <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0 0 0.8rem' }}>
+              Conferir dá baixa na pendência e <strong>apaga o arquivo</strong> (retenção mínima) — fica
+              só o registro de quem conferiu e quando.
+            </p>
+            {docList === null && <div className="loading">Carregando...</div>}
+            {docList !== null && docList.length === 0 && (
+              <p style={{ color: '#64748b' }}>Nenhum documento enviado ainda.</p>
+            )}
+            {(docList ?? []).map((doc) => (
+              <div
+                key={doc.id}
+                style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: '0.7rem 0.9rem', marginBottom: '0.6rem' }}
+              >
+                <strong>{doc.kind}</strong>
+                <span style={{ color: '#64748b', fontSize: '0.82rem' }}>
+                  {' '}· {doc.fileName} · {(doc.sizeBytes / 1024 / 1024).toFixed(1)} MB ·{' '}
+                  {new Date(doc.createdAt).toLocaleDateString('pt-BR')}
+                </span>
+                <div style={{ marginTop: '0.45rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  {doc.status === 'SUBMITTED' && (
+                    <>
+                      <button className="cate-mini" onClick={() => openDocumentFile(doc.id)}>👁 Ver arquivo</button>
+                      <button
+                        className="cate-mini cate-mini--ok"
+                        disabled={reviewingDoc === doc.id}
+                        onClick={() => handleReviewDocument(doc.id, true)}
+                      >
+                        ✓ Conferido (dar baixa)
+                      </button>
+                      <button
+                        className="cate-mini cate-mini--danger"
+                        disabled={reviewingDoc === doc.id}
+                        onClick={() => handleReviewDocument(doc.id, false)}
+                      >
+                        Recusar
+                      </button>
+                    </>
+                  )}
+                  {doc.status === 'VERIFIED' && (
+                    <span className="cate-badge cate-badge--done">
+                      Conferido em {doc.reviewedAt ? new Date(doc.reviewedAt).toLocaleDateString('pt-BR') : '—'}
+                    </span>
+                  )}
+                  {doc.status === 'REJECTED' && (
+                    <span className="cate-badge cate-badge--out">
+                      Recusado{doc.reviewNotes ? ` — ${doc.reviewNotes}` : ''}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" onClick={() => setDocTarget(null)}>Fechar</button>
+            </div>
           </div>
         </div>
       )}
