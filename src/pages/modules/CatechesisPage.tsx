@@ -127,6 +127,11 @@ const CatechesisPage: React.FC = () => {
   const [attendanceSessionId, setAttendanceSessionId] = useState<string | null>(null);
   const [attendance, setAttendance] = useState<Record<string, boolean>>({});
 
+  const [showAgendaModal, setShowAgendaModal] = useState(false);
+  const [agendaRange, setAgendaRange] = useState({ from: '', to: '' });
+  const [agendaDates, setAgendaDates] = useState<Record<string, boolean>>({});
+  const [generatingAgenda, setGeneratingAgenda] = useState(false);
+
   const fetchData = useCallback(async () => {
     try {
       const [stagesRes, classesRes, communitiesRes, membersRes] = await Promise.all([
@@ -305,6 +310,75 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
+  const downloadPdf = async (path: string, filename: string) => {
+    try {
+      const res = await api.get(path, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao gerar o PDF'));
+    }
+  };
+
+  // Prévia da agenda: todas as datas do dia-da-semana da turma no período
+  const buildAgendaPreview = () => {
+    if (!selectedClass) return;
+    if (selectedClass.weekday === null || selectedClass.weekday === undefined) {
+      notify.error('Defina o dia da semana da turma para gerar a agenda');
+      return;
+    }
+    if (!agendaRange.from || !agendaRange.to || agendaRange.from > agendaRange.to) {
+      notify.error('Informe um período válido (início e fim)');
+      return;
+    }
+    const dates: Record<string, boolean> = {};
+    const cursor = new Date(agendaRange.from);
+    const end = new Date(agendaRange.to);
+    let guard = 0;
+    while (cursor.getTime() <= end.getTime() && guard < 400) {
+      if (cursor.getUTCDay() === selectedClass.weekday) {
+        dates[cursor.toISOString().slice(0, 10)] = true;
+      }
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+      guard++;
+    }
+    if (!Object.keys(dates).length) {
+      notify.error('Nenhuma data do dia da turma dentro do período');
+      return;
+    }
+    setAgendaDates(dates);
+  };
+
+  const handleGenerateAgenda = async () => {
+    if (!selectedClass) return;
+    const dates = Object.entries(agendaDates)
+      .filter(([, checked]) => checked)
+      .map(([date]) => date);
+    if (!dates.length) {
+      notify.error('Selecione ao menos uma data');
+      return;
+    }
+    setGeneratingAgenda(true);
+    try {
+      const res = await api.post(`/catechesis/classes/${selectedClass.id}/generate-sessions`, { dates });
+      notify.success(
+        `${res.data.created} encontro(s) criado(s)${res.data.skipped ? ` (${res.data.skipped} já existiam)` : ''} — as famílias receberam um único aviso-resumo.`,
+      );
+      setShowAgendaModal(false);
+      setAgendaDates({});
+      setAgendaRange({ from: '', to: '' });
+      refreshDetail();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao gerar a agenda'));
+    } finally {
+      setGeneratingAgenda(false);
+    }
+  };
+
   const handleApprove = async (enrollmentId: string) => {
     try {
       await api.patch(`/catechesis/enrollments/${enrollmentId}/approve`, {});
@@ -462,6 +536,21 @@ const CatechesisPage: React.FC = () => {
                   {report && report.completed > 0 && (
                     <button className="btn-small" onClick={openRenewal}>↻ Renovar turma</button>
                   )}
+                  <button className="btn-small" onClick={() => setShowAgendaModal(true)}>📅 Gerar agenda</button>
+                  <button
+                    className="btn-small"
+                    onClick={() => downloadPdf(`/catechesis/classes/${selectedClass.id}/roster.pdf`, `lista_${selectedClass.name.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
+                  >
+                    🖨 Lista da turma
+                  </button>
+                  {report && report.completed > 0 && (
+                    <button
+                      className="btn-small"
+                      onClick={() => downloadPdf(`/catechesis/classes/${selectedClass.id}/certificates.pdf`, `certificados_${selectedClass.name.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
+                    >
+                      🎓 Certificados (lote)
+                    </button>
+                  )}
                   <button className="btn-small" onClick={() => setSelectedClass(null)}>Fechar</button>
                 </div>
               </div>
@@ -507,8 +596,22 @@ const CatechesisPage: React.FC = () => {
                                     <button className="btn-small danger" onClick={() => handleReject(student.enrollmentId)}>Recusar</button>
                                   </>
                                 )}
+                                {student.status === 'COMPLETED' && (
+                                  <button
+                                    className="btn-small"
+                                    onClick={() => downloadPdf(`/catechesis/enrollments/${student.enrollmentId}/certificate.pdf`, `certificado_${student.member.fullName.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
+                                  >
+                                    🎓 Certificado
+                                  </button>
+                                )}
                                 {student.status === 'ACTIVE' && (
                                   <>
+                                    <button
+                                      className="btn-small"
+                                      onClick={() => downloadPdf(`/catechesis/enrollments/${student.enrollmentId}/declaration.pdf`, `declaracao_${student.member.fullName.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
+                                    >
+                                      📄 Declaração
+                                    </button>
                                     <button className="btn-small success" onClick={() => handleComplete(student.enrollmentId)}>Concluir</button>
                                     <select
                                       className="filter-select"
@@ -714,6 +817,59 @@ const CatechesisPage: React.FC = () => {
                 <button type="submit" className="btn-submit">Registrar e abrir chamada</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showAgendaModal && selectedClass && (
+        <div className="module-modal-overlay" onClick={() => setShowAgendaModal(false)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Gerar agenda do ano · {selectedClass.name}</h2>
+            <p style={{ fontSize: '0.9rem', color: '#666' }}>
+              Todos os encontros de{' '}
+              <strong>
+                {selectedClass.weekday !== null && selectedClass.weekday !== undefined
+                  ? WEEKDAYS[selectedClass.weekday]
+                  : 'dia a definir'}
+              </strong>{' '}
+              no período. Desmarque feriados e recessos antes de criar — as famílias recebem um
+              único aviso-resumo.
+            </p>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Início *</label>
+                <input type="date" value={agendaRange.from} onChange={(e) => setAgendaRange({ ...agendaRange, from: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label>Fim *</label>
+                <input type="date" value={agendaRange.to} onChange={(e) => setAgendaRange({ ...agendaRange, to: e.target.value })} />
+              </div>
+            </div>
+            <button type="button" className="btn-small" onClick={buildAgendaPreview}>Gerar prévia</button>
+            {Object.keys(agendaDates).length > 0 && (
+              <div className="checklist" style={{ maxHeight: 260, overflowY: 'auto', marginTop: '0.75rem' }}>
+                {Object.keys(agendaDates).sort().map((date) => (
+                  <label key={date}>
+                    <input
+                      type="checkbox"
+                      checked={agendaDates[date]}
+                      onChange={(e) => setAgendaDates({ ...agendaDates, [date]: e.target.checked })}
+                    />
+                    {new Date(date).toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                  </label>
+                ))}
+              </div>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" onClick={() => setShowAgendaModal(false)}>Cancelar</button>
+              {Object.keys(agendaDates).length > 0 && (
+                <button type="button" className="btn-submit" disabled={generatingAgenda} onClick={handleGenerateAgenda}>
+                  {generatingAgenda
+                    ? 'Criando...'
+                    : `Criar ${Object.values(agendaDates).filter(Boolean).length} encontro(s)`}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
