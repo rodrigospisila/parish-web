@@ -74,6 +74,8 @@ interface ClassFee {
   amount: number;
   dueDate?: string | null;
   collected: number;
+  othersCollected: number;
+  othersCount: number;
   paidCount: number;
   waivedCount: number;
   pendingCount: number;
@@ -201,6 +203,9 @@ const CatechesisPage: React.FC = () => {
   // Visão diocesana (Fase 5)
   const [dioceseOverview, setDioceseOverview] = useState<DioceseOverview | null>(null);
   const [dioceseLoading, setDioceseLoading] = useState(false);
+  const [dioceses, setDioceses] = useState<Array<{ id: string; name: string }>>([]);
+  const [dioceseId, setDioceseId] = useState('');
+  const isSystemAdmin = user?.role === 'SYSTEM_ADMIN';
 
   const [showAgendaModal, setShowAgendaModal] = useState(false);
   const [agendaRange, setAgendaRange] = useState({ from: '', to: '' });
@@ -445,6 +450,13 @@ const CatechesisPage: React.FC = () => {
   };
 
   const handleFeePayment = async (feeId: string, enrollmentId: string, waived: boolean) => {
+    if (waived) {
+      // Irreversível nesta fase (sem estorno) — confirmação obrigatória
+      const confirmed = window.confirm(
+        'Isentar este catequizando da taxa? A isenção não pode ser desfeita e impede registrar pagamento depois.',
+      );
+      if (!confirmed) return;
+    }
     const method = waived ? undefined : window.prompt('Forma de pagamento (ex.: Dinheiro, Pix):', 'Dinheiro');
     if (!waived && method === null) return; // cancelou
     try {
@@ -460,10 +472,17 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
-  const loadDioceseOverview = async () => {
+  const loadDioceseOverview = async (selectedDioceseId?: string) => {
+    // SYSTEM_ADMIN precisa escolher a diocese; sem escolha, mostra só o seletor
+    if (isSystemAdmin && !selectedDioceseId) {
+      setDioceseOverview(null);
+      return;
+    }
     setDioceseLoading(true);
     try {
-      const res = await api.get('/catechesis/diocese-overview');
+      const res = await api.get('/catechesis/diocese-overview', {
+        params: selectedDioceseId ? { dioceseId: selectedDioceseId } : undefined,
+      });
       setDioceseOverview(res.data);
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao carregar a visão diocesana'));
@@ -471,6 +490,20 @@ const CatechesisPage: React.FC = () => {
     } finally {
       setDioceseLoading(false);
     }
+  };
+
+  const openDioceseTab = async () => {
+    setTab('diocese');
+    if (isSystemAdmin && dioceses.length === 0) {
+      try {
+        const res = await api.get('/dioceses');
+        setDioceses(res.data ?? []);
+      } catch {
+        // seletor fica vazio; o erro aparece ao tentar carregar
+      }
+    }
+    // Sempre recarrega ao entrar na aba — números congelados enganam
+    loadDioceseOverview(isSystemAdmin ? dioceseId || undefined : undefined);
   };
 
   const downloadPdf = async (path: string, filename: string) => {
@@ -653,10 +686,7 @@ const CatechesisPage: React.FC = () => {
         {isDiocesan && (
           <button
             className={`tab-btn ${tab === 'diocese' ? 'active' : ''}`}
-            onClick={() => {
-              setTab('diocese');
-              if (!dioceseOverview) loadDioceseOverview();
-            }}
+            onClick={() => void openDioceseTab()}
           >
             Visão diocesana
           </button>
@@ -665,7 +695,26 @@ const CatechesisPage: React.FC = () => {
 
       {tab === 'diocese' && (
         <>
+          {isSystemAdmin && (
+            <div className="inline-form" style={{ marginBottom: '1rem' }}>
+              <select
+                className="filter-select"
+                value={dioceseId}
+                onChange={(e) => {
+                  setDioceseId(e.target.value);
+                  loadDioceseOverview(e.target.value || undefined);
+                }}
+              >
+                <option value="">Escolha a diocese...</option>
+                {dioceses.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              <button className="btn-small" onClick={() => loadDioceseOverview(dioceseId || undefined)}>↻ Atualizar</button>
+            </div>
+          )}
           {dioceseLoading && <div className="loading">Carregando a diocese...</div>}
+          {!dioceseLoading && !dioceseOverview && isSystemAdmin && !dioceseId && (
+            <div className="empty-state">Escolha a diocese para ver o panorama da catequese.</div>
+          )}
           {!dioceseLoading && dioceseOverview && (
             <>
               <div className="summary-cards">
@@ -810,6 +859,9 @@ const CatechesisPage: React.FC = () => {
                   <button
                     className="btn-small"
                     onClick={() => {
+                      // Sempre abre limpo — a matriz da turma anterior não pode
+                      // receber cliques (pagamento iria para a taxa errada)
+                      setClassFees([]);
                       setShowFees(true);
                       loadClassFees();
                     }}
@@ -1197,6 +1249,9 @@ const CatechesisPage: React.FC = () => {
                 <p style={{ fontSize: '0.85rem', color: '#666', margin: '0 0 0.4rem' }}>
                   Arrecadado: <strong>{money(fee.collected)}</strong> · {fee.paidCount} pago(s) ·{' '}
                   {fee.waivedCount} isento(s) · {fee.pendingCount} pendente(s)
+                  {fee.othersCount > 0 && (
+                    <> · + {money(fee.othersCollected)} de {fee.othersCount} catequizando(s) que saíram da turma</>
+                  )}
                 </p>
                 <div className="table-container">
                   <table className="data-table">
