@@ -266,6 +266,8 @@ const CatechesisPage: React.FC = () => {
 
   const [showCatechistModal, setShowCatechistModal] = useState(false);
   const [catechistForm, setCatechistForm] = useState({ memberId: '', role: 'Catequista' });
+  // null = carregando; [] = ninguém elegível na pastoral da Catequese
+  const [eligibleCatechists, setEligibleCatechists] = useState<Member[] | null>(null);
 
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [sessionForm, setSessionForm] = useState({ date: '', topic: '' });
@@ -419,6 +421,20 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
+  const openCatechistModal = async () => {
+    if (!selectedClass) return;
+    setEligibleCatechists(null);
+    setCatechistForm({ memberId: '', role: 'Catequista' });
+    setShowCatechistModal(true);
+    try {
+      const res = await api.get(`/catechesis/classes/${selectedClass.id}/eligible-catechists`);
+      setEligibleCatechists(res.data ?? []);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao carregar os membros da pastoral'));
+      setEligibleCatechists([]);
+    }
+  };
+
   const handleAddCatechist = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedClass) return;
@@ -430,6 +446,7 @@ const CatechesisPage: React.FC = () => {
       notify.success('Catequista adicionado à turma!');
       setShowCatechistModal(false);
       setCatechistForm({ memberId: '', role: 'Catequista' });
+      refreshDetail();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao adicionar catequista'));
     }
@@ -997,7 +1014,7 @@ const CatechesisPage: React.FC = () => {
                       </button>
                     </span>
                   ))}
-                  <button className="cate-btn cate-btn--ghost" onClick={() => setShowCatechistModal(true)}>
+                  <button className="cate-btn cate-btn--ghost" onClick={() => void openCatechistModal()}>
                     + Catequista
                   </button>
                 </div>
@@ -1363,13 +1380,24 @@ const CatechesisPage: React.FC = () => {
         <div className="module-modal-overlay" onClick={() => setShowCatechistModal(false)}>
           <div className="module-modal" onClick={(e) => e.stopPropagation()}>
             <h2>Adicionar catequista</h2>
+            <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0 0 0.8rem' }}>
+              Só aparecem membros vinculados à pastoral da Catequese desta comunidade.
+            </p>
             <form onSubmit={handleAddCatechist}>
               <div className="form-group">
                 <label>Membro *</label>
-                <select required value={catechistForm.memberId} onChange={(e) => setCatechistForm({ ...catechistForm, memberId: e.target.value })}>
-                  <option value="">Selecione</option>
-                  {members.map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
-                </select>
+                {eligibleCatechists === null ? (
+                  <p style={{ color: '#64748b', fontSize: '0.9rem' }}>Carregando membros da pastoral...</p>
+                ) : eligibleCatechists.length === 0 ? (
+                  <p style={{ color: '#d97706', fontSize: '0.9rem' }}>
+                    Nenhum membro disponível — vincule os catequistas à pastoral da Catequese na aba Pastorais.
+                  </p>
+                ) : (
+                  <select required value={catechistForm.memberId} onChange={(e) => setCatechistForm({ ...catechistForm, memberId: e.target.value })}>
+                    <option value="">Selecione</option>
+                    {eligibleCatechists.map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
+                  </select>
+                )}
               </div>
               <div className="form-group">
                 <label>Função</label>
@@ -1377,7 +1405,9 @@ const CatechesisPage: React.FC = () => {
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn-cancel" onClick={() => setShowCatechistModal(false)}>Cancelar</button>
-                <button type="submit" className="btn-submit">Adicionar</button>
+                <button type="submit" className="btn-submit" disabled={!eligibleCatechists || eligibleCatechists.length === 0}>
+                  Adicionar
+                </button>
               </div>
             </form>
           </div>
