@@ -319,7 +319,20 @@ const CatechesisPage: React.FC = () => {
       link.download = filename;
       link.click();
       URL.revokeObjectURL(url);
-    } catch (error) {
+    } catch (error: any) {
+      // Com responseType blob o corpo do erro também vira Blob — recupera a
+      // mensagem real do backend antes de cair no genérico
+      try {
+        if (error?.response?.data instanceof Blob) {
+          const parsed = JSON.parse(await error.response.data.text());
+          if (parsed?.message) {
+            notify.error(Array.isArray(parsed.message) ? parsed.message.join(', ') : parsed.message);
+            return;
+          }
+        }
+      } catch {
+        // corpo não-JSON — segue para o genérico
+      }
       notify.error(getErrorMessage(error, 'Erro ao gerar o PDF'));
     }
   };
@@ -335,16 +348,19 @@ const CatechesisPage: React.FC = () => {
       notify.error('Informe um período válido (início e fim)');
       return;
     }
-    const dates: Record<string, boolean> = {};
     const cursor = new Date(agendaRange.from);
     const end = new Date(agendaRange.to);
-    let guard = 0;
-    while (cursor.getTime() <= end.getTime() && guard < 400) {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    if (end.getTime() - cursor.getTime() > 370 * DAY_MS) {
+      notify.error('Período máximo de 12 meses — gere um ano letivo por vez');
+      return;
+    }
+    const dates: Record<string, boolean> = {};
+    while (cursor.getTime() <= end.getTime()) {
       if (cursor.getUTCDay() === selectedClass.weekday) {
         dates[cursor.toISOString().slice(0, 10)] = true;
       }
       cursor.setUTCDate(cursor.getUTCDate() + 1);
-      guard++;
     }
     if (!Object.keys(dates).length) {
       notify.error('Nenhuma data do dia da turma dentro do período');
@@ -536,7 +552,17 @@ const CatechesisPage: React.FC = () => {
                   {report && report.completed > 0 && (
                     <button className="btn-small" onClick={openRenewal}>↻ Renovar turma</button>
                   )}
-                  <button className="btn-small" onClick={() => setShowAgendaModal(true)}>📅 Gerar agenda</button>
+                  <button
+                    className="btn-small"
+                    onClick={() => {
+                      // Sempre abre limpo — prévia de outra turma/período não vaza
+                      setAgendaDates({});
+                      setAgendaRange({ from: '', to: '' });
+                      setShowAgendaModal(true);
+                    }}
+                  >
+                    📅 Gerar agenda
+                  </button>
                   <button
                     className="btn-small"
                     onClick={() => downloadPdf(`/catechesis/classes/${selectedClass.id}/roster.pdf`, `lista_${selectedClass.name.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
@@ -838,11 +864,11 @@ const CatechesisPage: React.FC = () => {
             <div className="form-row">
               <div className="form-group">
                 <label>Início *</label>
-                <input type="date" value={agendaRange.from} onChange={(e) => setAgendaRange({ ...agendaRange, from: e.target.value })} />
+                <input type="date" value={agendaRange.from} onChange={(e) => { setAgendaRange({ ...agendaRange, from: e.target.value }); setAgendaDates({}); }} />
               </div>
               <div className="form-group">
                 <label>Fim *</label>
-                <input type="date" value={agendaRange.to} onChange={(e) => setAgendaRange({ ...agendaRange, to: e.target.value })} />
+                <input type="date" value={agendaRange.to} onChange={(e) => { setAgendaRange({ ...agendaRange, to: e.target.value }); setAgendaDates({}); }} />
               </div>
             </div>
             <button type="button" className="btn-small" onClick={buildAgendaPreview}>Gerar prévia</button>
