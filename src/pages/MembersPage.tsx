@@ -41,6 +41,8 @@ interface Member {
   motherName?: string;
   spouseId?: string;
   spouse?: { id: string; fullName: string };
+  responsibleId?: string;
+  responsible?: { id: string; fullName: string };
   photoUrl?: string;
   memberType?: MemberType;
   emergencyContactName?: string;
@@ -190,6 +192,7 @@ const MembersPage: React.FC = () => {
     fatherName: '',
     motherName: '',
     spouseId: '',
+    responsibleId: '',
     communityId: '',
     status: 'ACTIVE' as MemberStatus,
     memberType: '' as '' | MemberType,
@@ -245,6 +248,8 @@ const MembersPage: React.FC = () => {
         birthDate: formData.birthDate ? new Date(formData.birthDate).toISOString() : undefined,
         // Cônjuge: null remove o vínculo (o backend sincroniza os dois lados)
         spouseId: formData.spouseId || null,
+        // Responsável (pai/mãe): obrigatório p/ menores na catequese
+        responsibleId: formData.responsibleId || null,
       };
 
       if (editingMember) {
@@ -292,6 +297,7 @@ const MembersPage: React.FC = () => {
       fatherName: member.fatherName || '',
       motherName: member.motherName || '',
       spouseId: member.spouseId || member.spouse?.id || '',
+      responsibleId: member.responsibleId || member.responsible?.id || '',
       communityId: member.community.id,
       status: member.status,
       memberType: member.memberType || '',
@@ -434,6 +440,7 @@ const MembersPage: React.FC = () => {
       fatherName: '',
       motherName: '',
       spouseId: '',
+      responsibleId: '',
       communityId: '',
       status: 'ACTIVE',
       memberType: '',
@@ -1050,6 +1057,24 @@ const MembersPage: React.FC = () => {
                   />
                   <small style={{ color: '#8b97a4' }}>
                     O vínculo vale nos dois sentidos e é usado pela regra “casais servem juntos” das escalas.
+                  </small>
+                </div>
+
+                <div className="form-group">
+                  <label>👨‍👧 Responsável — pai/mãe (membro cadastrado)</label>
+                  <SearchSelect
+                    options={members
+                      .filter((m) => m.id !== editingMember?.id)
+                      .map((m) => ({ value: m.id, label: m.fullName, sublabel: m.community?.name }))}
+                    value={formData.responsibleId}
+                    onChange={(responsibleId) => setFormData({ ...formData, responsibleId })}
+                    placeholder="Sem responsável vinculado"
+                    allOption
+                    searchPlaceholder="Buscar membro..."
+                  />
+                  <small style={{ color: '#8b97a4' }}>
+                    Obrigatório para menores na catequese — é por este vínculo que a família acompanha,
+                    autoriza (LGPD) e recebe os avisos no app.
                   </small>
                 </div>
               </fieldset>
