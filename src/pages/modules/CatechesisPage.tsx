@@ -39,6 +39,7 @@ interface ClassReport {
     status: string;
     pendingDocuments?: string | null;
     submittedDocs: number;
+    docsCount: number;
     attendanceRate: number | null;
     sessions: number;
   }>;
@@ -582,12 +583,22 @@ const CatechesisPage: React.FC = () => {
   };
 
   const openDocumentFile = async (documentId: string) => {
+    // A aba abre SINCRONAMENTE no clique (popup blocker); o conteúdo chega depois
+    const win = window.open('', '_blank');
     try {
       const res = await api.get(`/catechesis/documents/${documentId}/file`, { responseType: 'blob' });
       const url = URL.createObjectURL(res.data);
-      window.open(url, '_blank');
+      if (win) {
+        win.location.href = url;
+      } else {
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'documento';
+        link.click();
+      }
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (error: any) {
+      win?.close();
       try {
         if (error?.response?.data instanceof Blob) {
           const parsed = JSON.parse(await error.response.data.text());
@@ -1308,10 +1319,23 @@ const CatechesisPage: React.FC = () => {
                                       >
                                         📎 Conferir documento{student.submittedDocs > 1 ? 's' : ''} ({student.submittedDocs})
                                       </button>
-                                    ) : student.pendingDocuments ? (
-                                      <span className="cate-doc-pending">📄 {student.pendingDocuments}</span>
                                     ) : (
-                                      <span style={{ color: '#94a3b8' }}>—</span>
+                                      <>
+                                        {student.pendingDocuments ? (
+                                          <span className="cate-doc-pending">📄 {student.pendingDocuments}</span>
+                                        ) : student.docsCount === 0 ? (
+                                          <span style={{ color: '#94a3b8' }}>—</span>
+                                        ) : null}
+                                        {student.docsCount > 0 && (
+                                          <button
+                                            className="cate-mini"
+                                            style={{ marginLeft: student.pendingDocuments ? '0.4rem' : 0 }}
+                                            onClick={() => openDocuments(student.enrollmentId, student.member.fullName)}
+                                          >
+                                            🗂 Histórico ({student.docsCount})
+                                          </button>
+                                        )}
+                                      </>
                                     )}
                                   </td>
                                   <td>
