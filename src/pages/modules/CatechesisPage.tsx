@@ -26,6 +26,7 @@ interface CatechesisClass {
 }
 
 interface ClassReport {
+  catechists: Array<{ memberId: string; fullName: string; role: string }>;
   total: number;
   active: number;
   dropouts: number;
@@ -615,6 +616,18 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
+  const handleRemoveCatechist = async (memberId: string, fullName: string) => {
+    if (!selectedClass) return;
+    if (!window.confirm(`Remover ${fullName} da equipe desta turma? O acesso operacional dele à turma é encerrado.`)) return;
+    try {
+      await api.delete(`/catechesis/classes/${selectedClass.id}/catechists/${memberId}`);
+      notify.success('Catequista removido da turma.');
+      refreshDetail();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao remover o catequista'));
+    }
+  };
+
   const openRenewal = async () => {
     if (!selectedClass) return;
     try {
@@ -876,6 +889,28 @@ const CatechesisPage: React.FC = () => {
 
               {report && !reportLoading && (
                 <>
+                  <p style={{ margin: '0 0 0.75rem', fontSize: '0.95rem' }}>
+                    <strong>Catequistas:</strong>{' '}
+                    {report.catechists.length === 0 && (
+                      <span style={{ color: '#b05a12' }}>
+                        nenhum vinculado — use "+ Catequista" (o membro precisa estar na pastoral da Catequese da comunidade)
+                      </span>
+                    )}
+                    {report.catechists.map((catechist, index) => (
+                      <span key={catechist.memberId}>
+                        {index > 0 && ' · '}
+                        {catechist.fullName} <em style={{ color: '#666' }}>({catechist.role})</em>{' '}
+                        <button
+                          className="btn-small danger"
+                          style={{ padding: '0 0.45rem', fontSize: '0.75rem' }}
+                          title="Remover da turma"
+                          onClick={() => handleRemoveCatechist(catechist.memberId, catechist.fullName)}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </p>
                   <div className="summary-cards">
                     <div className="summary-card"><div className="label">Matriculados</div><div className="value">{report.total}</div></div>
                     <div className="summary-card"><div className="label">Ativos</div><div className="value positive">{report.active}</div></div>
