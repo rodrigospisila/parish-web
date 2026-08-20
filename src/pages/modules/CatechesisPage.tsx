@@ -279,6 +279,10 @@ const CatechesisPage: React.FC = () => {
 
   // Pareceres por período (Fase 5)
   const [assessmentTarget, setAssessmentTarget] = useState<{ enrollmentId: string; fullName: string } | null>(null);
+  const [showBatchAssessment, setShowBatchAssessment] = useState(false);
+  const [batchSelection, setBatchSelection] = useState<Record<string, boolean>>({});
+  const [batchForm, setBatchForm] = useState({ period: '', rating: '', notes: '' });
+  const [savingBatch, setSavingBatch] = useState(false);
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [assessmentForm, setAssessmentForm] = useState({ period: '', rating: '', notes: '' });
   const [savingAssessment, setSavingAssessment] = useState(false);
@@ -545,6 +549,46 @@ const CatechesisPage: React.FC = () => {
       notify.error(getErrorMessage(error, 'Erro ao salvar o parecer'));
     } finally {
       setSavingAssessment(false);
+    }
+  };
+
+  const openBatchAssessment = () => {
+    if (!report) return;
+    const selection: Record<string, boolean> = {};
+    report.students
+      .filter((student) => student.status === 'ACTIVE' || student.status === 'COMPLETED')
+      .forEach((student) => {
+        selection[student.enrollmentId] = student.status === 'ACTIVE';
+      });
+    setBatchSelection(selection);
+    setBatchForm({ period: '', rating: '', notes: '' });
+    setShowBatchAssessment(true);
+  };
+
+  const handleSaveBatchAssessment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClass) return;
+    const enrollmentIds = Object.entries(batchSelection)
+      .filter(([, checked]) => checked)
+      .map(([id]) => id);
+    if (!enrollmentIds.length) {
+      notify.error('Selecione ao menos um catequizando');
+      return;
+    }
+    setSavingBatch(true);
+    try {
+      const res = await api.post(`/catechesis/classes/${selectedClass.id}/assessments`, {
+        period: batchForm.period,
+        rating: batchForm.rating || undefined,
+        notes: batchForm.notes,
+        enrollmentIds,
+      });
+      notify.success(`Parecer registrado para ${res.data.saved} catequizando(s) — as famílias foram avisadas!`);
+      setShowBatchAssessment(false);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao salvar os pareceres'));
+    } finally {
+      setSavingBatch(false);
     }
   };
 
@@ -1141,6 +1185,9 @@ const CatechesisPage: React.FC = () => {
                   <section>
                     <div className="cate-section__head">
                       <h3 className="cate-section__title">Catequizandos</h3>
+                      {report.students.some((s) => s.status === 'ACTIVE' || s.status === 'COMPLETED') && (
+                        <button className="cate-btn" onClick={openBatchAssessment}>📝 Parecer em lote</button>
+                      )}
                     </div>
                     {report.students.length === 0 ? (
                       <div className="cate-empty">Nenhum catequizando matriculado ainda.</div>
@@ -1430,6 +1477,77 @@ const CatechesisPage: React.FC = () => {
               <div className="modal-actions">
                 <button type="button" className="btn-cancel" onClick={() => setShowSessionModal(false)}>Cancelar</button>
                 <button type="submit" className="btn-submit">Registrar e abrir chamada</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showBatchAssessment && selectedClass && report && (
+        <div className="module-modal-overlay" onClick={() => setShowBatchAssessment(false)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+            <h2>Parecer em lote · {selectedClass.name}</h2>
+            <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0 0 0.8rem' }}>
+              O mesmo período, conceito e texto valem para todos os selecionados. Quem já tem parecer
+              neste período terá o texto <strong>substituído</strong>. Cada família recebe o aviso do
+              próprio catequizando.
+            </p>
+            <form onSubmit={handleSaveBatchAssessment}>
+              <div className="checklist" style={{ maxHeight: 180, overflowY: 'auto', marginBottom: '0.8rem' }}>
+                {report.students
+                  .filter((student) => student.status === 'ACTIVE' || student.status === 'COMPLETED')
+                  .map((student) => (
+                    <label key={student.enrollmentId}>
+                      <input
+                        type="checkbox"
+                        checked={!!batchSelection[student.enrollmentId]}
+                        onChange={(e) =>
+                          setBatchSelection({ ...batchSelection, [student.enrollmentId]: e.target.checked })
+                        }
+                      />
+                      {student.member.fullName}
+                      {student.status === 'COMPLETED' ? ' (concluído)' : ''}
+                    </label>
+                  ))}
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Período *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="1º semestre 2026"
+                    value={batchForm.period}
+                    onChange={(e) => setBatchForm({ ...batchForm, period: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Conceito</label>
+                  <select value={batchForm.rating} onChange={(e) => setBatchForm({ ...batchForm, rating: e.target.value })}>
+                    <option value="">Sem conceito</option>
+                    {Object.entries(RATING_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Parecer * (o mesmo texto para todos — as famílias veem no app)</label>
+                <textarea
+                  rows={4}
+                  required
+                  maxLength={2000}
+                  value={batchForm.notes}
+                  onChange={(e) => setBatchForm({ ...batchForm, notes: e.target.value })}
+                />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-cancel" onClick={() => setShowBatchAssessment(false)}>Cancelar</button>
+                <button type="submit" className="btn-submit" disabled={savingBatch}>
+                  {savingBatch
+                    ? 'Salvando...'
+                    : `Salvar para ${Object.values(batchSelection).filter(Boolean).length} catequizando(s)`}
+                </button>
               </div>
             </form>
           </div>
