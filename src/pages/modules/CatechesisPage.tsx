@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
+import { useAuth } from '../../contexts/AuthContext';
 import './ModulePages.css';
 
 interface Stage {
@@ -58,6 +59,63 @@ interface Community {
   name: string;
 }
 
+interface Assessment {
+  id: string;
+  period: string;
+  rating?: string | null;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ClassFee {
+  id: string;
+  description: string;
+  amount: number;
+  dueDate?: string | null;
+  collected: number;
+  paidCount: number;
+  waivedCount: number;
+  pendingCount: number;
+  students: Array<{
+    enrollmentId: string;
+    fullName: string;
+    status: 'PAID' | 'WAIVED' | 'PENDING';
+    amount: number | null;
+    method: string | null;
+    paidAt: string | null;
+  }>;
+}
+
+interface DioceseOverview {
+  dioceseId: string;
+  parishes: Array<{
+    parishId: string;
+    parishName: string;
+    stages: Array<{
+      stageId: string;
+      stageName: string;
+      ordering: number;
+      sacramentType?: string | null;
+      classes: number;
+      active: number;
+      pending: number;
+      completed: number;
+    }>;
+    totals: { classes: number; active: number; pending: number; completed: number };
+  }>;
+  totals: { parishes: number; classes: number; active: number; pending: number; completed: number };
+}
+
+const RATING_LABELS: Record<string, string> = {
+  EXCELLENT: 'Ótimo',
+  GOOD: 'Bom',
+  REGULAR: 'Regular',
+  NEEDS_ATTENTION: 'Precisa de atenção',
+};
+
+const money = (value: number) => `R$ ${value.toFixed(2).replace('.', ',')}`;
+
 interface Member {
   id: string;
   fullName: string;
@@ -84,7 +142,9 @@ const ENROLLMENT_STATUS: Record<string, { label: string; color: string }> = {
 };
 
 const CatechesisPage: React.FC = () => {
-  const [tab, setTab] = useState<'classes' | 'stages'>('classes');
+  const { user } = useAuth();
+  const isDiocesan = user?.role === 'DIOCESAN_ADMIN' || user?.role === 'SYSTEM_ADMIN';
+  const [tab, setTab] = useState<'classes' | 'stages' | 'diocese'>('classes');
   const [loading, setLoading] = useState(true);
   const [stages, setStages] = useState<Stage[]>([]);
   const [classes, setClasses] = useState<CatechesisClass[]>([]);
@@ -126,6 +186,21 @@ const CatechesisPage: React.FC = () => {
 
   const [attendanceSessionId, setAttendanceSessionId] = useState<string | null>(null);
   const [attendance, setAttendance] = useState<Record<string, boolean>>({});
+
+  // Pareceres por período (Fase 5)
+  const [assessmentTarget, setAssessmentTarget] = useState<{ enrollmentId: string; fullName: string } | null>(null);
+  const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [assessmentForm, setAssessmentForm] = useState({ period: '', rating: '', notes: '' });
+  const [savingAssessment, setSavingAssessment] = useState(false);
+
+  // Taxa de material (Fase 5)
+  const [showFees, setShowFees] = useState(false);
+  const [classFees, setClassFees] = useState<ClassFee[]>([]);
+  const [feeForm, setFeeForm] = useState({ description: '', amount: '', dueDate: '' });
+
+  // Visão diocesana (Fase 5)
+  const [dioceseOverview, setDioceseOverview] = useState<DioceseOverview | null>(null);
+  const [dioceseLoading, setDioceseLoading] = useState(false);
 
   const [showAgendaModal, setShowAgendaModal] = useState(false);
   const [agendaRange, setAgendaRange] = useState({ from: '', to: '' });
@@ -310,6 +385,94 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
+  const openAssessments = async (enrollmentId: string, fullName: string) => {
+    try {
+      const res = await api.get(`/catechesis/enrollments/${enrollmentId}/assessments`);
+      setAssessments(res.data ?? []);
+      setAssessmentForm({ period: '', rating: '', notes: '' });
+      setAssessmentTarget({ enrollmentId, fullName });
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao carregar os pareceres'));
+    }
+  };
+
+  const handleSaveAssessment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assessmentTarget) return;
+    setSavingAssessment(true);
+    try {
+      await api.post(`/catechesis/enrollments/${assessmentTarget.enrollmentId}/assessments`, {
+        period: assessmentForm.period,
+        rating: assessmentForm.rating || undefined,
+        notes: assessmentForm.notes,
+      });
+      notify.success('Parecer registrado — a família foi avisada!');
+      const res = await api.get(`/catechesis/enrollments/${assessmentTarget.enrollmentId}/assessments`);
+      setAssessments(res.data ?? []);
+      setAssessmentForm({ period: '', rating: '', notes: '' });
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao salvar o parecer'));
+    } finally {
+      setSavingAssessment(false);
+    }
+  };
+
+  const loadClassFees = async () => {
+    if (!selectedClass) return;
+    try {
+      const res = await api.get(`/catechesis/classes/${selectedClass.id}/fees`);
+      setClassFees(res.data ?? []);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao carregar as taxas'));
+    }
+  };
+
+  const handleCreateFee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClass) return;
+    try {
+      await api.post(`/catechesis/classes/${selectedClass.id}/fees`, {
+        description: feeForm.description,
+        amount: Number(feeForm.amount),
+        dueDate: feeForm.dueDate || undefined,
+      });
+      notify.success('Taxa criada — as famílias da turma foram avisadas!');
+      setFeeForm({ description: '', amount: '', dueDate: '' });
+      loadClassFees();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao criar a taxa'));
+    }
+  };
+
+  const handleFeePayment = async (feeId: string, enrollmentId: string, waived: boolean) => {
+    const method = waived ? undefined : window.prompt('Forma de pagamento (ex.: Dinheiro, Pix):', 'Dinheiro');
+    if (!waived && method === null) return; // cancelou
+    try {
+      await api.post(`/catechesis/fees/${feeId}/payments`, {
+        enrollmentId,
+        waived,
+        method: method || undefined,
+      });
+      notify.success(waived ? 'Isenção registrada.' : 'Pagamento registrado no financeiro!');
+      loadClassFees();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao registrar'));
+    }
+  };
+
+  const loadDioceseOverview = async () => {
+    setDioceseLoading(true);
+    try {
+      const res = await api.get('/catechesis/diocese-overview');
+      setDioceseOverview(res.data);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao carregar a visão diocesana'));
+      setDioceseOverview(null);
+    } finally {
+      setDioceseLoading(false);
+    }
+  };
+
   const downloadPdf = async (path: string, filename: string) => {
     try {
       const res = await api.get(path, { responseType: 'blob' });
@@ -487,7 +650,74 @@ const CatechesisPage: React.FC = () => {
         <button className={`tab-btn ${tab === 'stages' ? 'active' : ''}`} onClick={() => setTab('stages')}>
           Etapas ({stages.length})
         </button>
+        {isDiocesan && (
+          <button
+            className={`tab-btn ${tab === 'diocese' ? 'active' : ''}`}
+            onClick={() => {
+              setTab('diocese');
+              if (!dioceseOverview) loadDioceseOverview();
+            }}
+          >
+            Visão diocesana
+          </button>
+        )}
       </div>
+
+      {tab === 'diocese' && (
+        <>
+          {dioceseLoading && <div className="loading">Carregando a diocese...</div>}
+          {!dioceseLoading && dioceseOverview && (
+            <>
+              <div className="summary-cards">
+                <div className="summary-card"><div className="label">Paróquias com catequese</div><div className="value">{dioceseOverview.totals.parishes}</div></div>
+                <div className="summary-card"><div className="label">Turmas ativas</div><div className="value">{dioceseOverview.totals.classes}</div></div>
+                <div className="summary-card"><div className="label">Catequizandos ativos</div><div className="value positive">{dioceseOverview.totals.active}</div></div>
+                <div className="summary-card"><div className="label">Aguardando aprovação</div><div className="value">{dioceseOverview.totals.pending}</div></div>
+                <div className="summary-card"><div className="label">Concluídos</div><div className="value">{dioceseOverview.totals.completed}</div></div>
+              </div>
+              {dioceseOverview.parishes.length === 0 && (
+                <div className="empty-state">Nenhuma paróquia da diocese tem etapas de catequese cadastradas ainda.</div>
+              )}
+              {dioceseOverview.parishes.map((parish) => (
+                <div key={parish.parishId} className="detail-panel" style={{ marginBottom: '1rem' }}>
+                  <h2>{parish.parishName}</h2>
+                  <div className="table-container">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Etapa</th>
+                          <th>Turmas</th>
+                          <th>Ativos</th>
+                          <th>Aguardando</th>
+                          <th>Concluídos</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {parish.stages.map((stage) => (
+                          <tr key={stage.stageId}>
+                            <td><strong>{stage.stageName}</strong></td>
+                            <td>{stage.classes}</td>
+                            <td>{stage.active}</td>
+                            <td>{stage.pending}</td>
+                            <td>{stage.completed}</td>
+                          </tr>
+                        ))}
+                        <tr>
+                          <td><strong>Total</strong></td>
+                          <td><strong>{parish.totals.classes}</strong></td>
+                          <td><strong>{parish.totals.active}</strong></td>
+                          <td><strong>{parish.totals.pending}</strong></td>
+                          <td><strong>{parish.totals.completed}</strong></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </>
+      )}
 
       {tab === 'stages' && (
         <div className="table-container">
@@ -577,6 +807,15 @@ const CatechesisPage: React.FC = () => {
                       🎓 Certificados (lote)
                     </button>
                   )}
+                  <button
+                    className="btn-small"
+                    onClick={() => {
+                      setShowFees(true);
+                      loadClassFees();
+                    }}
+                  >
+                    💰 Taxas
+                  </button>
                   <button className="btn-small" onClick={() => setSelectedClass(null)}>Fechar</button>
                 </div>
               </div>
@@ -621,6 +860,14 @@ const CatechesisPage: React.FC = () => {
                                     <button className="btn-small success" onClick={() => handleApprove(student.enrollmentId)}>Aprovar</button>
                                     <button className="btn-small danger" onClick={() => handleReject(student.enrollmentId)}>Recusar</button>
                                   </>
+                                )}
+                                {(student.status === 'ACTIVE' || student.status === 'COMPLETED') && (
+                                  <button
+                                    className="btn-small"
+                                    onClick={() => openAssessments(student.enrollmentId, student.member.fullName)}
+                                  >
+                                    📝 Parecer
+                                  </button>
                                 )}
                                 {student.status === 'COMPLETED' && (
                                   <button
@@ -843,6 +1090,158 @@ const CatechesisPage: React.FC = () => {
                 <button type="submit" className="btn-submit">Registrar e abrir chamada</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {assessmentTarget && (
+        <div className="module-modal-overlay" onClick={() => setAssessmentTarget(null)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Pareceres · {assessmentTarget.fullName}</h2>
+            {assessments.length === 0 && <p style={{ color: '#666' }}>Nenhum parecer registrado ainda.</p>}
+            {assessments.map((assessment) => (
+              <div key={assessment.id} style={{ borderLeft: '3px solid #0a5cab', padding: '0.4rem 0.8rem', marginBottom: '0.6rem' }}>
+                <strong>{assessment.period}</strong>
+                {assessment.rating ? ` · ${RATING_LABELS[assessment.rating] ?? assessment.rating}` : ''}
+                <p style={{ margin: '0.25rem 0 0', fontSize: '0.92rem' }}>{assessment.notes}</p>
+              </div>
+            ))}
+            <form onSubmit={handleSaveAssessment}>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Período *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="1º semestre 2026"
+                    value={assessmentForm.period}
+                    onChange={(e) => setAssessmentForm({ ...assessmentForm, period: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Conceito</label>
+                  <select value={assessmentForm.rating} onChange={(e) => setAssessmentForm({ ...assessmentForm, rating: e.target.value })}>
+                    <option value="">Sem conceito</option>
+                    {Object.entries(RATING_LABELS).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Parecer do catequista * (a família vê no app)</label>
+                <textarea
+                  rows={4}
+                  required
+                  maxLength={2000}
+                  value={assessmentForm.notes}
+                  onChange={(e) => setAssessmentForm({ ...assessmentForm, notes: e.target.value })}
+                />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-cancel" onClick={() => setAssessmentTarget(null)}>Fechar</button>
+                <button type="submit" className="btn-submit" disabled={savingAssessment}>
+                  {savingAssessment ? 'Salvando...' : 'Salvar parecer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showFees && selectedClass && (
+        <div className="module-modal-overlay" onClick={() => setShowFees(false)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 720 }}>
+            <h2>Taxas de material · {selectedClass.name}</h2>
+            <form onSubmit={handleCreateFee}>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Descrição *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Material 2026"
+                    value={feeForm.description}
+                    onChange={(e) => setFeeForm({ ...feeForm, description: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Valor (R$) *</label>
+                  <input
+                    type="number"
+                    min={1}
+                    step="0.01"
+                    required
+                    value={feeForm.amount}
+                    onChange={(e) => setFeeForm({ ...feeForm, amount: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Vencimento</label>
+                  <input type="date" value={feeForm.dueDate} onChange={(e) => setFeeForm({ ...feeForm, dueDate: e.target.value })} />
+                </div>
+              </div>
+              <button type="submit" className="btn-small success">+ Criar taxa (avisa as famílias)</button>
+            </form>
+            {classFees.length === 0 && (
+              <p style={{ color: '#666', marginTop: '0.8rem' }}>
+                Nenhuma taxa nesta turma — o recurso é opcional e só aparece para as famílias se você criar.
+              </p>
+            )}
+            {classFees.map((fee) => (
+              <div key={fee.id} style={{ marginTop: '1rem' }}>
+                <h3 style={{ margin: '0 0 0.3rem' }}>
+                  {fee.description} · {money(fee.amount)}
+                  {fee.dueDate ? ` · vence ${new Date(fee.dueDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}` : ''}
+                </h3>
+                <p style={{ fontSize: '0.85rem', color: '#666', margin: '0 0 0.4rem' }}>
+                  Arrecadado: <strong>{money(fee.collected)}</strong> · {fee.paidCount} pago(s) ·{' '}
+                  {fee.waivedCount} isento(s) · {fee.pendingCount} pendente(s)
+                </p>
+                <div className="table-container">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Catequizando</th>
+                        <th>Situação</th>
+                        <th>Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fee.students.map((student) => (
+                        <tr key={student.enrollmentId}>
+                          <td>{student.fullName}</td>
+                          <td>
+                            {student.status === 'PAID' && (
+                              <span className="status-badge green">
+                                Pago {student.method ? `(${student.method})` : ''}
+                              </span>
+                            )}
+                            {student.status === 'WAIVED' && <span className="status-badge gray">Isento</span>}
+                            {student.status === 'PENDING' && <span className="status-badge yellow">Pendente</span>}
+                          </td>
+                          <td className="actions-cell">
+                            {student.status === 'PENDING' && (
+                              <>
+                                <button className="btn-small success" onClick={() => handleFeePayment(fee.id, student.enrollmentId, false)}>
+                                  Registrar pagamento
+                                </button>
+                                <button className="btn-small" onClick={() => handleFeePayment(fee.id, student.enrollmentId, true)}>
+                                  Isentar
+                                </button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" onClick={() => setShowFees(false)}>Fechar</button>
+            </div>
           </div>
         </div>
       )}
