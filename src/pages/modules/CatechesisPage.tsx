@@ -289,9 +289,17 @@ const CatechesisPage: React.FC = () => {
   const [attendanceSessionId, setAttendanceSessionId] = useState<string | null>(null);
   // Tri-state espelhando o app: gravar só presente/ausente pela web ZERAVA os
   // atrasos registrados no celular (o backend força late=false quando omitido)
-  type Mark = 'present' | 'late' | 'absent';
-  const nextMark = (mark: Mark): Mark => (mark === 'present' ? 'late' : mark === 'late' ? 'absent' : 'present');
-  const MARK_LABEL: Record<Mark, string> = { present: '✓ Presente', late: '🕒 Atrasado', absent: '✗ Ausente' };
+  // 'unset' = sem marcação anterior: fica FORA do salvamento (reabrir uma
+  // chamada parcial e salvar não fabrica presenças retroativas)
+  type Mark = 'present' | 'late' | 'absent' | 'unset';
+  const nextMark = (mark: Mark): Mark =>
+    mark === 'unset' ? 'present' : mark === 'present' ? 'late' : mark === 'late' ? 'absent' : 'present';
+  const MARK_LABEL: Record<Mark, string> = {
+    present: '✓ Presente',
+    late: '🕒 Atrasado',
+    absent: '✗ Ausente',
+    unset: '· Marcar',
+  };
   const [attendance, setAttendance] = useState<Record<string, Mark>>({});
   const [attendanceMeta, setAttendanceMeta] = useState<{ date: string; topic?: string | null } | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -376,7 +384,7 @@ const CatechesisPage: React.FC = () => {
       const initial: Record<string, Mark> = {};
       (res.data?.students ?? []).forEach((student: { enrollmentId: string; present: boolean | null; late?: boolean }) => {
         initial[student.enrollmentId] =
-          student.present === null ? 'present' : student.late ? 'late' : student.present ? 'present' : 'absent';
+          student.present === null ? 'unset' : student.late ? 'late' : student.present ? 'present' : 'absent';
       });
       setAttendance(initial);
       setAttendanceMeta({ date: session.date, topic: session.topic });
@@ -512,11 +520,13 @@ const CatechesisPage: React.FC = () => {
     if (!attendanceSessionId) return;
     try {
       await api.post(`/catechesis/sessions/${attendanceSessionId}/attendance`, {
-        entries: Object.entries(attendance).map(([enrollmentId, mark]) => ({
-          enrollmentId,
-          present: mark === 'present' || mark === 'late',
-          late: mark === 'late',
-        })),
+        entries: Object.entries(attendance)
+          .filter(([, mark]) => mark !== 'unset')
+          .map(([enrollmentId, mark]) => ({
+            enrollmentId,
+            present: mark === 'present' || mark === 'late',
+            late: mark === 'late',
+          })),
       });
       notify.success('Chamada registrada!');
       setAttendanceSessionId(null);
@@ -2021,7 +2031,8 @@ const CatechesisPage: React.FC = () => {
                 .filter((s) => s.enrollmentId in attendance)
                 .map((s) => {
                   const mark = attendance[s.enrollmentId];
-                  const color = mark === 'present' ? '#15803d' : mark === 'late' ? '#b45309' : '#b91c1c';
+                  const color =
+                    mark === 'present' ? '#15803d' : mark === 'late' ? '#b45309' : mark === 'absent' ? '#b91c1c' : '#64748b';
                   return (
                     <div key={s.enrollmentId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem', padding: '0.3rem 0' }}>
                       <span>{s.member.fullName}</span>

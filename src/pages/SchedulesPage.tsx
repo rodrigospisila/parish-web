@@ -456,8 +456,21 @@ const toDateTimeInput = (value: string) => {
 };
 
 /** Chave de dia local (YYYY-MM-DD). */
+// schedule.date tem DUAS semânticas: date-only 00:00Z (agenda fixa/avulsa,
+// horário em startTime) e timestamp real (escala criada a partir de evento).
+// Meia-noite UTC identifica a primeira; todo helper de data DEVE usar isto.
+const isMidnightUtc = (value: string | Date) => {
+  const date = new Date(value);
+  return date.getUTCHours() === 0 && date.getUTCMinutes() === 0 && date.getUTCSeconds() === 0;
+};
+
 const toDayKey = (value: string | Date) => {
   const date = new Date(value);
+  if (isMidnightUtc(value)) {
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(
+      date.getUTCDate(),
+    ).padStart(2, '0')}`;
+  }
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
     date.getDate(),
   ).padStart(2, '0')}`;
@@ -492,6 +505,16 @@ const toHumanDate = (value: string) =>
 // no fuso local mostrava o dia anterior às 21:00. Sempre usar esta função
 // para schedule.date (toHumanDate fica para timestamps reais, ex.: check-in).
 const toScheduleDate = (value: string, startTime?: string | null) => {
+  if (!isMidnightUtc(value)) {
+    // Timestamp real (escala de evento): dia e hora no fuso local
+    return new Date(value).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
   const date = new Date(value).toLocaleDateString('pt-BR', {
     timeZone: 'UTC',
     day: '2-digit',
@@ -503,7 +526,8 @@ const toScheduleDate = (value: string, startTime?: string | null) => {
 
 const toShortDate = (value: string) =>
   new Date(value).toLocaleDateString('pt-BR', {
-    timeZone: 'UTC',
+    // Date-only fica em UTC; timestamp real (ex.: createdAt de troca) no local
+    ...(isMidnightUtc(value) ? { timeZone: 'UTC' as const } : {}),
     day: '2-digit',
     month: '2-digit',
   });
@@ -514,6 +538,7 @@ const toDateTag = (value: string) => {
     return '';
   }
   return date.toLocaleDateString('pt-BR', {
+    ...(isMidnightUtc(value) ? { timeZone: 'UTC' as const } : {}),
     weekday: 'long',
     day: '2-digit',
     month: '2-digit',
@@ -526,7 +551,10 @@ const toBucket = (value: string) => {
   if (Number.isNaN(date.getTime())) {
     return '';
   }
-  return new Intl.DateTimeFormat('en-CA', { dateStyle: 'short' }).format(date);
+  return new Intl.DateTimeFormat('en-CA', {
+    dateStyle: 'short',
+    ...(isMidnightUtc(value) ? { timeZone: 'UTC' } : {}),
+  }).format(date);
 };
 
 const todayIsoDate = () => {
@@ -854,10 +882,12 @@ const SchedulesPage: React.FC = () => {
     try {
       const params: Record<string, string> = {};
       if (overviewFrom) {
-        params.from = new Date(`${overviewFrom}T00:00:00`).toISOString();
+        // Range em UTC: meia-noite LOCAL virava 03:00Z e excluía as escalas
+        // date-only (00:00Z) do PRÓPRIO dia do filtro
+        params.from = `${overviewFrom}T00:00:00.000Z`;
       }
       if (overviewTo) {
-        params.to = new Date(`${overviewTo}T23:59:59`).toISOString();
+        params.to = `${overviewTo}T23:59:59.999Z`;
       }
 
       const response = await axios.get(`${API_URL}/schedules/coordinator-overview`, {
@@ -880,10 +910,12 @@ const SchedulesPage: React.FC = () => {
     try {
       const params: Record<string, string> = {};
       if (overviewFrom) {
-        params.from = new Date(`${overviewFrom}T00:00:00`).toISOString();
+        // Range em UTC: meia-noite LOCAL virava 03:00Z e excluía as escalas
+        // date-only (00:00Z) do PRÓPRIO dia do filtro
+        params.from = `${overviewFrom}T00:00:00.000Z`;
       }
       if (overviewTo) {
-        params.to = new Date(`${overviewTo}T23:59:59`).toISOString();
+        params.to = `${overviewTo}T23:59:59.999Z`;
       }
 
       const response = await axios.get(`${API_URL}/schedules/export.pdf`, {
@@ -1170,9 +1202,10 @@ const SchedulesPage: React.FC = () => {
 
   /** Escala elegível ao rodízio: aberta e de hoje em diante (dia inteiro conta). */
   const isRotationEligible = (schedule: Schedule) => {
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    return schedule.status === 'OPEN' && new Date(schedule.date).getTime() >= startOfToday.getTime();
+    // Dia civil local em meia-noite UTC — compatível com as datas date-only
+    const now = new Date();
+    const startOfTodayUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    return schedule.status === 'OPEN' && new Date(schedule.date).getTime() >= startOfTodayUtc;
   };
 
   const openRotation = () => {
@@ -1591,9 +1624,11 @@ const SchedulesPage: React.FC = () => {
     0,
   );
   const pendingEventsPreview = eventsWithoutSchedule.slice(0, 5);
+  const nowRef = new Date();
+  const startOfTodayUtcMs = Date.UTC(nowRef.getFullYear(), nowRef.getMonth(), nowRef.getDate());
   const nextSchedule =
     [...schedules]
-      .filter((schedule) => new Date(schedule.date).getTime() >= Date.now())
+      .filter((schedule) => new Date(schedule.date).getTime() >= startOfTodayUtcMs)
       .sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime())[0] ||
     [...schedules].sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime())[0];
 
@@ -2248,9 +2283,11 @@ const SchedulesPage: React.FC = () => {
           </div>
         </div>
         <div className="schedules-hero-actions">
-          <button className="btn-primary schedules-primary-action" onClick={() => openCreate()}>
-            Nova escala
-          </button>
+          {managerRole && (
+            <button className="btn-primary schedules-primary-action" onClick={() => openCreate()}>
+              Nova escala
+            </button>
+          )}
           {managerRole && (
             <>
               <button className="overview-action-button is-secondary" onClick={() => setShowStandaloneModal(true)}>
@@ -2466,10 +2503,12 @@ const SchedulesPage: React.FC = () => {
                     >
                       <span className="cal-day-num">{cell.date.getDate()}</span>
                       {daySchedules.map((item) => {
-                        const time = new Date(item.date).toLocaleTimeString('pt-BR', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        });
+                        const time = isMidnightUtc(item.date)
+                          ? ((item as any).startTime as string | undefined) ?? '00:00'
+                          : new Date(item.date).toLocaleTimeString('pt-BR', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            });
                         const statusOf = (assignment: OverviewAssignment) =>
                           assignment.checkedIn
                             ? { label: 'Presente', cls: 'st-present' }
@@ -3764,7 +3803,7 @@ const SchedulesPage: React.FC = () => {
                 )}
               {candidates && (
                 <p className="assign-modal-context">
-                  {activeSchedule.title} • {toHumanDate(activeSchedule.date)}
+                  {activeSchedule.title} • {toScheduleDate(activeSchedule.date, (activeSchedule as any).startTime)}
                   {activeSchedule.event.location ? ` • ${activeSchedule.event.location}` : ` • ${candidates.event.community?.name ?? ''}`}
                 </p>
               )}
@@ -4552,7 +4591,7 @@ const SchedulesPage: React.FC = () => {
                       onChange={() => toggleRotationSchedule(schedule.id)}
                     />
                     <span>
-                      <strong>{schedule.title}</strong> — {toHumanDate(schedule.date)}
+                      <strong>{schedule.title}</strong> — {toScheduleDate(schedule.date, (schedule as any).startTime)}
                       {schedule.isStandalone ? ' · serviço contínuo' : ''}
                     </span>
                   </label>
@@ -4588,7 +4627,7 @@ const SchedulesPage: React.FC = () => {
                 <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.05rem', color: '#2c3e50' }}>Prévia do rodízio</h3>
                 {rotationPreview.preview.map((item) => (
                   <div key={item.scheduleId} style={{ border: '1px solid #eee', borderRadius: 8, padding: '0.6rem 0.8rem', marginBottom: '0.5rem' }}>
-                    <strong>{item.title}</strong> — {toHumanDate(item.date)}
+                    <strong>{item.title}</strong> — {toScheduleDate(item.date, (item as any).startTime)}
                     {(item.pastorals?.length ?? 0) > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem', margin: '0.45rem 0 0.2rem' }}>
                         {item.pastorals!.map((pastoral) => (
