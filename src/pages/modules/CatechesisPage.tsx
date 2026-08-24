@@ -104,7 +104,27 @@ interface ClassFee {
     amount: number | null;
     method: string | null;
     paidAt: string | null;
+    paymentId: string | null;
   }>;
+}
+
+interface CommunityOverviewRow {
+  classId: string;
+  name: string;
+  stage: string;
+  active: number;
+  pendingApproval: number;
+  documentsToReview: number;
+  pendingDocumentsCount: number;
+  pastSessionsWithoutAttendance: number;
+  feesPendingCount: number;
+}
+
+interface SentNotice {
+  title: string;
+  body: string;
+  sentAt: string;
+  kind: string;
 }
 
 interface DioceseOverview {
@@ -246,7 +266,7 @@ const ENROLLMENT_STATUS: Record<string, { label: string; color: string }> = {
 const CatechesisPage: React.FC = () => {
   const { user } = useAuth();
   const isDiocesan = user?.role === 'DIOCESAN_ADMIN' || user?.role === 'SYSTEM_ADMIN';
-  const [tab, setTab] = useState<'classes' | 'stages' | 'diocese'>('classes');
+  const [tab, setTab] = useState<'classes' | 'stages' | 'diocese' | 'panorama'>('classes');
   const [loading, setLoading] = useState(true);
   const [stages, setStages] = useState<Stage[]>([]);
   const [classes, setClasses] = useState<CatechesisClass[]>([]);
@@ -332,6 +352,24 @@ const CatechesisPage: React.FC = () => {
   const [dioceseId, setDioceseId] = useState('');
   const isSystemAdmin = user?.role === 'SYSTEM_ADMIN';
 
+  // Panorama da comunidade (Onda 3): pendências consolidadas entre turmas
+  const isCoordinator = ['PASTORAL_COORDINATOR', 'COMMUNITY_COORDINATOR', 'PARISH_ADMIN', 'DIOCESAN_ADMIN', 'SYSTEM_ADMIN'].includes(user?.role ?? '');
+  const [overviewRows, setOverviewRows] = useState<CommunityOverviewRow[] | null>(null);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewCommunityId, setOverviewCommunityId] = useState('');
+
+  // Planejamento de temas em lote (Onda 3)
+  const [showTopicsModal, setShowTopicsModal] = useState(false);
+  const [topicsDraft, setTopicsDraft] = useState<Record<string, string>>({});
+  const [savingTopics, setSavingTopics] = useState(false);
+
+  // Histórico de avisos enviados às famílias (Onda 3)
+  const [sentNotices, setSentNotices] = useState<SentNotice[] | null>(null);
+  const [showSentNotices, setShowSentNotices] = useState(false);
+
+  // Quem fez a última chamada (auditoria leve visível na própria tela)
+  const [lastMarked, setLastMarked] = useState<{ byName: string | null; at: string } | null>(null);
+
   const [showAgendaModal, setShowAgendaModal] = useState(false);
   const [agendaRange, setAgendaRange] = useState({ from: '', to: '' });
   const [agendaDates, setAgendaDates] = useState<Record<string, boolean>>({});
@@ -390,6 +428,7 @@ const CatechesisPage: React.FC = () => {
       });
       setAttendance(initial);
       setAttendanceMeta({ date: session.date, topic: session.topic });
+      setLastMarked(res.data?.lastMarked ?? null);
       setAttendanceSessionId(session.id);
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao abrir a chamada'));
@@ -855,6 +894,89 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
+  const loadCommunityOverview = async (communityId?: string) => {
+    setOverviewLoading(true);
+    try {
+      const res = await api.get('/catechesis/community-overview', {
+        params: communityId ? { communityId } : undefined,
+      });
+      setOverviewRows(res.data ?? []);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao carregar o panorama'));
+      setOverviewRows(null);
+    } finally {
+      setOverviewLoading(false);
+    }
+  };
+
+  const openPanoramaTab = () => {
+    setTab('panorama');
+    // Coordenador usa a própria comunidade; admin escolhe no seletor
+    const communityId = overviewCommunityId || user?.communityId || communities[0]?.id || '';
+    if (!overviewCommunityId && communityId) setOverviewCommunityId(communityId);
+    if (communityId) loadCommunityOverview(communityId);
+  };
+
+  const openTopicsModal = () => {
+    // Só encontros de hoje em diante — tema de encontro passado é histórico
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const draft: Record<string, string> = {};
+    sessions
+      .filter((session) => session.date.slice(0, 10) >= todayIso)
+      .forEach((session) => {
+        draft[session.id] = session.topic ?? '';
+      });
+    if (Object.keys(draft).length === 0) {
+      notify.error('Nenhum encontro futuro — gere a agenda primeiro');
+      return;
+    }
+    setTopicsDraft(draft);
+    setShowTopicsModal(true);
+  };
+
+  const handleSaveTopics = async () => {
+    if (!selectedClass) return;
+    setSavingTopics(true);
+    try {
+      const items = Object.entries(topicsDraft).map(([sessionId, topic]) => ({ sessionId, topic }));
+      await api.post(`/catechesis/classes/${selectedClass.id}/sessions/topics`, { items });
+      notify.success('Temas atualizados!');
+      setShowTopicsModal(false);
+      await refreshDetail();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao salvar os temas'));
+    } finally {
+      setSavingTopics(false);
+    }
+  };
+
+  const openSentNotices = async () => {
+    if (!selectedClass) return;
+    setSentNotices(null);
+    setShowSentNotices(true);
+    try {
+      const res = await api.get(`/catechesis/classes/${selectedClass.id}/sent-notices`);
+      setSentNotices(res.data ?? []);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao carregar os avisos enviados'));
+      setShowSentNotices(false);
+    }
+  };
+
+  const downloadCsv = async (path: string, filename: string) => {
+    try {
+      const res = await api.get(path, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao exportar'));
+    }
+  };
+
   // Prévia da agenda: todas as datas do dia-da-semana da turma no período
   const buildAgendaPreview = () => {
     if (!selectedClass) return;
@@ -1019,6 +1141,11 @@ const CatechesisPage: React.FC = () => {
         <button className={`tab-btn ${tab === 'stages' ? 'active' : ''}`} onClick={() => setTab('stages')}>
           Etapas ({stages.length})
         </button>
+        {isCoordinator && (
+          <button className={`tab-btn ${tab === 'panorama' ? 'active' : ''}`} onClick={openPanoramaTab}>
+            Panorama
+          </button>
+        )}
         {isDiocesan && (
           <button
             className={`tab-btn ${tab === 'diocese' ? 'active' : ''}`}
@@ -1028,6 +1155,77 @@ const CatechesisPage: React.FC = () => {
           </button>
         )}
       </div>
+
+      {tab === 'panorama' && (
+        <>
+          {communities.length > 1 && (
+            <div className="inline-form" style={{ marginBottom: '1rem' }}>
+              <select
+                className="filter-select"
+                value={overviewCommunityId}
+                onChange={(e) => {
+                  setOverviewCommunityId(e.target.value);
+                  if (e.target.value) loadCommunityOverview(e.target.value);
+                }}
+              >
+                {communities.map((community) => (
+                  <option key={community.id} value={community.id}>{community.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {overviewLoading && <div className="loading">Carregando o panorama...</div>}
+          {!overviewLoading && overviewRows && overviewRows.length === 0 && (
+            <div className="cate-empty">Nenhuma turma ativa nesta comunidade.</div>
+          )}
+          {!overviewLoading && overviewRows && overviewRows.length > 0 && (
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Turma</th>
+                    <th>Etapa</th>
+                    <th>Ativos</th>
+                    <th>Aguardando aprovação</th>
+                    <th>Docs p/ conferir</th>
+                    <th>Docs pendentes</th>
+                    <th>Chamadas em aberto</th>
+                    <th>Taxas pendentes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overviewRows.map((row) => {
+                    const klass = classes.find((k) => k.id === row.classId);
+                    const attention =
+                      row.pendingApproval + row.documentsToReview + row.pastSessionsWithoutAttendance > 0;
+                    return (
+                      <tr key={row.classId}>
+                        <td>
+                          {klass ? (
+                            <button className="link-button" onClick={() => { setTab('classes'); void openClassDetail(klass); }}>
+                              {row.name}
+                            </button>
+                          ) : (
+                            row.name
+                          )}
+                          {attention && ' ⚠️'}
+                        </td>
+                        <td>{row.stage}</td>
+                        <td>{row.active}</td>
+                        <td>{row.pendingApproval > 0 ? <span className="status-badge yellow">{row.pendingApproval}</span> : '—'}</td>
+                        <td>{row.documentsToReview > 0 ? <span className="status-badge yellow">{row.documentsToReview}</span> : '—'}</td>
+                        <td>{row.pendingDocumentsCount > 0 ? row.pendingDocumentsCount : '—'}</td>
+                        <td>{row.pastSessionsWithoutAttendance > 0 ? <span className="status-badge red">{row.pastSessionsWithoutAttendance}</span> : '—'}</td>
+                        <td>{row.feesPendingCount > 0 ? row.feesPendingCount : '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
 
       {tab === 'diocese' && (
         <>
@@ -1235,6 +1433,12 @@ const CatechesisPage: React.FC = () => {
                 }}
               >
                 📅 Gerar agenda
+              </button>
+              <button className="cate-btn" onClick={openTopicsModal}>
+                📝 Planejar temas
+              </button>
+              <button className="cate-btn" onClick={() => void openSentNotices()}>
+                ✉ Avisos enviados
               </button>
               {report && report.completed > 0 && (
                 <button className="cate-btn" onClick={openRenewal}>↻ Renovar turma</button>
@@ -1924,6 +2128,16 @@ const CatechesisPage: React.FC = () => {
               </div>
               <button type="submit" className="btn-small success">+ Criar taxa (avisa as famílias)</button>
             </form>
+            {classFees.length > 0 && (
+              <button
+                type="button"
+                className="btn-small"
+                style={{ marginTop: '0.6rem' }}
+                onClick={() => downloadCsv(`/catechesis/classes/${selectedClass.id}/fees/export.csv`, `taxas_${selectedClass.name.replace(/\s+/g, '_').toLowerCase()}.csv`)}
+              >
+                ⬇ Exportar CSV
+              </button>
+            )}
             {classFees.length === 0 && (
               <p style={{ color: '#666', marginTop: '0.8rem' }}>
                 Nenhuma taxa nesta turma — o recurso é opcional e só aparece para as famílias se você criar.
@@ -1974,6 +2188,14 @@ const CatechesisPage: React.FC = () => {
                                   Isentar
                                 </button>
                               </>
+                            )}
+                            {student.status === 'PAID' && student.paymentId && (
+                              <button
+                                className="btn-small"
+                                onClick={() => downloadPdf(`/catechesis/fees/payments/${student.paymentId}/receipt.pdf`, `recibo_${student.fullName.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
+                              >
+                                🧾 Recibo
+                              </button>
                             )}
                           </td>
                         </tr>
@@ -2108,6 +2330,75 @@ const CatechesisPage: React.FC = () => {
         </div>
       )}
 
+      {showTopicsModal && selectedClass && (
+        <div className="module-modal-overlay" onClick={() => setShowTopicsModal(false)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+            <h2>Planejar temas · {selectedClass.name}</h2>
+            <p style={{ fontSize: '0.9rem', color: '#666' }}>
+              Defina o tema de cada encontro futuro de uma vez — as famílias veem na agenda da turma.
+            </p>
+            <div className="checklist" style={{ maxHeight: 380, overflowY: 'auto' }}>
+              {sessions
+                .filter((session) => session.id in topicsDraft)
+                .map((session) => (
+                  <div key={session.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.25rem 0' }}>
+                    <span style={{ minWidth: 88, fontWeight: 600 }}>
+                      {new Date(session.date).toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit' })}
+                    </span>
+                    <input
+                      type="text"
+                      maxLength={120}
+                      placeholder="Tema do encontro"
+                      style={{ flex: 1 }}
+                      value={topicsDraft[session.id]}
+                      onChange={(e) => setTopicsDraft({ ...topicsDraft, [session.id]: e.target.value })}
+                    />
+                  </div>
+                ))}
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" onClick={() => setShowTopicsModal(false)}>Cancelar</button>
+              <button type="button" className="btn-submit" disabled={savingTopics} onClick={() => void handleSaveTopics()}>
+                {savingTopics ? 'Salvando...' : 'Salvar temas'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSentNotices && selectedClass && (
+        <div className="module-modal-overlay" onClick={() => setShowSentNotices(false)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+            <h2>Avisos enviados · {selectedClass.name}</h2>
+            {sentNotices === null && <div className="loading">Carregando...</div>}
+            {sentNotices && sentNotices.length === 0 && (
+              <p style={{ color: '#666' }}>Nenhum aviso enviado às famílias ainda.</p>
+            )}
+            {sentNotices && sentNotices.length > 0 && (
+              <div className="checklist" style={{ maxHeight: 420, overflowY: 'auto' }}>
+                {sentNotices.map((notice, index) => (
+                  <div key={index} style={{ padding: '0.5rem 0', borderBottom: '1px solid #eee' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.6rem' }}>
+                      <strong style={{ fontSize: '0.9rem' }}>{notice.title}</strong>
+                      <span style={{ fontSize: '0.78rem', color: '#888', whiteSpace: 'nowrap' }}>
+                        {new Date(notice.sentAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <p style={{ margin: '0.2rem 0 0', fontSize: '0.85rem', whiteSpace: 'pre-wrap' }}>{notice.body}</p>
+                    <span style={{ fontSize: '0.75rem', color: '#999' }}>
+                      {notice.kind === 'family-message' ? 'aviso individual' : notice.kind === 'agenda' ? 'agenda publicada' : notice.kind === 'session-moved' ? 'remarcação' : 'aviso da turma'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" onClick={() => setShowSentNotices(false)}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {attendanceSessionId && (
         <div className="module-modal-overlay" onClick={() => setAttendanceSessionId(null)}>
           <div className="module-modal" onClick={(e) => e.stopPropagation()}>
@@ -2117,6 +2408,12 @@ const CatechesisPage: React.FC = () => {
                 ? ` · ${new Date(attendanceMeta.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}${attendanceMeta.topic ? ` — ${attendanceMeta.topic}` : ''}`
                 : ' do encontro'}
             </h2>
+            {lastMarked && (
+              <p style={{ fontSize: '0.82rem', color: '#666', margin: '0 0 0.5rem' }}>
+                Última chamada{lastMarked.byName ? ` por ${lastMarked.byName}` : ''} em{' '}
+                {new Date(lastMarked.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+              </p>
+            )}
             <div className="checklist">
               {Object.keys(attendance).length === 0 && <p>Nenhum catequizando ativo para a chamada.</p>}
               {(report?.students ?? [])

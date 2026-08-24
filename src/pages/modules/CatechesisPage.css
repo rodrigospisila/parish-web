@@ -428,3 +428,15 @@
   .cate-stat { padding: 0 0.9rem; min-width: 80px; }
   .cate-detail__head, .cate-toolbar, .cate-body { padding-left: 1rem; padding-right: 1rem; }
 }
+
+/* Panorama: nome da turma clicável abre o detalhe */
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #2563eb;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.link-button:hover { color: #1d4ed8; }
