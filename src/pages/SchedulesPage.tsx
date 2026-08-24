@@ -488,8 +488,22 @@ const toHumanDate = (value: string) =>
     minute: '2-digit',
   });
 
+// Datas de ESCALA são date-only (00:00Z) com startTime separado — renderizar
+// no fuso local mostrava o dia anterior às 21:00. Sempre usar esta função
+// para schedule.date (toHumanDate fica para timestamps reais, ex.: check-in).
+const toScheduleDate = (value: string, startTime?: string | null) => {
+  const date = new Date(value).toLocaleDateString('pt-BR', {
+    timeZone: 'UTC',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+  return startTime ? `${date}, ${startTime}` : date;
+};
+
 const toShortDate = (value: string) =>
   new Date(value).toLocaleDateString('pt-BR', {
+    timeZone: 'UTC',
     day: '2-digit',
     month: '2-digit',
   });
@@ -2229,7 +2243,7 @@ const SchedulesPage: React.FC = () => {
           </p>
           <div className="schedules-hero-note">
             {nextSchedule
-              ? `Proxima escala: ${nextSchedule.title} em ${toHumanDate(nextSchedule.date)}`
+              ? `Proxima escala: ${nextSchedule.title} em ${toScheduleDate(nextSchedule.date, (nextSchedule as any).startTime)}`
               : 'Nenhuma escala cadastrada ate o momento.'}
           </div>
         </div>
@@ -2572,7 +2586,7 @@ const SchedulesPage: React.FC = () => {
                   <div className="cal-detail-head">
                     <div>
                       <strong>{calSelected.title}</strong>
-                      <span className="cal-detail-date">{toHumanDate(calSelected.date)}</span>
+                      <span className="cal-detail-date">{toScheduleDate(calSelected.date, (calSelected as any).startTime)}</span>
                     </div>
                     <button type="button" className="cal-detail-close" onClick={() => setCalSelectedId(null)}>
                       ×
@@ -2682,7 +2696,7 @@ const SchedulesPage: React.FC = () => {
                               </span>
                             </span>
                           </td>
-                          <td className="nowrap">{toHumanDate(item.date)}</td>
+                          <td className="nowrap">{toScheduleDate(item.date, (item as any).startTime)}</td>
                           <td className="num warn">{item.counts.pending}</td>
                           <td className="num ok">{item.counts.confirmed}</td>
                           <td className="num danger">{item.counts.declined}</td>
@@ -2744,7 +2758,7 @@ const SchedulesPage: React.FC = () => {
                   <div className="coordinator-schedule-header">
                     <div>
                       <h3>{item.title}</h3>
-                      <p className="coordinator-schedule-date">{toHumanDate(item.date)}</p>
+                      <p className="coordinator-schedule-date">{toScheduleDate(item.date, (item as any).startTime)}</p>
                       <p>{item.event.title}</p>
                     </div>
                     <div className="coordinator-schedule-badges">
@@ -2800,7 +2814,7 @@ const SchedulesPage: React.FC = () => {
             {overview.map((item) => (
               <div key={`print-${item.scheduleId}`} className="print-schedule">
                 <h2>
-                  {toHumanDate(item.date)} — {item.event.title}
+                  {toScheduleDate(item.date, (item as any).startTime)} — {item.event.title}
                 </h2>
                 {item.event.community?.name && <p>{item.event.community.name}</p>}
                 <table>
@@ -3112,7 +3126,7 @@ const SchedulesPage: React.FC = () => {
                         <div className="schedule-card-meta-grid">
                           <div className="schedule-card-meta-item">
                             <span>Quando</span>
-                            <strong>{toHumanDate(schedule.date)}</strong>
+                            <strong>{toScheduleDate(schedule.date, (schedule as any).startTime)}</strong>
                           </div>
                           <div className="schedule-card-meta-item">
                             <span>Comunidade</span>
@@ -3338,7 +3352,7 @@ const SchedulesPage: React.FC = () => {
                 <span className="manage-kicker">Gestão da escala</span>
                 <h2>{activeSchedule.title}</h2>
                 <div className="manage-meta">
-                  <span>📅 {toHumanDate(activeSchedule.date)}</span>
+                  <span>📅 {toScheduleDate(activeSchedule.date, (activeSchedule as any).startTime)}</span>
                   <span>⛪ {activeSchedule.isStandalone ? 'Serviço contínuo' : activeSchedule.event.title}</span>
                   {activeSchedule.event.community?.name && <span>📍 {activeSchedule.event.community.name}</span>}
                   {activeSchedule.event.location && <span>🗺 {activeSchedule.event.location}</span>}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import TitleIcon from '../components/TitleIcon';
 import axios from 'axios';
 import { notify, confirm } from '../services/notification.service';
@@ -65,6 +66,11 @@ const CommunitiesPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [selectedCommunities, setSelectedCommunities] = useState<string[]>([]);
+  // O backend nega criar/editar/excluir abaixo desses papéis — a UI não deve
+  // oferecer botões que terminam em 403
+  const { user: authUser } = useAuth();
+  const isAdminRole = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN'].includes(authUser?.role ?? '');
+  const canEditCommunity = isAdminRole || authUser?.role === 'COMMUNITY_COORDINATOR';
   const [filterParish, setFilterParish] = useState('');
 
   // Santos padroeiros (vínculo por comunidade)
@@ -381,9 +387,11 @@ const CommunitiesPage: React.FC = () => {
     <div className="communities-page">
       <div className="page-header">
         <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="comunidade" /> Comunidades</h1>
-        <button className="btn-primary" onClick={() => setShowModal(true)}>
-          + Nova Comunidade
-        </button>
+        {isAdminRole && (
+          <button className="btn-primary" onClick={() => setShowModal(true)}>
+            + Nova Comunidade
+          </button>
+        )}
       </div>
 
       <div className="page-controls">
@@ -468,15 +476,21 @@ const CommunitiesPage: React.FC = () => {
                   <PatronSaintsBadge patrons={patronsByEntity[community.id]} />
                 </div>
                 <div className="entity-card-footer">
-                  <button className="entity-btn primary" onClick={() => handleEdit(community)}>
-                    Editar
-                  </button>
-                  <button className="entity-btn accent" onClick={() => setPatronTarget(community)}>
-                    🕊️ Padroeiro
-                  </button>
-                  <button className="entity-btn danger" onClick={() => handleDelete(community.id)}>
-                    Excluir
-                  </button>
+                  {canEditCommunity && (
+                    <button className="entity-btn primary" onClick={() => handleEdit(community)}>
+                      Editar
+                    </button>
+                  )}
+                  {canEditCommunity && (
+                    <button className="entity-btn accent" onClick={() => setPatronTarget(community)}>
+                      🕊️ Padroeiro
+                    </button>
+                  )}
+                  {isAdminRole && (
+                    <button className="entity-btn danger" onClick={() => handleDelete(community.id)}>
+                      Excluir
+                    </button>
+                  )}
                 </div>
               </div>
             ))
@@ -581,15 +595,21 @@ const CommunitiesPage: React.FC = () => {
                   </td>
                   <td>{formatDate(community.createdAt)}</td>
                   <td className="actions-cell">
-                    <button className="entity-icon-btn" onClick={() => handleEdit(community)} title="Editar">
-                      ✏️
-                    </button>
-                    <button className="entity-icon-btn" onClick={() => setPatronTarget(community)} title="Padroeiro">
-                      🕊️
-                    </button>
-                    <button className="entity-icon-btn danger" onClick={() => handleDelete(community.id)} title="Excluir">
-                      🗑️
-                    </button>
+                    {canEditCommunity && (
+                      <button className="entity-icon-btn" onClick={() => handleEdit(community)} title="Editar">
+                        ✏️
+                      </button>
+                    )}
+                    {canEditCommunity && (
+                      <button className="entity-icon-btn" onClick={() => setPatronTarget(community)} title="Padroeiro">
+                        🕊️
+                      </button>
+                    )}
+                    {isAdminRole && (
+                      <button className="entity-icon-btn danger" onClick={() => handleDelete(community.id)} title="Excluir">
+                        🗑️
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

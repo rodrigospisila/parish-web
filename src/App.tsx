@@ -78,6 +78,19 @@ const RoleProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles: st
   return <>{children}</>;
 };
 
+// Landing pós-login por papel: coordenador de pastoral caía em página de
+// admin com "Acesso Negado" — cada papel entra pela sua área de trabalho.
+const AdminIndexRedirect: React.FC = () => {
+  const { user } = useAuth();
+  const role = user?.role ?? '';
+  const target = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN'].includes(role)
+    ? '/admin/communities'
+    : role === 'COMMUNITY_COORDINATOR'
+      ? '/admin/members'
+      : '/admin/schedules';
+  return <Navigate to={target} replace />;
+};
+
 const App: React.FC = () => {
   return (
     <AuthProvider>
@@ -102,7 +115,7 @@ const App: React.FC = () => {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Navigate to="/admin/communities" replace />} />
+            <Route index element={<AdminIndexRedirect />} />
             <Route path="dioceses" element={
               <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN', 'DIOCESAN_ADMIN']}>
                 <DiocesesPage />

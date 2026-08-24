@@ -287,7 +287,12 @@ const CatechesisPage: React.FC = () => {
   const [sessionForm, setSessionForm] = useState({ date: '', topic: '' });
 
   const [attendanceSessionId, setAttendanceSessionId] = useState<string | null>(null);
-  const [attendance, setAttendance] = useState<Record<string, boolean>>({});
+  // Tri-state espelhando o app: gravar só presente/ausente pela web ZERAVA os
+  // atrasos registrados no celular (o backend força late=false quando omitido)
+  type Mark = 'present' | 'late' | 'absent';
+  const nextMark = (mark: Mark): Mark => (mark === 'present' ? 'late' : mark === 'late' ? 'absent' : 'present');
+  const MARK_LABEL: Record<Mark, string> = { present: '✓ Presente', late: '🕒 Atrasado', absent: '✗ Ausente' };
+  const [attendance, setAttendance] = useState<Record<string, Mark>>({});
   const [attendanceMeta, setAttendanceMeta] = useState<{ date: string; topic?: string | null } | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
 
@@ -368,9 +373,10 @@ const CatechesisPage: React.FC = () => {
   const openSessionAttendance = async (session: SessionSummary) => {
     try {
       const res = await api.get(`/catechesis/sessions/${session.id}/attendance`);
-      const initial: Record<string, boolean> = {};
-      (res.data?.students ?? []).forEach((student: { enrollmentId: string; present: boolean | null }) => {
-        initial[student.enrollmentId] = student.present === null ? true : student.present;
+      const initial: Record<string, Mark> = {};
+      (res.data?.students ?? []).forEach((student: { enrollmentId: string; present: boolean | null; late?: boolean }) => {
+        initial[student.enrollmentId] =
+          student.present === null ? 'present' : student.late ? 'late' : student.present ? 'present' : 'absent';
       });
       setAttendance(initial);
       setAttendanceMeta({ date: session.date, topic: session.topic });
@@ -488,11 +494,11 @@ const CatechesisPage: React.FC = () => {
       setShowSessionModal(false);
       setSessionForm({ date: '', topic: '' });
       // Abre a chamada com todos presentes por padrão
-      const initial: Record<string, boolean> = {};
+      const initial: Record<string, Mark> = {};
       (report?.students ?? [])
         .filter((s) => s.status === 'ACTIVE')
         .forEach((s) => {
-          initial[s.enrollmentId] = true;
+          initial[s.enrollmentId] = 'present';
         });
       setAttendance(initial);
       setAttendanceMeta({ date: sessionForm.date, topic: undefined });
@@ -506,7 +512,11 @@ const CatechesisPage: React.FC = () => {
     if (!attendanceSessionId) return;
     try {
       await api.post(`/catechesis/sessions/${attendanceSessionId}/attendance`, {
-        entries: Object.entries(attendance).map(([enrollmentId, present]) => ({ enrollmentId, present })),
+        entries: Object.entries(attendance).map(([enrollmentId, mark]) => ({
+          enrollmentId,
+          present: mark === 'present' || mark === 'late',
+          late: mark === 'late',
+        })),
       });
       notify.success('Chamada registrada!');
       setAttendanceSessionId(null);
@@ -2009,16 +2019,23 @@ const CatechesisPage: React.FC = () => {
               {Object.keys(attendance).length === 0 && <p>Nenhum catequizando ativo para a chamada.</p>}
               {(report?.students ?? [])
                 .filter((s) => s.enrollmentId in attendance)
-                .map((s) => (
-                  <label key={s.enrollmentId}>
-                    <input
-                      type="checkbox"
-                      checked={attendance[s.enrollmentId]}
-                      onChange={(e) => setAttendance({ ...attendance, [s.enrollmentId]: e.target.checked })}
-                    />
-                    {s.member.fullName}
-                  </label>
-                ))}
+                .map((s) => {
+                  const mark = attendance[s.enrollmentId];
+                  const color = mark === 'present' ? '#15803d' : mark === 'late' ? '#b45309' : '#b91c1c';
+                  return (
+                    <div key={s.enrollmentId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem', padding: '0.3rem 0' }}>
+                      <span>{s.member.fullName}</span>
+                      <button
+                        type="button"
+                        className="cate-mini"
+                        style={{ color, borderColor: color, minWidth: 110 }}
+                        onClick={() => setAttendance({ ...attendance, [s.enrollmentId]: nextMark(mark) })}
+                      >
+                        {MARK_LABEL[mark]}
+                      </button>
+                    </div>
+                  );
+                })}
             </div>
             <div className="modal-actions">
               <button type="button" className="btn-cancel" onClick={() => setAttendanceSessionId(null)}>Fechar sem salvar</button>

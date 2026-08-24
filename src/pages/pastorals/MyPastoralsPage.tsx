@@ -21,8 +21,9 @@ interface Community {
 
 interface PastoralMember {
   id: string;
-  name: string;
+  name?: string;
   role: string;
+  member?: { fullName?: string };
 }
 
 interface Meeting {
@@ -106,7 +107,10 @@ const MyPastoralsPage: React.FC = () => {
   const getLeaders = (pastoral: MyPastoral) => {
     return pastoral.members
       .filter((m) => m.role === 'Coordenador' || m.role === 'COORDINATOR' || m.role === 'Vice-Coordenador')
-      .map((m) => m.name)
+      // A API devolve o nome em member.fullName (m.name era sempre undefined,
+      // por isso TODO card mostrava "Coordenação não definida")
+      .map((m) => m.member?.fullName ?? m.name)
+      .filter(Boolean)
       .join(' • ') || 'Coordenação não definida';
   };
 
@@ -142,14 +146,14 @@ const MyPastoralsPage: React.FC = () => {
         <div className="community-pastoral-section-header">
           <div className="community-pastoral-section-heading">
             <h2>Suas Pastorais</h2>
-            <p>Lista de pastorais para as quais você é coordenador</p>
+            <p>Pastorais das quais você participa</p>
           </div>
         </div>
 
         {pastorals.length === 0 ? (
           <div className="community-pastoral-empty-state">
             <strong>Nenhuma pastoral vinculada</strong>
-            <p>Você ainda não foi designado como coordenador de nenhuma pastoral.</p>
+            <p>Você ainda não participa de nenhuma pastoral — fale com a coordenação da sua comunidade.</p>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1.25rem' }}>
