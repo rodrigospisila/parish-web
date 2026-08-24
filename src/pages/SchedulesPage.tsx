@@ -3647,7 +3647,18 @@ const SchedulesPage: React.FC = () => {
                           )}
                         </span>
                         <div className="member-details">
-                          <strong>{assignment.member.fullName}</strong>
+                          <strong>
+                            {assignment.member.fullName}
+                            {(assignment as any).coupleWith && (
+                              <span
+                                className="group-chip"
+                                style={{ marginLeft: 6 }}
+                                title={`Servindo em casal com ${(assignment as any).coupleWith}`}
+                              >
+                                💍 casal
+                              </span>
+                            )}
+                          </strong>
                           <span className="member-meta-row">
                             <span className="role-badge">{assignment.role}</span>
                             <span className="member-pastoral">

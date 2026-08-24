@@ -38,6 +38,8 @@ interface ClassReport {
     member: { id: string; fullName: string };
     status: string;
     pendingDocuments?: string | null;
+    rejectionReason?: string | null;
+    contact?: { name: string | null; phone: string | null } | null;
     submittedDocs: number;
     docsCount: number;
     attendanceRate: number | null;
@@ -657,6 +659,51 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
+  const handleEditSession = async (session: SessionSummary) => {
+    const currentDate = new Date(session.date).toISOString().slice(0, 10);
+    const date = window.prompt('Data do encontro (AAAA-MM-DD):', currentDate);
+    if (date === null) return;
+    const topic = window.prompt('Tema (vazio remove):', session.topic ?? '');
+    if (topic === null) return;
+    try {
+      await api.patch(`/catechesis/sessions/${session.id}`, {
+        date: date.trim() || undefined,
+        topic,
+      });
+      notify.success('Encontro atualizado!');
+      refreshDetail();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao atualizar o encontro'));
+    }
+  };
+
+  const handleDeleteSession = async (session: SessionSummary) => {
+    const when = new Date(session.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+    if (!window.confirm(`Excluir o encontro de ${when}? A chamada dele será apagada junto.`)) return;
+    try {
+      await api.delete(`/catechesis/sessions/${session.id}`);
+      notify.success('Encontro excluído.');
+      refreshDetail();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao excluir o encontro'));
+    }
+  };
+
+  const handleNotifyFamily = async (enrollmentId: string, fullName: string) => {
+    const message = window.prompt(`Aviso só para a família de ${fullName} (até 500 caracteres):`);
+    if (message === null || !message.trim()) return;
+    try {
+      const res = await api.post(`/catechesis/enrollments/${enrollmentId}/notify`, { message });
+      notify.success(
+        res.data.notified > 0
+          ? `Aviso enviado para ${res.data.notified} conta(s) da família.`
+          : 'A família não tem conta no app para receber o aviso.',
+      );
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao enviar o aviso'));
+    }
+  };
+
   const openBatchAssessment = () => {
     if (!report) return;
     const selection: Record<string, boolean> = {};
@@ -1267,21 +1314,46 @@ const CatechesisPage: React.FC = () => {
                     ) : (
                       <div className="cate-sessions">
                         {sessions.map((session) => (
-                          <button key={session.id} className="cate-session" onClick={() => void openSessionAttendance(session)}>
+                          <div
+                            key={session.id}
+                            className="cate-session"
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => void openSessionAttendance(session)}
+                            onKeyDown={(e) => e.key === 'Enter' && void openSessionAttendance(session)}
+                          >
                             <span>
                               <span className="cate-session__date">
                                 {new Date(session.date).toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' })}
                               </span>
                               <div className="cate-session__meta">{session.topic || 'Sem tema'}</div>
                             </span>
-                            {session.marked === 0 ? (
-                              <span className="cate-session__badge cate-session__badge--todo">sem chamada</span>
-                            ) : (
-                              <span className="cate-session__badge cate-session__badge--done">
-                                {session.present}/{session.marked} ✓
-                              </span>
-                            )}
-                          </button>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              {session.marked === 0 ? (
+                                <span className="cate-session__badge cate-session__badge--todo">sem chamada</span>
+                              ) : (
+                                <span className="cate-session__badge cate-session__badge--done">
+                                  {session.present}/{session.marked} ✓
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                className="cate-chip__remove"
+                                title="Editar encontro"
+                                onClick={(e) => { e.stopPropagation(); void handleEditSession(session); }}
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                type="button"
+                                className="cate-chip__remove"
+                                title="Excluir encontro"
+                                onClick={(e) => { e.stopPropagation(); void handleDeleteSession(session); }}
+                              >
+                                🗑
+                              </button>
+                            </span>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -1314,8 +1386,23 @@ const CatechesisPage: React.FC = () => {
                               const badgeClass = STATUS_BADGE[student.status] ?? 'cate-badge--moved';
                               return (
                                 <tr key={student.enrollmentId}>
-                                  <td><strong>{student.member.fullName}</strong></td>
-                                  <td><span className={`cate-badge ${badgeClass}`}>{st.label}</span></td>
+                                  <td>
+                                    <strong>{student.member.fullName}</strong>
+                                    {student.contact && (
+                                      <div style={{ fontSize: '0.76rem', color: '#64748b' }}>
+                                        {student.contact.name ? `Resp.: ${student.contact.name}` : 'Contato próprio'}
+                                        {student.contact.phone ? ` · 📞 ${student.contact.phone}` : ''}
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td>
+                                    <span className={`cate-badge ${badgeClass}`}>{st.label}</span>
+                                    {student.status === 'REJECTED' && student.rejectionReason && (
+                                      <div style={{ fontSize: '0.74rem', color: '#b91c1c', marginTop: 2 }}>
+                                        {student.rejectionReason}
+                                      </div>
+                                    )}
+                                  </td>
                                   <td>
                                     {student.attendanceRate === null ? (
                                       <span style={{ color: '#94a3b8' }}>—</span>
@@ -1367,9 +1454,14 @@ const CatechesisPage: React.FC = () => {
                                         </>
                                       )}
                                       {(student.status === 'ACTIVE' || student.status === 'COMPLETED') && (
-                                        <button className="cate-mini" onClick={() => openAssessments(student.enrollmentId, student.member.fullName)}>
-                                          📝 Parecer
-                                        </button>
+                                        <>
+                                          <button className="cate-mini" onClick={() => openAssessments(student.enrollmentId, student.member.fullName)}>
+                                            📝 Parecer
+                                          </button>
+                                          <button className="cate-mini" onClick={() => handleNotifyFamily(student.enrollmentId, student.member.fullName)}>
+                                            ✉ Avisar
+                                          </button>
+                                        </>
                                       )}
                                       {student.status === 'COMPLETED' && (
                                         <button
