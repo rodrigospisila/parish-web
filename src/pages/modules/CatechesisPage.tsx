@@ -1320,7 +1320,7 @@ const CatechesisPage: React.FC = () => {
                             role="button"
                             tabIndex={0}
                             onClick={() => void openSessionAttendance(session)}
-                            onKeyDown={(e) => e.key === 'Enter' && void openSessionAttendance(session)}
+                            onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && void openSessionAttendance(session)}
                           >
                             <span>
                               <span className="cate-session__date">
