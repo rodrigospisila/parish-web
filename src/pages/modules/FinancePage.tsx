@@ -80,6 +80,8 @@ interface TitheConfig {
   pixMerchantCity?: string | null;
   titheMessage?: string | null;
   brCodePreview?: string | null;
+  lastChange?: { at: string; byName: string | null } | null;
+  cancelledOpenIntents?: number;
 }
 
 const INTENT_STATUS: Record<string, { label: string; color: string }> = {
@@ -239,10 +241,26 @@ const FinancePage: React.FC = () => {
 
   const saveTitheConfig = async (e: React.FormEvent) => {
     e.preventDefault();
+    const keyChanged =
+      !!titheConfig?.pixKey &&
+      (configForm.pixKey.trim() !== (titheConfig.pixKey ?? '') || configForm.pixKeyType !== (titheConfig.pixKeyType ?? configForm.pixKeyType));
+    let currentPassword: string | undefined;
+    if (keyChanged) {
+      const typed = window.prompt(
+        'Você está TROCANDO a chave Pix da paróquia — todos os Pix ainda não informados serão cancelados e os outros administradores serão avisados.\n\nConfirme com a sua senha atual:',
+      );
+      if (typed === null) return;
+      currentPassword = typed;
+      if (!currentPassword.trim()) {
+        notify.error('Informe sua senha atual para trocar a chave Pix');
+        return;
+      }
+    }
     setSavingConfig(true);
     try {
       const res = await api.patch('/tithe/config', {
         parishId: configParishId || undefined,
+        currentPassword,
         titheEnabled: configForm.titheEnabled,
         pixKeyType: configForm.pixKeyType,
         pixKey: configForm.pixKey.trim() || null,
@@ -252,6 +270,9 @@ const FinancePage: React.FC = () => {
       });
       setTitheConfig(res.data);
       notify.success(res.data?.titheEnabled ? 'Dízimo pelo app ATIVO para os fiéis' : 'Configuração salva (dízimo pelo app desativado)');
+      if (res.data?.cancelledOpenIntents > 0) {
+        notify.success(`${res.data.cancelledOpenIntents} Pix em aberto foram cancelados — os fiéis geram um novo código`);
+      }
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao salvar a configuração'));
     } finally {
@@ -479,8 +500,8 @@ const FinancePage: React.FC = () => {
                   <div className="form-group">
                     <label>Tipo da chave</label>
                     <select className="filter-select" value={configForm.pixKeyType} onChange={(e) => setConfigForm({ ...configForm, pixKeyType: e.target.value })}>
-                      <option value="CNPJ">CNPJ</option>
-                      <option value="CPF">CPF</option>
+                      <option value="CNPJ">CNPJ da paróquia</option>
+                      <option value="CPF">CPF (conta pessoal — evite)</option>
                       <option value="EMAIL">E-mail</option>
                       <option value="PHONE">Telefone (+55…)</option>
                       <option value="RANDOM">Chave aleatória</option>
@@ -510,6 +531,12 @@ const FinancePage: React.FC = () => {
                   Ativar o dízimo pelo app para os fiéis desta paróquia
                 </label>
                 <button type="submit" className="btn-small success" disabled={savingConfig}>{savingConfig ? 'Salvando...' : 'Salvar configuração'}</button>
+                {titheConfig?.lastChange && (
+                  <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '0.6rem' }}>
+                    🔐 Última troca da chave: {new Date(titheConfig.lastChange.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    {titheConfig.lastChange.byName ? ` por ${titheConfig.lastChange.byName}` : ''}. Não reconhece? Desative o dízimo agora e fale com a diocese.
+                  </p>
+                )}
                 {titheConfig?.brCodePreview && (
                   <p style={{ fontSize: '0.75rem', color: '#888', marginTop: '0.6rem', wordBreak: 'break-all' }}>
                     Prévia do código: {titheConfig.brCodePreview}
