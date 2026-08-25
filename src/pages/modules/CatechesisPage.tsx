@@ -972,7 +972,8 @@ const CatechesisPage: React.FC = () => {
   };
 
   const sendChat = async () => {
-    if (!chatTarget || !chatText.trim()) return;
+    // Enter repetido durante o envio em voo duplicava a mensagem
+    if (!chatTarget || !chatText.trim() || sendingChat) return;
     setSendingChat(true);
     try {
       const res = await api.post(`/catechesis/enrollments/${chatTarget.enrollmentId}/messages`, { body: chatText.trim() });
@@ -1769,6 +1770,13 @@ const CatechesisPage: React.FC = () => {
                                         <>
                                           <button className="cate-mini cate-mini--ok" onClick={() => handleApprove(student.enrollmentId)}>✓ Aprovar</button>
                                           <button className="cate-mini cate-mini--danger" onClick={() => handleReject(student.enrollmentId)}>Recusar</button>
+                                          <button
+                                            className="cate-mini"
+                                            title="Conversa com a família"
+                                            onClick={() => void openChat(student.enrollmentId, student.member.fullName)}
+                                          >
+                                            💬 Conversa{student.unreadMessages ? ` (${student.unreadMessages})` : ''}
+                                          </button>
                                         </>
                                       )}
                                       {(student.status === 'ACTIVE' || student.status === 'COMPLETED') && (

@@ -200,7 +200,8 @@ const CommunityPastoralDetailsPage: React.FC = () => {
   const reviewJoinRequest = async (requestId: string, approve: boolean) => {
     let reason: string | undefined;
     if (!approve) {
-      const typed = window.prompt('Motivo da recusa (opcional, o fiel recebe o aviso):') ?? '';
+      const typed = window.prompt('Motivo da recusa (opcional, o fiel recebe o aviso):');
+      if (typed === null) return; // cancelou o prompt = não recusa
       reason = typed.trim() || undefined;
     }
     setJoinBusy(requestId);
@@ -208,7 +209,10 @@ const CommunityPastoralDetailsPage: React.FC = () => {
       await api.patch(`/pastorals/join-requests/${requestId}/${approve ? 'approve' : 'reject'}`, reason ? { reason } : {});
       notify.success(approve ? 'Pedido aprovado — o membro já faz parte da equipe' : 'Pedido recusado');
       await loadJoinRequests();
-      if (approve) window.location.reload();
+      if (approve) {
+        await fetchPastoralDetails();
+        await fetchAllMembers();
+      }
     } catch (error: any) {
       notify.error(error?.response?.data?.message ?? 'Erro ao responder o pedido');
     } finally {
@@ -953,7 +957,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
       <div className="community-pastoral-content-grid">
         {joinRequests.length > 0 && (
-          <section className="community-pastoral-section">
+          <section className="community-pastoral-section community-pastoral-section--requests">
             <div className="community-pastoral-section-header">
               <div className="community-pastoral-section-heading">
                 <span className="community-pastoral-section-kicker">Quero participar</span>

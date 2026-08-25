@@ -19,6 +19,7 @@ interface Overview {
   swaps: { pending: number };
   pastorals: { joinRequests: number };
   prayers: { pendingModeration: number };
+  canModeratePrayers?: boolean;
   total: number;
 }
 
@@ -71,16 +72,20 @@ const DashboardPage: React.FC = () => {
           api.get('/dashboard/coordinator', {
             params: targetCommunityId ? { communityId: targetCommunityId } : undefined,
           }),
-          api.get('/prayer-requests/pending').catch(() => ({ data: [] })),
+          api.get('/prayer-requests/pending', {
+            params: targetCommunityId ? { communityId: targetCommunityId } : undefined,
+          }).catch(() => ({ data: [] })),
         ]);
         setOverview(overviewRes.data);
         const scope: string[] = overviewRes.data?.scope?.communityIds ?? [];
         const pending: PendingPrayer[] = Array.isArray(prayersRes.data) ? prayersRes.data : [];
-        // A lista de pendentes vem no escopo do papel; recorta pela comunidade escolhida
+        // O backend já recorta pelo escopo do moderador; aqui só a comunidade escolhida
+        // (escopo vazio = nada a moderar, nunca "tudo")
+        const communityOf = (p: any) => p.communityId ?? p.community?.id;
         setPrayers(
           targetCommunityId
-            ? pending.filter((p: any) => p.communityId === targetCommunityId || p.community?.id === targetCommunityId)
-            : pending.filter((p: any) => !scope.length || scope.includes(p.communityId ?? p.community?.id)),
+            ? pending.filter((p) => communityOf(p) === targetCommunityId)
+            : pending.filter((p) => scope.includes(communityOf(p))),
         );
       } catch (error) {
         notify.error(getErrorMessage(error, 'Erro ao carregar as pendências'));
@@ -213,9 +218,11 @@ const DashboardPage: React.FC = () => {
                 value={overview.pastorals.joinRequests}
                 label="Pedidos “quero participar”"
                 hint="aprovar na página da pastoral"
-                to="/admin/pastorals/my"
+                to={user?.role === 'PASTORAL_COORDINATOR' ? '/admin/pastorals/my' : '/admin/pastorals/community'}
               />
-              <Card value={overview.prayers.pendingModeration} label="Pedidos de oração para moderar" to="/admin" />
+              {overview.canModeratePrayers !== false && (
+                <Card value={overview.prayers.pendingModeration} label="Pedidos de oração para moderar" hint="modere logo abaixo" to="/admin/dashboard" />
+              )}
             </div>
           </section>
 

@@ -895,6 +895,11 @@
   grid-row: span 3;
 }
 
+/* Pedidos "quero participar" ocupam a linha inteira acima do grid de membros */
+.community-pastoral-section--requests {
+  grid-column: 1 / -1;
+}
+
 .community-pastoral-section--list {
   grid-column: 1 / -1;
   grid-row: auto;
