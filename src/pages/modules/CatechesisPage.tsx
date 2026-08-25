@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
@@ -155,6 +155,21 @@ const RATING_LABELS: Record<string, string> = {
 };
 
 const money = (value: number) => `R$ ${value.toFixed(2).replace('.', ',')}`;
+
+/** Com responseType 'blob' o erro do backend também vem como Blob — recupera a mensagem real. */
+const blobErrorMessage = async (error: any, fallback: string): Promise<string> => {
+  try {
+    if (error?.response?.data instanceof Blob) {
+      const parsed = JSON.parse(await error.response.data.text());
+      if (parsed?.message) {
+        return Array.isArray(parsed.message) ? parsed.message.join(', ') : parsed.message;
+      }
+    }
+  } catch {
+    // corpo não-JSON — segue para o genérico
+  }
+  return getErrorMessage(error, fallback);
+};
 
 /** Domingo de Páscoa (algoritmo de Meeus/Butcher), em UTC. */
 const easterSunday = (year: number): Date => {
@@ -355,12 +370,17 @@ const CatechesisPage: React.FC = () => {
   // Panorama da comunidade (Onda 3): pendências consolidadas entre turmas
   const isCoordinator = ['PASTORAL_COORDINATOR', 'COMMUNITY_COORDINATOR', 'PARISH_ADMIN', 'DIOCESAN_ADMIN', 'SYSTEM_ADMIN'].includes(user?.role ?? '');
   const [overviewRows, setOverviewRows] = useState<CommunityOverviewRow[] | null>(null);
+  // Trocar a comunidade rápido: só a resposta da ÚLTIMA requisição vale
+  const overviewSeq = useRef(0);
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewCommunityId, setOverviewCommunityId] = useState('');
 
   // Planejamento de temas em lote (Onda 3)
   const [showTopicsModal, setShowTopicsModal] = useState(false);
   const [topicsDraft, setTopicsDraft] = useState<Record<string, string>>({});
+  // Temas como estavam ao abrir — só o que mudou é enviado (não sobrescreve
+  // o que outro catequista salvou enquanto o modal estava aberto)
+  const [topicsBaseline, setTopicsBaseline] = useState<Record<string, string>>({});
   const [savingTopics, setSavingTopics] = useState(false);
 
   // Histórico de avisos enviados às famílias (Onda 3)
@@ -551,10 +571,17 @@ const CatechesisPage: React.FC = () => {
         });
       setAttendance(initial);
       setAttendanceMeta({ date: sessionForm.date, topic: undefined });
+      setLastMarked(null);
       setAttendanceSessionId(res.data.id);
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao registrar encontro'));
     }
+  };
+
+  const closeAttendance = () => {
+    setAttendanceSessionId(null);
+    setAttendanceMeta(null);
+    setLastMarked(null);
   };
 
   const handleSaveAttendance = async () => {
@@ -570,8 +597,7 @@ const CatechesisPage: React.FC = () => {
           })),
       });
       notify.success('Chamada registrada!');
-      setAttendanceSessionId(null);
-      setAttendanceMeta(null);
+      closeAttendance();
       refreshDetail();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao salvar a chamada'));
@@ -895,17 +921,20 @@ const CatechesisPage: React.FC = () => {
   };
 
   const loadCommunityOverview = async (communityId?: string) => {
+    const seq = ++overviewSeq.current;
     setOverviewLoading(true);
     try {
       const res = await api.get('/catechesis/community-overview', {
         params: communityId ? { communityId } : undefined,
       });
+      if (seq !== overviewSeq.current) return;
       setOverviewRows(res.data ?? []);
     } catch (error) {
+      if (seq !== overviewSeq.current) return;
       notify.error(getErrorMessage(error, 'Erro ao carregar o panorama'));
       setOverviewRows(null);
     } finally {
-      setOverviewLoading(false);
+      if (seq === overviewSeq.current) setOverviewLoading(false);
     }
   };
 
@@ -917,11 +946,23 @@ const CatechesisPage: React.FC = () => {
     if (communityId) loadCommunityOverview(communityId);
   };
 
-  const openTopicsModal = () => {
-    // Só encontros de hoje em diante — tema de encontro passado é histórico
-    const todayIso = new Date().toISOString().slice(0, 10);
+  const openTopicsModal = async () => {
+    if (!selectedClass) return;
+    // Recarrega os encontros: o draft parte do que está gravado AGORA
+    let fresh: SessionSummary[] = sessions;
+    try {
+      const res = await api.get(`/catechesis/classes/${selectedClass.id}/sessions`);
+      fresh = res.data ?? [];
+      setSessions(fresh);
+    } catch {
+      // segue com a lista em memória
+    }
+    // Só encontros de hoje em diante — tema de encontro passado é histórico.
+    // 'Hoje' = dia civil local (toISOString puro viraria amanhã depois das 21h)
+    const now = new Date();
+    const todayIso = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())).toISOString().slice(0, 10);
     const draft: Record<string, string> = {};
-    sessions
+    fresh
       .filter((session) => session.date.slice(0, 10) >= todayIso)
       .forEach((session) => {
         draft[session.id] = session.topic ?? '';
@@ -930,17 +971,25 @@ const CatechesisPage: React.FC = () => {
       notify.error('Nenhum encontro futuro — gere a agenda primeiro');
       return;
     }
-    setTopicsDraft(draft);
+    setTopicsBaseline(draft);
+    setTopicsDraft({ ...draft });
     setShowTopicsModal(true);
   };
 
   const handleSaveTopics = async () => {
     if (!selectedClass) return;
+    const items = Object.entries(topicsDraft)
+      .filter(([sessionId, topic]) => (topicsBaseline[sessionId] ?? '') !== topic)
+      .map(([sessionId, topic]) => ({ sessionId, topic }));
+    if (items.length === 0) {
+      notify.success('Nenhum tema alterado');
+      setShowTopicsModal(false);
+      return;
+    }
     setSavingTopics(true);
     try {
-      const items = Object.entries(topicsDraft).map(([sessionId, topic]) => ({ sessionId, topic }));
       await api.post(`/catechesis/classes/${selectedClass.id}/sessions/topics`, { items });
-      notify.success('Temas atualizados!');
+      notify.success(`${items.length} tema(s) atualizado(s)!`);
       setShowTopicsModal(false);
       await refreshDetail();
     } catch (error) {
@@ -973,7 +1022,7 @@ const CatechesisPage: React.FC = () => {
       link.click();
       URL.revokeObjectURL(url);
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao exportar'));
+      notify.error(await blobErrorMessage(error, 'Erro ao exportar'));
     }
   };
 
@@ -1434,7 +1483,7 @@ const CatechesisPage: React.FC = () => {
               >
                 📅 Gerar agenda
               </button>
-              <button className="cate-btn" onClick={openTopicsModal}>
+              <button className="cate-btn" onClick={() => void openTopicsModal()}>
                 📝 Planejar temas
               </button>
               <button className="cate-btn" onClick={() => void openSentNotices()}>
@@ -2400,7 +2449,7 @@ const CatechesisPage: React.FC = () => {
       )}
 
       {attendanceSessionId && (
-        <div className="module-modal-overlay" onClick={() => setAttendanceSessionId(null)}>
+        <div className="module-modal-overlay" onClick={closeAttendance}>
           <div className="module-modal" onClick={(e) => e.stopPropagation()}>
             <h2>
               Chamada
@@ -2438,7 +2487,7 @@ const CatechesisPage: React.FC = () => {
                 })}
             </div>
             <div className="modal-actions">
-              <button type="button" className="btn-cancel" onClick={() => setAttendanceSessionId(null)}>Fechar sem salvar</button>
+              <button type="button" className="btn-cancel" onClick={closeAttendance}>Fechar sem salvar</button>
               <button type="button" className="btn-submit" onClick={handleSaveAttendance}>Salvar chamada</button>
             </div>
           </div>
