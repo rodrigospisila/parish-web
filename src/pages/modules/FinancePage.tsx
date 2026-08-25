@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
@@ -73,6 +73,12 @@ interface OnlineIntent {
   declaredAt?: string | null;
   confirmedAt?: string | null;
   createdAt: string;
+  /** PIX_STATIC = fiel paga na chave da paróquia e a tesouraria confere; GATEWAY = cobrança no provedor (webhook/consulta confirmam) */
+  method: 'PIX_STATIC' | 'GATEWAY';
+  providerStatus: string | null;
+  providerRef: string | null;
+  chargedAmount: number | null;
+  feeAmount: number;
 }
 
 interface ReportRow {
@@ -101,6 +107,9 @@ interface TitheConfig {
   providerEnv?: string | null;
   providerConfigured?: boolean;
   providerWebhookToken?: string | null;
+  providerWebhookSecretSet?: boolean;
+  /** true = Mercado Pago: a assinatura secreta vem do painel deles, não geramos token */
+  providerWebhookSecretByAdmin?: boolean;
   webhookUrl?: string | null;
   paymentsCryptoReady?: boolean;
   feePolicy?: string;
@@ -115,6 +124,56 @@ const INTENT_STATUS: Record<string, { label: string; color: string }> = {
   CANCELLED: { label: 'Cancelado', color: 'red' },
 };
 
+// Situação no provedor (Asaas/Mercado Pago), traduzida para a tesouraria
+const PROVIDER_STATUS_LABEL: Record<string, string> = {
+  pending: 'aguardando pagamento',
+  confirmed: 'pago no provedor',
+  received: 'pago no provedor',
+  paid: 'pago no provedor',
+  overdue: 'vencido no provedor (ainda pagável)',
+  refunded: 'estornado',
+  cancelled: 'cancelado no provedor',
+  mismatch: 'divergência de valor — conciliar',
+};
+const providerStatusLabel = (status: string | null | undefined): string | null =>
+  status ? PROVIDER_STATUS_LABEL[status.toLowerCase()] ?? status : null;
+
+const isOpenIntent = (intent: OnlineIntent) => intent.status === 'DECLARED' || intent.status === 'CREATED';
+// Pix do provedor em aberto é confirmado pelo webhook/consulta — a tesouraria só
+// mexe manualmente no Pix estático ou quando o provedor apontou divergência de valor
+const needsManualCheck = (intent: OnlineIntent) =>
+  isOpenIntent(intent) && (intent.method !== 'GATEWAY' || intent.providerStatus === 'mismatch');
+
+const THROTTLE_MESSAGE = 'Muitas tentativas — aguarde um minuto e tente de novo';
+const THROTTLE_PATTERN = /ThrottlerException|Too Many Requests/i;
+const httpStatus = (error: unknown): number | undefined =>
+  typeof error === 'object' && error !== null ? (error as { response?: { status?: number } }).response?.status : undefined;
+/** Mensagem de erro amigável: 429/throttler vira um aviso claro em vez do texto técnico do Nest */
+const friendlyError = (error: unknown, fallback: string): string => {
+  const message = getErrorMessage(error, fallback);
+  if (httpStatus(error) === 429 || THROTTLE_PATTERN.test(message)) return THROTTLE_MESSAGE;
+  return message;
+};
+const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
+
+const EMPTY_CONFIG_FORM = {
+  titheEnabled: false,
+  pixKeyType: 'CNPJ',
+  pixKey: '',
+  pixMerchantName: '',
+  pixMerchantCity: '',
+  titheMessage: '',
+};
+const EMPTY_PROVIDER_FORM = {
+  paymentProvider: '',
+  providerEnv: 'sandbox',
+  providerApiKey: '',
+  providerWebhookSecret: '',
+  feePolicy: 'ABSORB',
+  feeFixed: '1.99',
+  feePercent: '0',
+};
+
 const FinancePage: React.FC = () => {
   const { user } = useAuth();
   const canConfigureTithe = ['PARISH_ADMIN', 'DIOCESAN_ADMIN', 'SYSTEM_ADMIN'].includes(user?.role ?? '');
@@ -126,14 +185,7 @@ const FinancePage: React.FC = () => {
   const [onlineLoading, setOnlineLoading] = useState(false);
   const [busyIntent, setBusyIntent] = useState<string | null>(null);
   const [titheConfig, setTitheConfig] = useState<TitheConfig | null>(null);
-  const [configForm, setConfigForm] = useState({
-    titheEnabled: false,
-    pixKeyType: 'CNPJ',
-    pixKey: '',
-    pixMerchantName: '',
-    pixMerchantCity: '',
-    titheMessage: '',
-  });
+  const [configForm, setConfigForm] = useState(EMPTY_CONFIG_FORM);
   const [savingConfig, setSavingConfig] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
   // Conferência (um ou vários) num modal — nada de window.prompt
@@ -150,18 +202,24 @@ const FinancePage: React.FC = () => {
   // Troca de chave Pix: senha atual num modal (nunca em texto claro)
   const [pwdModal, setPwdModal] = useState(false);
   const [pwd, setPwd] = useState('');
-  const [providerForm, setProviderForm] = useState({ paymentProvider: '', providerEnv: 'sandbox', providerApiKey: '', feePolicy: 'ABSORB', feeFixed: '1.99', feePercent: '0' });
+  const [providerForm, setProviderForm] = useState(EMPTY_PROVIDER_FORM);
   const [providerPwdModal, setProviderPwdModal] = useState(false);
   const [savingProvider, setSavingProvider] = useState(false);
+  const [rotatingToken, setRotatingToken] = useState(false);
 
   // DIOCESAN/SYSTEM_ADMIN não têm paróquia própria: escolhem qual configurar
   const [parishOptions, setParishOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [configParishId, setConfigParishId] = useState<string>(user?.parishId ?? '');
+  // Contador de requisição: a resposta atrasada da paróquia/filtro anterior não sobrescreve a atual
+  const onlineRequestRef = useRef(0);
   useEffect(() => {
-    // Trocar de paróquia zera o que era da anterior
+    // Trocar de paróquia zera o que era da anterior (inclusive formulários e seleção)
     setInstitutionalQr(null);
     setTitheConfig(null);
     setConfigError(null);
+    setConfigForm(EMPTY_CONFIG_FORM);
+    setProviderForm(EMPTY_PROVIDER_FORM);
+    setSelectedIds({});
   }, [configParishId]);
   const [loading, setLoading] = useState(true);
 
@@ -233,6 +291,9 @@ const FinancePage: React.FC = () => {
   }, [tab, fetchTithe]);
 
   const fetchOnline = useCallback(async () => {
+    const requestId = ++onlineRequestRef.current;
+    const isCurrent = () => requestId === onlineRequestRef.current;
+    type ConfigLoad = { data: TitheConfig | null; error: string | null };
     setOnlineLoading(true);
     try {
       const [intentsRes, configRes] = await Promise.all([
@@ -240,20 +301,19 @@ const FinancePage: React.FC = () => {
         canConfigureTithe && (configParishId || user?.parishId)
           ? api
               .get('/tithe/config', { params: configParishId ? { parishId: configParishId } : undefined })
-              .then((res) => {
-                setConfigError(null);
-                return res;
-              })
-              .catch((error) => {
-                setConfigError(getErrorMessage(error, 'Não foi possível carregar a configuração do Pix'));
-                setTitheConfig(null);
-                return { data: null };
-              })
-          : Promise.resolve({ data: null }),
+              .then((res): ConfigLoad => ({ data: res.data, error: null }))
+              .catch((error): ConfigLoad => ({ data: null, error: friendlyError(error, 'Não foi possível carregar a configuração do Pix') }))
+          : Promise.resolve<ConfigLoad>({ data: null, error: null }),
       ]);
+      // Resposta atrasada de outra paróquia/filtro: descarta em vez de sobrescrever a atual
+      if (!isCurrent()) return;
       setOnlineIntents(intentsRes.data ?? []);
-      if (configRes.data) {
-        const cfg: TitheConfig = configRes.data;
+      if (configRes.error) {
+        setConfigError(configRes.error);
+        setTitheConfig(null);
+      } else if (configRes.data) {
+        const cfg = configRes.data;
+        setConfigError(null);
         setTitheConfig(cfg);
         setConfigForm({
           titheEnabled: !!cfg.titheEnabled,
@@ -267,15 +327,17 @@ const FinancePage: React.FC = () => {
           paymentProvider: cfg.paymentProvider ?? '',
           providerEnv: cfg.providerEnv ?? 'sandbox',
           providerApiKey: '',
+          providerWebhookSecret: '',
           feePolicy: cfg.feePolicy ?? 'ABSORB',
           feeFixed: String(cfg.feeFixed ?? 1.99),
           feePercent: String(cfg.feePercent ?? 0),
         });
       }
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao carregar o dízimo online'));
+      if (!isCurrent()) return;
+      notify.error(friendlyError(error, 'Erro ao carregar o dízimo online'));
     } finally {
-      setOnlineLoading(false);
+      if (isCurrent()) setOnlineLoading(false);
     }
   }, [onlineStatus, canConfigureTithe, configParishId, user?.parishId]);
 
@@ -317,6 +379,7 @@ const FinancePage: React.FC = () => {
       } catch {
         // genérico
       }
+      if (httpStatus(error) === 429 || THROTTLE_PATTERN.test(message)) message = THROTTLE_MESSAGE;
       notify.error(message);
     }
   };
@@ -328,7 +391,7 @@ const FinancePage: React.FC = () => {
       });
       setReport(res.data);
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao carregar o relatório'));
+      notify.error(friendlyError(error, 'Erro ao carregar o relatório'));
     }
   };
 
@@ -352,9 +415,13 @@ const FinancePage: React.FC = () => {
       return;
     }
     setBusyIntent('batch');
+    // Item a item, sem abortar na primeira falha: um Pix que já foi confirmado por
+    // outra pessoa (ou pelo webhook) não trava o resto do lote
     let done = 0;
-    try {
-      for (const intent of confirmTargets) {
+    let alreadyClosed = 0;
+    const failures: string[] = [];
+    for (const intent of confirmTargets) {
+      try {
         await api.post(`/tithe/intents/${intent.id}/confirm`, {
           date: confirmForm.date,
           receiptNumber: confirmForm.receiptNumber.trim() || undefined,
@@ -362,18 +429,32 @@ const FinancePage: React.FC = () => {
           referenceMonth: confirmForm.referenceMonth || undefined,
         });
         done += 1;
+      } catch (error) {
+        const message = getErrorMessage(error, '');
+        if (httpStatus(error) === 400 && /já (foi )?confirmad|cancelad|encerrad/i.test(message)) {
+          alreadyClosed += 1;
+        } else {
+          failures.push(`${intent.member.fullName}: ${friendlyError(error, 'erro ao confirmar')}`);
+        }
       }
-      notify.success(done === 1 ? 'Contribuição confirmada e lançada no Financeiro' : `${done} contribuições confirmadas`);
-      setConfirmTargets(null);
-      setSelectedIds({});
-      await fetchOnline();
-      fetchFinance();
-    } catch (error) {
-      notify.error(getErrorMessage(error, `Erro ao confirmar (${done} de ${confirmTargets.length} feitas)`));
-      await fetchOnline();
-    } finally {
-      setBusyIntent(null);
     }
+    setBusyIntent(null);
+    const summary =
+      `${done} ${plural(done, 'confirmado', 'confirmados')}; ` +
+      `${alreadyClosed} ${plural(alreadyClosed, 'já estava confirmado/encerrado', 'já estavam confirmados/encerrados')}`;
+    if (failures.length > 0) {
+      notify.error(`${summary}; ${failures.length} com erro — ${failures[0]}`);
+    } else if (alreadyClosed === 0) {
+      notify.success(done === 1 ? 'Contribuição confirmada e lançada no Financeiro' : `${done} contribuições confirmadas`);
+    } else if (done === 0) {
+      notify.warning(summary);
+    } else {
+      notify.success(summary);
+    }
+    setConfirmTargets(null);
+    setSelectedIds({});
+    await fetchOnline();
+    if (done > 0) fetchFinance();
   };
 
   const rejectIntent = async (intent: OnlineIntent) => {
@@ -385,7 +466,7 @@ const FinancePage: React.FC = () => {
       notify.success('Pix marcado como não localizado');
       await fetchOnline();
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao processar'));
+      notify.error(friendlyError(error, 'Erro ao processar'));
     } finally {
       setBusyIntent(null);
     }
@@ -398,7 +479,35 @@ const FinancePage: React.FC = () => {
       notify.success('Pix reaberto — volta para a fila de conferência');
       await fetchOnline();
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao reabrir'));
+      notify.error(friendlyError(error, 'Erro ao reabrir'));
+    } finally {
+      setBusyIntent(null);
+    }
+  };
+
+  /** Pix do provedor: consulta a situação lá (o webhook pode ter atrasado) e troca o item da lista pelo retorno */
+  const syncIntent = async (intent: OnlineIntent) => {
+    setBusyIntent(intent.id);
+    try {
+      const res = await api.post(`/tithe/intents/${intent.id}/sync`, {});
+      const updated: OnlineIntent | undefined = res.data && res.data.id ? res.data : undefined;
+      if (!updated) {
+        await fetchOnline();
+        return;
+      }
+      setOnlineIntents((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      if (updated.status === 'CONFIRMED') {
+        notify.success('Pago no provedor — confirmado');
+        fetchFinance();
+      } else if (updated.status === 'CANCELLED') {
+        notify.warning(updated.note ? `Encerrado no provedor — ${updated.note}` : 'Encerrado no provedor');
+      } else if (updated.providerStatus === 'mismatch') {
+        notify.warning('Divergência de valor no provedor — concilie manualmente');
+      } else {
+        notify.info('Ainda aguardando pagamento no provedor');
+      }
+    } catch (error) {
+      notify.error(friendlyError(error, 'Erro ao consultar o provedor'));
     } finally {
       setBusyIntent(null);
     }
@@ -432,7 +541,7 @@ const FinancePage: React.FC = () => {
       setPwdModal(false);
       setPwd('');
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao salvar a configuração'));
+      notify.error(friendlyError(error, 'Erro ao salvar a configuração'));
     } finally {
       setSavingConfig(false);
     }
@@ -450,14 +559,19 @@ const FinancePage: React.FC = () => {
         feePolicy: providerForm.feePolicy,
         feeFixed: Number(providerForm.feeFixed) || 0,
         feePercent: Number(providerForm.feePercent) || 0,
+        // Assinatura secreta só existe no Mercado Pago (gerada no painel deles)
+        providerWebhookSecret:
+          providerForm.paymentProvider === 'MERCADOPAGO' && providerForm.providerWebhookSecret.trim()
+            ? providerForm.providerWebhookSecret.trim()
+            : undefined,
       });
       setTitheConfig(res.data);
-      setProviderForm((current) => ({ ...current, providerApiKey: '' }));
+      setProviderForm((current) => ({ ...current, providerApiKey: '', providerWebhookSecret: '' }));
       notify.success(res.data?.providerConfigured ? 'Provedor configurado — confirmação automática ativa' : 'Configuração do provedor salva');
       setProviderPwdModal(false);
       setPwd('');
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao salvar o provedor'));
+      notify.error(friendlyError(error, 'Erro ao salvar o provedor'));
     } finally {
       setSavingProvider(false);
     }
@@ -466,7 +580,9 @@ const FinancePage: React.FC = () => {
   const saveProvider = (e: React.FormEvent) => {
     e.preventDefault();
     const sensitive =
-      providerForm.providerApiKey.trim().length > 0 || (providerForm.paymentProvider || null) !== (titheConfig?.paymentProvider ?? null);
+      providerForm.providerApiKey.trim().length > 0 ||
+      providerForm.providerWebhookSecret.trim().length > 0 ||
+      (providerForm.paymentProvider || null) !== (titheConfig?.paymentProvider ?? null);
     if (sensitive) {
       setPwd('');
       setProviderPwdModal(true);
@@ -476,13 +592,17 @@ const FinancePage: React.FC = () => {
   };
 
   const rotateWebhookToken = async () => {
-    if (!window.confirm('Gerar um novo token do webhook? Você precisará atualizá-lo no painel do provedor.')) return;
+    if (rotatingToken) return;
+    if (!window.confirm('Gerar um novo token do webhook? Atualize-o no painel do Asaas logo em seguida — até lá o Asaas recebe 403.')) return;
+    setRotatingToken(true);
     try {
       const res = await api.post('/tithe/config/webhook-token', { parishId: configParishId || undefined });
       setTitheConfig((current) => (current ? { ...current, providerWebhookToken: res.data.providerWebhookToken } : current));
-      notify.success('Novo token gerado');
+      notify.success('Novo token gerado — atualize agora no painel do Asaas');
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao gerar o token'));
+      notify.error(friendlyError(error, 'Erro ao gerar o token'));
+    } finally {
+      setRotatingToken(false);
     }
   };
 
@@ -500,6 +620,28 @@ const FinancePage: React.FC = () => {
     void submitConfig();
   };
 
+  const closePwdModals = () => {
+    setPwdModal(false);
+    setProviderPwdModal(false);
+    setPwd('');
+  };
+
+  // Escape fecha os modais de senha (e descarta a senha digitada)
+  useEffect(() => {
+    if (!pwdModal && !providerPwdModal) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setPwdModal(false);
+      setProviderPwdModal(false);
+      setPwd('');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [pwdModal, providerPwdModal]);
+
+  const isMercadoPago = providerForm.paymentProvider === 'MERCADOPAGO';
+  // Só o que está na lista atual E pede conferência manual conta na seleção
+  const selectedTargets = onlineIntents.filter((intent) => selectedIds[intent.id] && needsManualCheck(intent));
 
   useEffect(() => {
     api.get('/communities').then((res) => setCommunities(res.data)).catch(() => undefined);
@@ -741,7 +883,7 @@ const FinancePage: React.FC = () => {
                         const res = await api.get('/tithe/config/institutional-qr', { params: configParishId ? { parishId: configParishId } : undefined });
                         setInstitutionalQr(res.data);
                       } catch (error) {
-                        notify.error(getErrorMessage(error, 'Erro ao gerar o QR'));
+                        notify.error(friendlyError(error, 'Erro ao gerar o QR'));
                       }
                     }}
                   >
@@ -775,40 +917,58 @@ const FinancePage: React.FC = () => {
                   <form onSubmit={saveProvider}>
                     <div className="form-row">
                       <div className="form-group">
-                        <label>Provedor</label>
-                        <select className="filter-select" value={providerForm.paymentProvider} onChange={(e) => setProviderForm({ ...providerForm, paymentProvider: e.target.value })}>
+                        <label htmlFor="provider-name">Provedor</label>
+                        <select id="provider-name" className="filter-select" value={providerForm.paymentProvider} onChange={(e) => setProviderForm({ ...providerForm, paymentProvider: e.target.value })}>
                           <option value="">Nenhum (só Pix estático)</option>
                           <option value="ASAAS">Asaas</option>
                           <option value="MERCADOPAGO">Mercado Pago (só cobrança avulsa)</option>
                         </select>
                       </div>
                       <div className="form-group">
-                        <label>Ambiente</label>
-                        <select className="filter-select" value={providerForm.providerEnv} onChange={(e) => setProviderForm({ ...providerForm, providerEnv: e.target.value })}>
+                        <label htmlFor="provider-env">Ambiente</label>
+                        <select id="provider-env" className="filter-select" value={providerForm.providerEnv} onChange={(e) => setProviderForm({ ...providerForm, providerEnv: e.target.value })}>
                           <option value="sandbox">Sandbox (testes)</option>
                           <option value="production">Produção</option>
                         </select>
                       </div>
                       <div className="form-group">
-                        <label>Chave de API {titheConfig.providerConfigured ? '(já cadastrada — preencha só para trocar)' : ''}</label>
-                        <input type="password" autoComplete="off" value={providerForm.providerApiKey} onChange={(e) => setProviderForm({ ...providerForm, providerApiKey: e.target.value })} placeholder={titheConfig.providerConfigured ? '••••••••' : 'Cole a chave do painel do provedor'} />
+                        <label htmlFor="provider-api-key">Chave de API {titheConfig.providerConfigured ? '(já cadastrada — preencha só para trocar)' : ''}</label>
+                        <input id="provider-api-key" type="password" autoComplete="off" value={providerForm.providerApiKey} onChange={(e) => setProviderForm({ ...providerForm, providerApiKey: e.target.value })} placeholder={titheConfig.providerConfigured ? '••••••••' : 'Cole a chave do painel do provedor'} />
                       </div>
                     </div>
+                    {isMercadoPago && (
+                      <div className="form-group">
+                        <label htmlFor="provider-webhook-secret">
+                          Assinatura secreta do webhook {titheConfig.providerWebhookSecretSet ? '(já cadastrada — preencha só para trocar)' : ''}
+                        </label>
+                        <input
+                          id="provider-webhook-secret"
+                          type="password"
+                          autoComplete="off"
+                          value={providerForm.providerWebhookSecret}
+                          onChange={(e) => setProviderForm({ ...providerForm, providerWebhookSecret: e.target.value })}
+                          placeholder={titheConfig.providerWebhookSecretSet ? '••••••••' : 'Cole a assinatura secreta do painel do Mercado Pago'}
+                        />
+                        <div style={{ fontSize: '0.78rem', color: '#666', marginTop: '0.25rem' }}>
+                          Copie em Mercado Pago → Suas integrações → Webhooks → Assinatura secreta
+                        </div>
+                      </div>
+                    )}
                     <div className="form-row">
                       <div className="form-group">
-                        <label>Taxa do provedor</label>
-                        <select className="filter-select" value={providerForm.feePolicy} onChange={(e) => setProviderForm({ ...providerForm, feePolicy: e.target.value })}>
+                        <label htmlFor="provider-fee-policy">Taxa do provedor</label>
+                        <select id="provider-fee-policy" className="filter-select" value={providerForm.feePolicy} onChange={(e) => setProviderForm({ ...providerForm, feePolicy: e.target.value })}>
                           <option value="ABSORB">A paróquia absorve</option>
                           <option value="PASS_THROUGH">O fiel cobre a taxa (soma ao Pix)</option>
                         </select>
                       </div>
                       <div className="form-group">
-                        <label>Taxa fixa por Pix (R$)</label>
-                        <input type="number" step="0.01" min="0" max="50" value={providerForm.feeFixed} onChange={(e) => setProviderForm({ ...providerForm, feeFixed: e.target.value })} />
+                        <label htmlFor="provider-fee-fixed">Taxa fixa por Pix (R$)</label>
+                        <input id="provider-fee-fixed" type="number" step="0.01" min="0" max="50" value={providerForm.feeFixed} onChange={(e) => setProviderForm({ ...providerForm, feeFixed: e.target.value })} />
                       </div>
                       <div className="form-group">
-                        <label>Taxa percentual (%)</label>
-                        <input type="number" step="0.01" min="0" max="10" value={providerForm.feePercent} onChange={(e) => setProviderForm({ ...providerForm, feePercent: e.target.value })} />
+                        <label htmlFor="provider-fee-percent">Taxa percentual (%)</label>
+                        <input id="provider-fee-percent" type="number" step="0.01" min="0" max="10" value={providerForm.feePercent} onChange={(e) => setProviderForm({ ...providerForm, feePercent: e.target.value })} />
                       </div>
                     </div>
                     <button type="submit" className="btn-small success" disabled={savingProvider || titheConfig.paymentsCryptoReady === false}>
@@ -819,11 +979,29 @@ const FinancePage: React.FC = () => {
                     <div style={{ marginTop: '0.8rem', fontSize: '0.85rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '0.7rem 0.9rem' }}>
                       <div><strong>Webhook</strong> — cadastre no painel do provedor:</div>
                       <div style={{ wordBreak: 'break-all' }}>URL: <code>{titheConfig.webhookUrl}</code></div>
-                      <div style={{ wordBreak: 'break-all' }}>Token de autenticação: <code>{titheConfig.providerWebhookToken}</code></div>
-                      <div style={{ color: '#666', marginTop: '0.3rem' }}>
-                        Asaas: Integrações → Webhooks → URL acima, token no campo “Token de autenticação”, eventos de cobrança e Pix Automático.
-                      </div>
-                      <button type="button" className="btn-small" style={{ marginTop: '0.5rem' }} onClick={() => void rotateWebhookToken()}>↻ Gerar novo token</button>
+                      {isMercadoPago ? (
+                        <>
+                          <div style={{ marginTop: '0.3rem', fontWeight: 600, color: titheConfig.providerWebhookSecretSet ? '#0f6e56' : '#b45309' }}>
+                            {titheConfig.providerWebhookSecretSet ? 'Assinatura cadastrada ✓' : 'Assinatura pendente — o webhook será recusado até cadastrar'}
+                          </div>
+                          <div style={{ color: '#666', marginTop: '0.3rem' }}>
+                            Mercado Pago: Suas integrações → Webhooks → URL acima, evento “Pagamentos”; a assinatura secreta que o painel gera vai no campo “Assinatura secreta do webhook” acima.
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ wordBreak: 'break-all' }}>Token de autenticação: <code>{titheConfig.providerWebhookToken ?? '—'}</code></div>
+                          <div style={{ color: '#666', marginTop: '0.3rem' }}>
+                            Asaas: Integrações → Webhooks → URL acima, token no campo “Token de autenticação”, eventos de cobrança e Pix Automático.
+                          </div>
+                          <div style={{ color: '#b45309', marginTop: '0.3rem' }}>
+                            Depois de gerar um novo token, atualize-o no painel do Asaas na hora — até lá o Asaas recebe 403 e, após 15 falhas, pausa a fila de eventos
+                          </div>
+                          <button type="button" className="btn-small" style={{ marginTop: '0.5rem' }} disabled={rotatingToken} onClick={() => void rotateWebhookToken()}>
+                            {rotatingToken ? 'Gerando...' : '↻ Gerar novo token'}
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -832,13 +1010,13 @@ const FinancePage: React.FC = () => {
           )}
 
           <div className="filters-bar">
-            {Object.values(selectedIds).some(Boolean) && (
+            {selectedTargets.length > 0 && (
               <button
                 className="btn-small success"
                 disabled={busyIntent !== null}
-                onClick={() => openConfirm(onlineIntents.filter((i) => selectedIds[i.id] && (i.status === 'DECLARED' || i.status === 'CREATED')))}
+                onClick={() => openConfirm(selectedTargets)}
               >
-                ✓ Confirmar selecionados ({Object.values(selectedIds).filter(Boolean).length})
+                ✓ Confirmar selecionados ({selectedTargets.length})
               </button>
             )}
             <select className="filter-select" value={onlineStatus} onChange={(e) => setOnlineStatus(e.target.value)}>
@@ -865,10 +1043,10 @@ const FinancePage: React.FC = () => {
                     <th>
                       <input
                         type="checkbox"
-                        title="Selecionar todos os aguardando"
+                        title="Selecionar todos os aguardando conferência manual (Pix do provedor ficam de fora)"
                         onChange={(e) => {
                           const next: Record<string, boolean> = {};
-                          if (e.target.checked) onlineIntents.filter((i) => i.status === 'DECLARED' || i.status === 'CREATED').forEach((i) => { next[i.id] = true; });
+                          if (e.target.checked) onlineIntents.filter(needsManualCheck).forEach((i) => { next[i.id] = true; });
                           setSelectedIds(next);
                         }}
                       />
@@ -888,7 +1066,7 @@ const FinancePage: React.FC = () => {
                   {onlineIntents.map((intent) => (
                     <tr key={intent.id}>
                       <td>
-                        {(intent.status === 'DECLARED' || intent.status === 'CREATED') && (
+                        {needsManualCheck(intent) && (
                           <input type="checkbox" checked={!!selectedIds[intent.id]} onChange={(e) => setSelectedIds({ ...selectedIds, [intent.id]: e.target.checked })} />
                         )}
                       </td>
@@ -904,19 +1082,43 @@ const FinancePage: React.FC = () => {
                         {intent.amountPaid != null && intent.amountPaid !== intent.amount && (
                           <div style={{ fontSize: '0.78rem', color: '#666' }}>pago {formatBRL(intent.amountPaid)}</div>
                         )}
+                        {intent.chargedAmount != null && Math.round(intent.chargedAmount * 100) !== Math.round(intent.amount * 100) && (
+                          <div style={{ fontSize: '0.78rem', color: '#666' }}>
+                            cobrado {formatBRL(intent.chargedAmount)} (taxa {formatBRL(intent.feeAmount ?? Math.max(0, intent.chargedAmount - intent.amount))})
+                          </div>
+                        )}
                       </td>
-                      <td><code>{intent.txid}</code>{(intent as any).method === 'GATEWAY' ? <div style={{ fontSize: '0.72rem', color: '#0f6e56' }}>via provedor</div> : null}</td>
+                      <td>
+                        <code>{intent.txid}</code>
+                        {intent.method === 'GATEWAY' && (
+                          <div style={{ fontSize: '0.72rem', color: intent.providerStatus === 'mismatch' ? '#b45309' : '#0f6e56' }}>
+                            via provedor
+                            {providerStatusLabel(intent.providerStatus) ? ` · ${providerStatusLabel(intent.providerStatus)}` : ''}
+                            {intent.providerRef ? <span style={{ color: '#888' }}> · ref. {intent.providerRef}</span> : null}
+                          </div>
+                        )}
+                      </td>
                       <td>{intent.declaredAt ? new Date(intent.declaredAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                       <td>
                         <span className={`status-badge ${INTENT_STATUS[intent.status]?.color ?? 'gray'}`}>{INTENT_STATUS[intent.status]?.label ?? intent.status}</span>
                         {intent.note && intent.status === 'CANCELLED' ? <div style={{ fontSize: '0.75rem', color: '#888' }}>{intent.note}</div> : null}
                       </td>
                       <td className="actions-cell">
-                        {(intent.status === 'DECLARED' || intent.status === 'CREATED') && (
+                        {needsManualCheck(intent) && (
                           <>
                             <button className="btn-small success" disabled={busyIntent !== null} onClick={() => openConfirm([intent])}>Confirmar</button>
                             <button className="btn-small" disabled={busyIntent !== null} onClick={() => void rejectIntent(intent)}>Não localizado</button>
                           </>
+                        )}
+                        {isOpenIntent(intent) && !needsManualCheck(intent) && (
+                          <button
+                            className="btn-small"
+                            disabled={busyIntent !== null}
+                            title="O provedor confirma sozinho; consulte se o webhook atrasou"
+                            onClick={() => void syncIntent(intent)}
+                          >
+                            {busyIntent === intent.id ? 'Consultando...' : 'Consultar provedor'}
+                          </button>
                         )}
                         {intent.status === 'CANCELLED' && intent.canReopen && (
                           <button className="btn-small" disabled={busyIntent !== null} onClick={() => void reopenIntent(intent)}>Reabrir</button>
@@ -971,9 +1173,9 @@ const FinancePage: React.FC = () => {
           </div>
 
           {providerPwdModal && (
-            <div className="module-modal-overlay" onClick={() => setProviderPwdModal(false)}>
-              <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
-                <h2>🔐 Confirmar provedor de pagamento</h2>
+            <div className="module-modal-overlay" onClick={closePwdModals}>
+              <div className="module-modal" role="dialog" aria-modal="true" aria-labelledby="provider-pwd-title" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+                <h2 id="provider-pwd-title">🔐 Confirmar provedor de pagamento</h2>
                 <p style={{ fontSize: '0.88rem', color: '#666' }}>
                   Trocar o provedor ou a chave de API muda para onde o dinheiro do dízimo vai. Confirme com a sua senha atual.
                 </p>
@@ -988,11 +1190,11 @@ const FinancePage: React.FC = () => {
                   }}
                 >
                   <div className="form-group">
-                    <label>Senha atual</label>
-                    <input type="password" autoComplete="current-password" autoFocus value={pwd} onChange={(e) => setPwd(e.target.value)} />
+                    <label htmlFor="provider-pwd-input">Senha atual</label>
+                    <input id="provider-pwd-input" type="password" autoComplete="current-password" autoFocus value={pwd} onChange={(e) => setPwd(e.target.value)} />
                   </div>
                   <div className="modal-actions">
-                    <button type="button" className="btn-cancel" onClick={() => setProviderPwdModal(false)}>Cancelar</button>
+                    <button type="button" className="btn-cancel" onClick={closePwdModals}>Cancelar</button>
                     <button type="submit" className="btn-submit" disabled={savingProvider}>{savingProvider ? 'Salvando...' : 'Confirmar e salvar'}</button>
                   </div>
                 </form>
@@ -1001,9 +1203,9 @@ const FinancePage: React.FC = () => {
           )}
 
           {pwdModal && (
-            <div className="module-modal-overlay" onClick={() => setPwdModal(false)}>
-              <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
-                <h2>🔐 Confirmar troca da chave Pix</h2>
+            <div className="module-modal-overlay" onClick={closePwdModals}>
+              <div className="module-modal" role="dialog" aria-modal="true" aria-labelledby="pix-pwd-title" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+                <h2 id="pix-pwd-title">🔐 Confirmar troca da chave Pix</h2>
                 <p style={{ fontSize: '0.88rem', color: '#666' }}>
                   Você está alterando a chave Pix da paróquia. Os Pix ainda não informados serão cancelados e os outros
                   administradores serão avisados. Confirme com a sua senha atual.
@@ -1019,11 +1221,11 @@ const FinancePage: React.FC = () => {
                   }}
                 >
                   <div className="form-group">
-                    <label>Senha atual</label>
-                    <input type="password" autoComplete="current-password" autoFocus value={pwd} onChange={(e) => setPwd(e.target.value)} />
+                    <label htmlFor="pix-pwd-input">Senha atual</label>
+                    <input id="pix-pwd-input" type="password" autoComplete="current-password" autoFocus value={pwd} onChange={(e) => setPwd(e.target.value)} />
                   </div>
                   <div className="modal-actions">
-                    <button type="button" className="btn-cancel" onClick={() => setPwdModal(false)}>Cancelar</button>
+                    <button type="button" className="btn-cancel" onClick={closePwdModals}>Cancelar</button>
                     <button type="submit" className="btn-submit" disabled={savingConfig}>{savingConfig ? 'Salvando...' : 'Confirmar e salvar'}</button>
                   </div>
                 </form>
