@@ -136,6 +136,8 @@ interface CommunityOverviewRow {
   active: number;
   pendingApproval: number;
   documentsToReview: number;
+  /** Mensagens da familia ainda nao lidas pela equipe */
+  unreadFamilyMessages?: number;
   pendingDocumentsCount: number;
   pastSessionsWithoutAttendance: number;
   feesPendingCount: number;
@@ -1303,6 +1305,7 @@ const CatechesisPage: React.FC = () => {
                     <th>Ativos</th>
                     <th>Aguardando aprovação</th>
                     <th>Docs p/ conferir</th>
+                    <th>Mensagens</th>
                     <th>Docs pendentes</th>
                     <th>Chamadas em aberto</th>
                     <th>Taxas pendentes</th>
@@ -1312,7 +1315,7 @@ const CatechesisPage: React.FC = () => {
                   {overviewRows.map((row) => {
                     const klass = classes.find((k) => k.id === row.classId);
                     const attention =
-                      row.pendingApproval + row.documentsToReview + row.pastSessionsWithoutAttendance > 0;
+                      row.pendingApproval + row.documentsToReview + (row.unreadFamilyMessages ?? 0) + row.pastSessionsWithoutAttendance > 0;
                     return (
                       <tr key={row.classId}>
                         <td>
@@ -1329,6 +1332,7 @@ const CatechesisPage: React.FC = () => {
                         <td>{row.active}</td>
                         <td>{row.pendingApproval > 0 ? <span className="status-badge yellow">{row.pendingApproval}</span> : '—'}</td>
                         <td>{row.documentsToReview > 0 ? <span className="status-badge yellow">{row.documentsToReview}</span> : '—'}</td>
+                        <td>{(row.unreadFamilyMessages ?? 0) > 0 ? <span className="status-badge yellow">{row.unreadFamilyMessages}</span> : '—'}</td>
                         <td>{row.pendingDocumentsCount > 0 ? row.pendingDocumentsCount : '—'}</td>
                         <td>{row.pastSessionsWithoutAttendance > 0 ? <span className="status-badge red">{row.pastSessionsWithoutAttendance}</span> : '—'}</td>
                         <td>{row.feesPendingCount > 0 ? row.feesPendingCount : '—'}</td>
