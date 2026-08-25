@@ -36,6 +36,7 @@ const NavIcon: React.FC<{ name: string }> = ({ name }) => (
 const AdminLayout: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const canSeeDashboard = ['PASTORAL_COORDINATOR', 'COMMUNITY_COORDINATOR', 'PARISH_ADMIN', 'DIOCESAN_ADMIN', 'SYSTEM_ADMIN'].includes(user?.role ?? '');
 
   const handleLogout = () => {
     logout();
@@ -86,6 +87,11 @@ const AdminLayout: React.FC = () => {
         </div>
 
         <nav className="sidebar-nav">
+          {canSeeDashboard && (
+            <NavLink to="/admin/dashboard" className="nav-link highlight">
+              <NavIcon name="planejamento" /> Início · pendências
+            </NavLink>
+          )}
           <span className="nav-section-label">Estrutura</span>
           {canManageDioceses && (
             <NavLink to="/admin/dioceses" className="nav-link">

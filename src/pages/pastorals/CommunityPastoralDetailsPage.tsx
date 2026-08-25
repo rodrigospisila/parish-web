@@ -1,5 +1,6 @@
-﻿import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import api from '../../services/api';
 import axios from 'axios';
 import { formatDate, formatDateTime } from '../../utils/dateFormat';
 import { notify, confirm as confirmDialog } from '../../services/notification.service';
@@ -173,6 +174,47 @@ const CommunityPastoralDetailsPage: React.FC = () => {
   const [showEditGroupModal, setShowEditGroupModal] = useState(false);
   const [editingMember, setEditingMember] = useState<PastoralMember | null>(null);
   const [editingGroup, setEditingGroup] = useState<PastoralGroup | null>(null);
+
+  // Pedidos "quero participar" (Onda 4)
+  interface JoinRequestRow {
+    id: string;
+    status: 'PENDING' | 'APPROVED' | 'REJECTED';
+    message?: string | null;
+    createdAt: string;
+    member: { id: string; fullName: string; phone?: string | null; email?: string | null };
+  }
+  const [joinRequests, setJoinRequests] = useState<JoinRequestRow[]>([]);
+  const [joinBusy, setJoinBusy] = useState<string | null>(null);
+  const loadJoinRequests = useCallback(async () => {
+    if (!id) return;
+    try {
+      const res = await api.get(`/pastorals/community/${id}/join-requests`);
+      setJoinRequests(res.data ?? []);
+    } catch {
+      setJoinRequests([]);
+    }
+  }, [id]);
+  useEffect(() => {
+    void loadJoinRequests();
+  }, [loadJoinRequests]);
+  const reviewJoinRequest = async (requestId: string, approve: boolean) => {
+    let reason: string | undefined;
+    if (!approve) {
+      const typed = window.prompt('Motivo da recusa (opcional, o fiel recebe o aviso):') ?? '';
+      reason = typed.trim() || undefined;
+    }
+    setJoinBusy(requestId);
+    try {
+      await api.patch(`/pastorals/join-requests/${requestId}/${approve ? 'approve' : 'reject'}`, reason ? { reason } : {});
+      notify.success(approve ? 'Pedido aprovado — o membro já faz parte da equipe' : 'Pedido recusado');
+      await loadJoinRequests();
+      if (approve) window.location.reload();
+    } catch (error: any) {
+      notify.error(error?.response?.data?.message ?? 'Erro ao responder o pedido');
+    } finally {
+      setJoinBusy(null);
+    }
+  };
   const [editFormData, setEditFormData] = useState({
     description: '',
     mission: '',
@@ -910,6 +952,39 @@ const CommunityPastoralDetailsPage: React.FC = () => {
       </div>
 
       <div className="community-pastoral-content-grid">
+        {joinRequests.length > 0 && (
+          <section className="community-pastoral-section">
+            <div className="community-pastoral-section-header">
+              <div className="community-pastoral-section-heading">
+                <span className="community-pastoral-section-kicker">Quero participar</span>
+                <h2>Pedidos de participação ({joinRequests.length})</h2>
+                <p>Fiéis que pediram pelo app para entrar nesta pastoral — aprovar cria o vínculo na hora.</p>
+              </div>
+            </div>
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr><th>Fiel</th><th>Contato</th><th>Recado</th><th>Pedido em</th><th>Ações</th></tr>
+                </thead>
+                <tbody>
+                  {joinRequests.map((request) => (
+                    <tr key={request.id}>
+                      <td>{request.member.fullName}</td>
+                      <td>{request.member.phone || request.member.email || '—'}</td>
+                      <td>{request.message || '—'}</td>
+                      <td>{new Date(request.createdAt).toLocaleDateString('pt-BR')}</td>
+                      <td className="actions-cell">
+                        <button className="btn-small success" disabled={joinBusy === request.id} onClick={() => void reviewJoinRequest(request.id, true)}>Aprovar</button>
+                        <button className="btn-small danger" disabled={joinBusy === request.id} onClick={() => void reviewJoinRequest(request.id, false)}>Recusar</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
         <section
           className={`community-pastoral-section community-pastoral-section--members ${
             memberViewMode === 'list' ? 'community-pastoral-section--list' : ''

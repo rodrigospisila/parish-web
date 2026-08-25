@@ -4,6 +4,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AdminLayout from './components/AdminLayout';
 import LoginPage from './pages/LoginPage';
+import DashboardPage from './pages/DashboardPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import DiocesesPage from './pages/DiocesesPage';
 import ParishesPage from './pages/ParishesPage';
@@ -83,10 +84,11 @@ const RoleProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles: st
 const AdminIndexRedirect: React.FC = () => {
   const { user } = useAuth();
   const role = user?.role ?? '';
-  const target = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN'].includes(role)
+  // Coordenação cai nas pendências (Onda 4); administração segue na estrutura
+  const target = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN'].includes(role)
     ? '/admin/communities'
-    : role === 'COMMUNITY_COORDINATOR'
-      ? '/admin/members'
+    : ['PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR'].includes(role)
+      ? '/admin/dashboard'
       : '/admin/schedules';
   return <Navigate to={target} replace />;
 };
@@ -155,6 +157,12 @@ const App: React.FC = () => {
             <Route path="pastorals/community/:id" element={
               <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR']}>
                 <CommunityPastoralDetailsPage />
+              </RoleProtectedRoute>
+            } />
+
+            <Route path="dashboard" element={
+              <RoleProtectedRoute allowedRoles={COORDINATION_ROLES}>
+                <DashboardPage />
               </RoleProtectedRoute>
             } />
 

@@ -44,7 +44,28 @@ interface ClassReport {
     docsCount: number;
     attendanceRate: number | null;
     sessions: number;
+    /** Mensagens da família ainda não lidas pela equipe (Onda 4) */
+    unreadMessages?: number;
   }>;
+}
+
+interface ChatMessage {
+  id: string;
+  body: string;
+  fromTeam: boolean;
+  authorName: string;
+  mine: boolean;
+  createdAt: string;
+  readAt?: string | null;
+}
+
+interface ChatThread {
+  enrollmentId: string;
+  isTeam: boolean;
+  student: string;
+  className: string;
+  canWrite: boolean;
+  messages: ChatMessage[];
 }
 
 interface EnrollmentDocument {
@@ -386,6 +407,12 @@ const CatechesisPage: React.FC = () => {
   // Histórico de avisos enviados às famílias (Onda 3)
   const [sentNotices, setSentNotices] = useState<SentNotice[] | null>(null);
   const [showSentNotices, setShowSentNotices] = useState(false);
+
+  // Conversa família ↔ equipe por matrícula (Onda 4)
+  const [chatTarget, setChatTarget] = useState<{ enrollmentId: string; fullName: string } | null>(null);
+  const [chatThread, setChatThread] = useState<ChatThread | null>(null);
+  const [chatText, setChatText] = useState('');
+  const [sendingChat, setSendingChat] = useState(false);
 
   // Quem fez a última chamada (auditoria leve visível na própria tela)
   const [lastMarked, setLastMarked] = useState<{ byName: string | null; at: string } | null>(null);
@@ -917,6 +944,44 @@ const CatechesisPage: React.FC = () => {
         // corpo não-JSON — segue para o genérico
       }
       notify.error(getErrorMessage(error, 'Erro ao gerar o PDF'));
+    }
+  };
+
+  const openChat = async (enrollmentId: string, fullName: string) => {
+    setChatTarget({ enrollmentId, fullName });
+    setChatThread(null);
+    setChatText('');
+    try {
+      const res = await api.get(`/catechesis/enrollments/${enrollmentId}/messages`);
+      setChatThread(res.data);
+      // Abrir a conversa zera o contador da linha (o backend já marcou como lida)
+      setReport((current) =>
+        current
+          ? {
+              ...current,
+              students: current.students.map((s) =>
+                s.enrollmentId === enrollmentId ? { ...s, unreadMessages: 0 } : s,
+              ),
+            }
+          : current,
+      );
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao abrir a conversa'));
+      setChatTarget(null);
+    }
+  };
+
+  const sendChat = async () => {
+    if (!chatTarget || !chatText.trim()) return;
+    setSendingChat(true);
+    try {
+      const res = await api.post(`/catechesis/enrollments/${chatTarget.enrollmentId}/messages`, { body: chatText.trim() });
+      setChatThread((current) => (current ? { ...current, messages: [...current.messages, res.data] } : current));
+      setChatText('');
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao enviar a mensagem'));
+    } finally {
+      setSendingChat(false);
     }
   };
 
@@ -1714,6 +1779,13 @@ const CatechesisPage: React.FC = () => {
                                           <button className="cate-mini" onClick={() => handleNotifyFamily(student.enrollmentId, student.member.fullName)}>
                                             ✉ Avisar
                                           </button>
+                                          <button
+                                            className="cate-mini"
+                                            title="Conversa com a família"
+                                            onClick={() => void openChat(student.enrollmentId, student.member.fullName)}
+                                          >
+                                            💬 Conversa{student.unreadMessages ? ` (${student.unreadMessages})` : ''}
+                                          </button>
                                         </>
                                       )}
                                       {student.status === 'COMPLETED' && (
@@ -2374,6 +2446,66 @@ const CatechesisPage: React.FC = () => {
                   {renewing ? 'Renovando...' : 'Renovar selecionados'}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {chatTarget && (
+        <div className="module-modal-overlay" onClick={() => setChatTarget(null)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <h2>💬 Conversa · {chatTarget.fullName}</h2>
+            <p style={{ fontSize: '0.82rem', color: '#666', margin: '0 0 0.6rem' }}>
+              Só a família e a equipe da turma leem esta conversa. Tudo fica registrado.
+            </p>
+            {chatThread === null && <div className="loading">Carregando...</div>}
+            {chatThread && (
+              <div className="cate-chat">
+                {chatThread.messages.length === 0 && (
+                  <p style={{ color: '#888', textAlign: 'center', margin: '1rem 0' }}>Nenhuma mensagem ainda — escreva a primeira.</p>
+                )}
+                {chatThread.messages.map((message) => (
+                  <div key={message.id} className={`cate-chat__msg${message.fromTeam ? ' cate-chat__msg--team' : ''}`}>
+                    <div className="cate-chat__bubble">
+                      <span className="cate-chat__author">
+                        {message.fromTeam ? `Equipe · ${message.authorName}` : `Família · ${message.authorName}`}
+                      </span>
+                      <p>{message.body}</p>
+                      <span className="cate-chat__time">
+                        {new Date(message.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        {message.fromTeam && message.readAt ? ' · lida' : ''}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {chatThread && chatThread.canWrite && (
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
+                <input
+                  type="text"
+                  maxLength={1000}
+                  placeholder="Escreva para a família..."
+                  style={{ flex: 1 }}
+                  value={chatText}
+                  onChange={(e) => setChatText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      void sendChat();
+                    }
+                  }}
+                />
+                <button type="button" className="btn-submit" disabled={sendingChat || !chatText.trim()} onClick={() => void sendChat()}>
+                  {sendingChat ? '...' : 'Enviar'}
+                </button>
+              </div>
+            )}
+            {chatThread && !chatThread.canWrite && (
+              <p style={{ fontSize: '0.82rem', color: '#888' }}>Matrícula encerrada — conversa somente para leitura.</p>
+            )}
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" onClick={() => setChatTarget(null)}>Fechar</button>
             </div>
           </div>
         </div>

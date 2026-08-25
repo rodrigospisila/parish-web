@@ -1,0 +1,116 @@
+/* Dashboard do coordenador (Onda 4) */
+.dash-lede {
+  color: #475569;
+  margin: 0 0 1.2rem;
+  font-size: 0.95rem;
+}
+
+.dash-group {
+  margin-bottom: 1.6rem;
+}
+
+.dash-group__title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  margin: 0 0 0.6rem;
+}
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 0.75rem;
+}
+
+.dash-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-left-width: 4px;
+  border-left-color: #cbd5e1;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.dash-card:hover {
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.dash-card:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.dash-card--warn { border-left-color: #f59e0b; }
+.dash-card--bad { border-left-color: #dc2626; }
+.dash-card--ok { border-left-color: #16a34a; }
+
+.dash-card__value {
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+}
+
+.dash-card__label {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.dash-card__hint {
+  font-size: 0.74rem;
+  color: #64748b;
+}
+
+.dash-prayers {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.dash-prayer {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+}
+
+.dash-prayer__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.dash-prayer__body p {
+  margin: 0.2rem 0 0;
+  font-size: 0.9rem;
+  color: #334155;
+  white-space: pre-wrap;
+}
+
+.dash-prayer__meta {
+  font-size: 0.76rem;
+  color: #64748b;
+}
+
+.dash-prayer__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}

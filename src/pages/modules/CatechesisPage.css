@@ -440,3 +440,28 @@
   text-decoration: underline;
 }
 .link-button:hover { color: #1d4ed8; }
+
+/* Conversa família ↔ equipe (Onda 4) */
+.cate-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 0.5rem;
+  background: var(--cate-ground, #f5f7fa);
+  border-radius: 10px;
+}
+.cate-chat__msg { display: flex; justify-content: flex-start; }
+.cate-chat__msg--team { justify-content: flex-end; }
+.cate-chat__bubble {
+  max-width: 78%;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.45rem 0.7rem;
+}
+.cate-chat__msg--team .cate-chat__bubble { background: #eaf0fe; border-color: #c7d7fb; }
+.cate-chat__bubble p { margin: 0.15rem 0; font-size: 0.9rem; white-space: pre-wrap; }
+.cate-chat__author { font-size: 0.7rem; font-weight: 700; color: #475569; }
+.cate-chat__time { font-size: 0.68rem; color: #94a3b8; }
