@@ -56,6 +56,14 @@ function currentMonth(): string {
 const formatBRL = (value: number) =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+interface ProviderSetupResult {
+  pixKeyReady: boolean;
+  pixKey?: string | null;
+  webhookRegistered: boolean;
+  webhookId?: string | null;
+  notes: string[];
+}
+
 interface OnlineIntent {
   id: string;
   member: { id: string; fullName: string; community: string | null };
@@ -79,6 +87,10 @@ interface OnlineIntent {
   providerRef: string | null;
   chargedAmount: number | null;
   feeAmount: number;
+  /** Meio escolhido pelo fiel; cartão e boleto só existem com o Asaas (confirmação por webhook) */
+  paymentMethod: 'PIX' | 'CARD' | 'BOLETO';
+  /** Página de pagamento do Asaas (cartão/boleto); null no Pix */
+  paymentUrl: string | null;
 }
 
 interface ReportRow {
@@ -137,6 +149,19 @@ const PROVIDER_STATUS_LABEL: Record<string, string> = {
 };
 const providerStatusLabel = (status: string | null | undefined): string | null =>
   status ? PROVIDER_STATUS_LABEL[status.toLowerCase()] ?? status : null;
+
+// Meio de pagamento no relatório mensal — aceita tanto o rótulo já em pt-BR quanto o código do provedor
+const REPORT_METHOD_LABEL: Record<string, string> = {
+  CARD: 'Cartão',
+  BOLETO: 'Boleto',
+};
+const reportMethodLabel = (method: string): string => REPORT_METHOD_LABEL[method.toUpperCase()] ?? method;
+
+// Meio não-Pix na tabela de intents (cartão/boleto via Asaas)
+const PAYMENT_METHOD_BADGE: Record<string, string> = {
+  CARD: '💳 Cartão',
+  BOLETO: '📄 Boleto',
+};
 
 const isOpenIntent = (intent: OnlineIntent) => intent.status === 'DECLARED' || intent.status === 'CREATED';
 // Pix do provedor em aberto é confirmado pelo webhook/consulta — a tesouraria só
@@ -206,6 +231,9 @@ const FinancePage: React.FC = () => {
   const [providerPwdModal, setProviderPwdModal] = useState(false);
   const [savingProvider, setSavingProvider] = useState(false);
   const [rotatingToken, setRotatingToken] = useState(false);
+  // Resultado do setup automático na conta do provedor (chave Pix + webhook)
+  const [providerSetup, setProviderSetup] = useState<ProviderSetupResult | null>(null);
+  const [checkingSetup, setCheckingSetup] = useState(false);
 
   // DIOCESAN/SYSTEM_ADMIN não têm paróquia própria: escolhem qual configurar
   const [parishOptions, setParishOptions] = useState<Array<{ id: string; name: string }>>([]);
@@ -219,6 +247,7 @@ const FinancePage: React.FC = () => {
     setConfigError(null);
     setConfigForm(EMPTY_CONFIG_FORM);
     setProviderForm(EMPTY_PROVIDER_FORM);
+    setProviderSetup(null);
     setSelectedIds({});
   }, [configParishId]);
   const [loading, setLoading] = useState(true);
@@ -566,6 +595,7 @@ const FinancePage: React.FC = () => {
             : undefined,
       });
       setTitheConfig(res.data);
+      setProviderSetup(res.data?.providerSetup ?? null);
       setProviderForm((current) => ({ ...current, providerApiKey: '', providerWebhookSecret: '' }));
       notify.success(res.data?.providerConfigured ? 'Provedor configurado — confirmação automática ativa' : 'Configuração do provedor salva');
       setProviderPwdModal(false);
@@ -591,13 +621,28 @@ const FinancePage: React.FC = () => {
     void submitProvider();
   };
 
+  const checkProviderSetup = async () => {
+    if (checkingSetup) return;
+    setCheckingSetup(true);
+    try {
+      const res = await api.post('/tithe/config/provider-setup', { parishId: configParishId || undefined });
+      setProviderSetup(res.data);
+      notify.success(res.data?.pixKeyReady && res.data?.webhookRegistered ? 'Conta do provedor pronta para receber' : 'Verificação concluída — veja as pendências abaixo');
+    } catch (error) {
+      notify.error(friendlyError(error, 'Erro ao verificar a conta do provedor'));
+    } finally {
+      setCheckingSetup(false);
+    }
+  };
+
   const rotateWebhookToken = async () => {
     if (rotatingToken) return;
-    if (!window.confirm('Gerar um novo token do webhook? Atualize-o no painel do Asaas logo em seguida — até lá o Asaas recebe 403.')) return;
+    if (!window.confirm('Gerar um novo token do webhook? O Parish atualiza o webhook na conta Asaas automaticamente.')) return;
     setRotatingToken(true);
     try {
       const res = await api.post('/tithe/config/webhook-token', { parishId: configParishId || undefined });
       setTitheConfig((current) => (current ? { ...current, providerWebhookToken: res.data.providerWebhookToken } : current));
+      setProviderSetup(res.data?.providerSetup ?? null);
       notify.success('Novo token gerado — atualize agora no painel do Asaas');
     } catch (error) {
       notify.error(friendlyError(error, 'Erro ao gerar o token'));
@@ -739,7 +784,7 @@ const FinancePage: React.FC = () => {
           Dízimo
         </button>
         <button className={`tab-btn ${tab === 'online' ? 'active' : ''}`} onClick={() => setTab('online')}>
-          Dízimo online (Pix)
+          Dízimo online
         </button>
       </div>
 
@@ -914,6 +959,10 @@ const FinancePage: React.FC = () => {
                       <span style={{ color: '#b91c1c' }}> Servidor sem PAYMENTS_ENCRYPTION_KEY — peça ao administrador do sistema para configurar antes de cadastrar a chave.</span>
                     )}
                   </p>
+                  <p style={{ fontSize: '0.85rem', color: '#666', margin: '0 0 0.8rem' }}>
+                    Com o Asaas, o fiel também pode pagar por cartão (página segura do Asaas) e boleto — taxas do Asaas
+                    por meio; a política de taxa acima é uma estimativa única para os três.
+                  </p>
                   <form onSubmit={saveProvider}>
                     <div className="form-row">
                       <div className="form-group">
@@ -992,14 +1041,29 @@ const FinancePage: React.FC = () => {
                         <>
                           <div style={{ wordBreak: 'break-all' }}>Token de autenticação: <code>{titheConfig.providerWebhookToken ?? '—'}</code></div>
                           <div style={{ color: '#666', marginTop: '0.3rem' }}>
-                            Asaas: Integrações → Webhooks → URL acima, token no campo “Token de autenticação”, eventos de cobrança e Pix Automático.
+                            O Parish cadastra sozinho na conta Asaas a chave Pix aleatória e o webhook (URL, token e eventos) ao salvar a chave de API. Para conferir no painel: Integrações → Webhooks.
                           </div>
-                          <div style={{ color: '#b45309', marginTop: '0.3rem' }}>
-                            Depois de gerar um novo token, atualize-o no painel do Asaas na hora — até lá o Asaas recebe 403 e, após 15 falhas, pausa a fila de eventos
+                          {providerSetup && (
+                            <div style={{ marginTop: '0.4rem' }}>
+                              <div style={{ fontWeight: 600, color: providerSetup.pixKeyReady ? '#0f6e56' : '#b45309' }}>
+                                {providerSetup.pixKeyReady
+                                  ? `Chave Pix na conta Asaas ✓${providerSetup.pixKey ? ` (${providerSetup.pixKey})` : ''}`
+                                  : 'Chave Pix da conta Asaas pendente — sem ela o QR não é emitido'}
+                              </div>
+                              <div style={{ fontWeight: 600, color: providerSetup.webhookRegistered ? '#0f6e56' : '#b45309' }}>
+                                {providerSetup.webhookRegistered ? 'Webhook cadastrado no Asaas ✓' : 'Webhook não cadastrado no Asaas'}
+                              </div>
+                              {providerSetup.notes?.length ? <div style={{ color: '#666', marginTop: '0.2rem' }}>{providerSetup.notes.join(' · ')}</div> : null}
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+                            <button type="button" className="btn-small" disabled={checkingSetup} onClick={() => void checkProviderSetup()}>
+                              {checkingSetup ? 'Verificando...' : '🔎 Verificar conta no Asaas'}
+                            </button>
+                            <button type="button" className="btn-small" disabled={rotatingToken} onClick={() => void rotateWebhookToken()}>
+                              {rotatingToken ? 'Gerando...' : '↻ Gerar novo token'}
+                            </button>
                           </div>
-                          <button type="button" className="btn-small" style={{ marginTop: '0.5rem' }} disabled={rotatingToken} onClick={() => void rotateWebhookToken()}>
-                            {rotatingToken ? 'Gerando...' : '↻ Gerar novo token'}
-                          </button>
                         </>
                       )}
                     </div>
@@ -1090,6 +1154,17 @@ const FinancePage: React.FC = () => {
                       </td>
                       <td>
                         <code>{intent.txid}</code>
+                        {intent.paymentMethod && intent.paymentMethod !== 'PIX' && (
+                          <div style={{ fontSize: '0.72rem', color: '#555' }}>
+                            {PAYMENT_METHOD_BADGE[intent.paymentMethod] ?? intent.paymentMethod}
+                            {intent.paymentUrl && isOpenIntent(intent) ? (
+                              <>
+                                {' · '}
+                                <a href={intent.paymentUrl} target="_blank" rel="noreferrer">abrir cobrança</a>
+                              </>
+                            ) : null}
+                          </div>
+                        )}
                         {intent.method === 'GATEWAY' && (
                           <div style={{ fontSize: '0.72rem', color: intent.providerStatus === 'mismatch' ? '#b45309' : '#0f6e56' }}>
                             via provedor
@@ -1152,7 +1227,7 @@ const FinancePage: React.FC = () => {
                 <thead><tr><th>Comunidade</th><th>Tipo</th><th>Meio</th><th>Qtde</th><th>Total</th></tr></thead>
                 <tbody>
                   {report.rows.map((r) => (
-                    <tr key={`${r.communityId}-${r.kind}-${r.method}`}><td>{r.community}</td><td>{r.kind}</td><td>{r.method}</td><td>{r.count}</td><td>{formatBRL(r.total)}</td></tr>
+                    <tr key={`${r.communityId}-${r.kind}-${r.method}`}><td>{r.community}</td><td>{r.kind}</td><td>{reportMethodLabel(r.method)}</td><td>{r.count}</td><td>{formatBRL(r.total)}</td></tr>
                   ))}
                   <tr><td colSpan={3}><strong>Total {report.referenceMonth}</strong></td><td><strong>{report.totals.count}</strong></td><td><strong>{formatBRL(report.totals.total)}</strong></td></tr>
                 </tbody>
