@@ -96,6 +96,16 @@ interface TitheConfig {
   brCodePreview?: string | null;
   lastChange?: { at: string; byName: string | null } | null;
   cancelledOpenIntents?: number;
+  // Provedor (D3)
+  paymentProvider?: string | null;
+  providerEnv?: string | null;
+  providerConfigured?: boolean;
+  providerWebhookToken?: string | null;
+  webhookUrl?: string | null;
+  paymentsCryptoReady?: boolean;
+  feePolicy?: string;
+  feeFixed?: number;
+  feePercent?: number;
 }
 
 const INTENT_STATUS: Record<string, { label: string; color: string }> = {
@@ -140,6 +150,9 @@ const FinancePage: React.FC = () => {
   // Troca de chave Pix: senha atual num modal (nunca em texto claro)
   const [pwdModal, setPwdModal] = useState(false);
   const [pwd, setPwd] = useState('');
+  const [providerForm, setProviderForm] = useState({ paymentProvider: '', providerEnv: 'sandbox', providerApiKey: '', feePolicy: 'ABSORB', feeFixed: '1.99', feePercent: '0' });
+  const [providerPwdModal, setProviderPwdModal] = useState(false);
+  const [savingProvider, setSavingProvider] = useState(false);
 
   // DIOCESAN/SYSTEM_ADMIN não têm paróquia própria: escolhem qual configurar
   const [parishOptions, setParishOptions] = useState<Array<{ id: string; name: string }>>([]);
@@ -249,6 +262,14 @@ const FinancePage: React.FC = () => {
           pixMerchantName: cfg.pixMerchantName ?? '',
           pixMerchantCity: cfg.pixMerchantCity ?? '',
           titheMessage: cfg.titheMessage ?? '',
+        });
+        setProviderForm({
+          paymentProvider: cfg.paymentProvider ?? '',
+          providerEnv: cfg.providerEnv ?? 'sandbox',
+          providerApiKey: '',
+          feePolicy: cfg.feePolicy ?? 'ABSORB',
+          feeFixed: String(cfg.feeFixed ?? 1.99),
+          feePercent: String(cfg.feePercent ?? 0),
         });
       }
     } catch (error) {
@@ -414,6 +435,54 @@ const FinancePage: React.FC = () => {
       notify.error(getErrorMessage(error, 'Erro ao salvar a configuração'));
     } finally {
       setSavingConfig(false);
+    }
+  };
+
+  const submitProvider = async (currentPassword?: string) => {
+    setSavingProvider(true);
+    try {
+      const res = await api.patch('/tithe/config', {
+        parishId: configParishId || undefined,
+        currentPassword,
+        paymentProvider: providerForm.paymentProvider || null,
+        providerEnv: providerForm.providerEnv,
+        providerApiKey: providerForm.providerApiKey.trim() || undefined,
+        feePolicy: providerForm.feePolicy,
+        feeFixed: Number(providerForm.feeFixed) || 0,
+        feePercent: Number(providerForm.feePercent) || 0,
+      });
+      setTitheConfig(res.data);
+      setProviderForm((current) => ({ ...current, providerApiKey: '' }));
+      notify.success(res.data?.providerConfigured ? 'Provedor configurado — confirmação automática ativa' : 'Configuração do provedor salva');
+      setProviderPwdModal(false);
+      setPwd('');
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao salvar o provedor'));
+    } finally {
+      setSavingProvider(false);
+    }
+  };
+
+  const saveProvider = (e: React.FormEvent) => {
+    e.preventDefault();
+    const sensitive =
+      providerForm.providerApiKey.trim().length > 0 || (providerForm.paymentProvider || null) !== (titheConfig?.paymentProvider ?? null);
+    if (sensitive) {
+      setPwd('');
+      setProviderPwdModal(true);
+      return;
+    }
+    void submitProvider();
+  };
+
+  const rotateWebhookToken = async () => {
+    if (!window.confirm('Gerar um novo token do webhook? Você precisará atualizá-lo no painel do provedor.')) return;
+    try {
+      const res = await api.post('/tithe/config/webhook-token', { parishId: configParishId || undefined });
+      setTitheConfig((current) => (current ? { ...current, providerWebhookToken: res.data.providerWebhookToken } : current));
+      notify.success('Novo token gerado');
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao gerar o token'));
     }
   };
 
@@ -690,6 +759,75 @@ const FinancePage: React.FC = () => {
                   )}
                 </div>
               )}
+
+              {titheConfig && (
+                <div style={{ marginTop: '1.4rem', borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>
+                  <h4 style={{ margin: '0 0 0.3rem', color: '#555', textTransform: 'uppercase', fontSize: '0.9rem' }}>
+                    Provedor de pagamento (confirmação automática e dízimo automático)
+                  </h4>
+                  <p style={{ fontSize: '0.85rem', color: '#666', margin: '0 0 0.8rem' }}>
+                    Com um provedor, o Pix do fiel é confirmado sozinho (sem conferir extrato) e o dízimo pode ser
+                    automático (Pix Automático). Recomendado: <strong>Asaas</strong> (CNPJ da paróquia, sem mensalidade).
+                    {titheConfig.paymentsCryptoReady === false && (
+                      <span style={{ color: '#b91c1c' }}> Servidor sem PAYMENTS_ENCRYPTION_KEY — peça ao administrador do sistema para configurar antes de cadastrar a chave.</span>
+                    )}
+                  </p>
+                  <form onSubmit={saveProvider}>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Provedor</label>
+                        <select className="filter-select" value={providerForm.paymentProvider} onChange={(e) => setProviderForm({ ...providerForm, paymentProvider: e.target.value })}>
+                          <option value="">Nenhum (só Pix estático)</option>
+                          <option value="ASAAS">Asaas</option>
+                          <option value="MERCADOPAGO">Mercado Pago (só cobrança avulsa)</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Ambiente</label>
+                        <select className="filter-select" value={providerForm.providerEnv} onChange={(e) => setProviderForm({ ...providerForm, providerEnv: e.target.value })}>
+                          <option value="sandbox">Sandbox (testes)</option>
+                          <option value="production">Produção</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Chave de API {titheConfig.providerConfigured ? '(já cadastrada — preencha só para trocar)' : ''}</label>
+                        <input type="password" autoComplete="off" value={providerForm.providerApiKey} onChange={(e) => setProviderForm({ ...providerForm, providerApiKey: e.target.value })} placeholder={titheConfig.providerConfigured ? '••••••••' : 'Cole a chave do painel do provedor'} />
+                      </div>
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Taxa do provedor</label>
+                        <select className="filter-select" value={providerForm.feePolicy} onChange={(e) => setProviderForm({ ...providerForm, feePolicy: e.target.value })}>
+                          <option value="ABSORB">A paróquia absorve</option>
+                          <option value="PASS_THROUGH">O fiel cobre a taxa (soma ao Pix)</option>
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Taxa fixa por Pix (R$)</label>
+                        <input type="number" step="0.01" min="0" max="50" value={providerForm.feeFixed} onChange={(e) => setProviderForm({ ...providerForm, feeFixed: e.target.value })} />
+                      </div>
+                      <div className="form-group">
+                        <label>Taxa percentual (%)</label>
+                        <input type="number" step="0.01" min="0" max="10" value={providerForm.feePercent} onChange={(e) => setProviderForm({ ...providerForm, feePercent: e.target.value })} />
+                      </div>
+                    </div>
+                    <button type="submit" className="btn-small success" disabled={savingProvider || titheConfig.paymentsCryptoReady === false}>
+                      {savingProvider ? 'Salvando...' : 'Salvar provedor'}
+                    </button>
+                  </form>
+                  {titheConfig.providerConfigured && titheConfig.webhookUrl && (
+                    <div style={{ marginTop: '0.8rem', fontSize: '0.85rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '0.7rem 0.9rem' }}>
+                      <div><strong>Webhook</strong> — cadastre no painel do provedor:</div>
+                      <div style={{ wordBreak: 'break-all' }}>URL: <code>{titheConfig.webhookUrl}</code></div>
+                      <div style={{ wordBreak: 'break-all' }}>Token de autenticação: <code>{titheConfig.providerWebhookToken}</code></div>
+                      <div style={{ color: '#666', marginTop: '0.3rem' }}>
+                        Asaas: Integrações → Webhooks → URL acima, token no campo “Token de autenticação”, eventos de cobrança e Pix Automático.
+                      </div>
+                      <button type="button" className="btn-small" style={{ marginTop: '0.5rem' }} onClick={() => void rotateWebhookToken()}>↻ Gerar novo token</button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -767,7 +905,7 @@ const FinancePage: React.FC = () => {
                           <div style={{ fontSize: '0.78rem', color: '#666' }}>pago {formatBRL(intent.amountPaid)}</div>
                         )}
                       </td>
-                      <td><code>{intent.txid}</code></td>
+                      <td><code>{intent.txid}</code>{(intent as any).method === 'GATEWAY' ? <div style={{ fontSize: '0.72rem', color: '#0f6e56' }}>via provedor</div> : null}</td>
                       <td>{intent.declaredAt ? new Date(intent.declaredAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                       <td>
                         <span className={`status-badge ${INTENT_STATUS[intent.status]?.color ?? 'gray'}`}>{INTENT_STATUS[intent.status]?.label ?? intent.status}</span>
@@ -831,6 +969,36 @@ const FinancePage: React.FC = () => {
             <input type="number" className="filter-input" style={{ width: 110 }} value={statementYear} onChange={(e) => setStatementYear(e.target.value)} />
             <button className="btn-small" disabled={!statementMember} onClick={() => downloadBlob(`/tithe/tithers/${statementMember}/statement.pdf`, `extrato-${statementYear}.pdf`, { year: statementYear })}>🖨 Extrato (PDF)</button>
           </div>
+
+          {providerPwdModal && (
+            <div className="module-modal-overlay" onClick={() => setProviderPwdModal(false)}>
+              <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+                <h2>🔐 Confirmar provedor de pagamento</h2>
+                <p style={{ fontSize: '0.88rem', color: '#666' }}>
+                  Trocar o provedor ou a chave de API muda para onde o dinheiro do dízimo vai. Confirme com a sua senha atual.
+                </p>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!pwd.trim()) {
+                      notify.error('Informe sua senha atual');
+                      return;
+                    }
+                    void submitProvider(pwd);
+                  }}
+                >
+                  <div className="form-group">
+                    <label>Senha atual</label>
+                    <input type="password" autoComplete="current-password" autoFocus value={pwd} onChange={(e) => setPwd(e.target.value)} />
+                  </div>
+                  <div className="modal-actions">
+                    <button type="button" className="btn-cancel" onClick={() => setProviderPwdModal(false)}>Cancelar</button>
+                    <button type="submit" className="btn-submit" disabled={savingProvider}>{savingProvider ? 'Salvando...' : 'Confirmar e salvar'}</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
 
           {pwdModal && (
             <div className="module-modal-overlay" onClick={() => setPwdModal(false)}>
