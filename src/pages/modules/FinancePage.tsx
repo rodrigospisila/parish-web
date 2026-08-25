@@ -65,9 +65,22 @@ interface OnlineIntent {
   status: 'CREATED' | 'DECLARED' | 'CONFIRMED' | 'CANCELLED';
   txid: string;
   note?: string | null;
+  amountPaid?: number | null;
+  anonymous?: boolean;
+  contestNote?: string | null;
+  contestedAt?: string | null;
   declaredAt?: string | null;
   confirmedAt?: string | null;
   createdAt: string;
+}
+
+interface ReportRow {
+  communityId: string;
+  community: string;
+  kind: string;
+  method: string;
+  count: number;
+  total: number;
 }
 
 interface TitheConfig {
@@ -112,6 +125,17 @@ const FinancePage: React.FC = () => {
   });
   const [savingConfig, setSavingConfig] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
+  // Conferência (um ou vários) num modal — nada de window.prompt
+  const [confirmTargets, setConfirmTargets] = useState<OnlineIntent[] | null>(null);
+  const [confirmForm, setConfirmForm] = useState({ date: '', receiptNumber: '', amountPaid: '', referenceMonth: '' });
+  const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
+  // Relatório do mês, QR institucional e extrato anual
+  const [reportMonth, setReportMonth] = useState(currentMonth());
+  const [reportCommunity, setReportCommunity] = useState('');
+  const [report, setReport] = useState<{ referenceMonth: string; rows: ReportRow[]; totals: { count: number; total: number } } | null>(null);
+  const [institutionalQr, setInstitutionalQr] = useState<{ qrDataUrl: string; brCode: string } | null>(null);
+  const [statementMember, setStatementMember] = useState('');
+  const [statementYear, setStatementYear] = useState(String(new Date().getFullYear()));
   // DIOCESAN/SYSTEM_ADMIN não têm paróquia própria: escolhem qual configurar
   const [parishOptions, setParishOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [configParishId, setConfigParishId] = useState<string>(user?.parishId ?? '');
@@ -224,8 +248,11 @@ const FinancePage: React.FC = () => {
   }, [onlineStatus, canConfigureTithe, configParishId, user?.parishId]);
 
   useEffect(() => {
-    if (tab === 'online') void fetchOnline();
-  }, [tab, fetchOnline]);
+    if (tab === 'online') {
+      void fetchOnline();
+      void fetchTithe();
+    }
+  }, [tab, fetchOnline, fetchTithe]);
 
   useEffect(() => {
     if (tab === 'online' && canConfigureTithe && !user?.parishId && parishOptions.length === 0) {
@@ -238,6 +265,112 @@ const FinancePage: React.FC = () => {
         .catch(() => setParishOptions([]));
     }
   }, [tab, canConfigureTithe, user?.parishId, parishOptions.length]);
+
+  const downloadBlob = async (path: string, filename: string, params?: Record<string, string>) => {
+    try {
+      const res = await api.get(path, { responseType: 'blob', params });
+      const url = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      let message = 'Erro ao gerar o arquivo';
+      try {
+        if (error?.response?.data instanceof Blob) {
+          const parsed = JSON.parse(await error.response.data.text());
+          if (parsed?.message) message = Array.isArray(parsed.message) ? parsed.message.join(', ') : parsed.message;
+        }
+      } catch {
+        // genérico
+      }
+      notify.error(message);
+    }
+  };
+
+  const loadReport = async () => {
+    try {
+      const res = await api.get('/tithe/report', {
+        params: { referenceMonth: reportMonth, communityId: reportCommunity || undefined },
+      });
+      setReport(res.data);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao carregar o relatório'));
+    }
+  };
+
+  const openConfirm = (targets: OnlineIntent[]) => {
+    if (!targets.length) return;
+    const first = targets[0];
+    setConfirmForm({
+      date: (first.declaredAt ?? first.createdAt).slice(0, 10),
+      receiptNumber: '',
+      amountPaid: targets.length === 1 ? String(first.amount) : '',
+      referenceMonth: targets.length === 1 ? first.referenceMonth : '',
+    });
+    setConfirmTargets(targets);
+  };
+
+  const submitConfirm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!confirmTargets) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(confirmForm.date)) {
+      notify.error('Informe a data em que o Pix caiu no extrato');
+      return;
+    }
+    setBusyIntent('batch');
+    let done = 0;
+    try {
+      for (const intent of confirmTargets) {
+        await api.post(`/tithe/intents/${intent.id}/confirm`, {
+          date: confirmForm.date,
+          receiptNumber: confirmForm.receiptNumber.trim() || undefined,
+          amountPaid: confirmTargets.length === 1 && confirmForm.amountPaid ? Number(confirmForm.amountPaid.replace(',', '.')) : undefined,
+          referenceMonth: confirmForm.referenceMonth || undefined,
+        });
+        done += 1;
+      }
+      notify.success(done === 1 ? 'Contribuição confirmada e lançada no Financeiro' : `${done} contribuições confirmadas`);
+      setConfirmTargets(null);
+      setSelectedIds({});
+      await fetchOnline();
+      fetchFinance();
+    } catch (error) {
+      notify.error(getErrorMessage(error, `Erro ao confirmar (${done} de ${confirmTargets.length} feitas)`));
+      await fetchOnline();
+    } finally {
+      setBusyIntent(null);
+    }
+  };
+
+  const rejectIntent = async (intent: OnlineIntent) => {
+    const typed = window.prompt('Motivo (o fiel recebe o aviso e pode contestar):', 'Pix não localizado no extrato');
+    if (typed === null) return;
+    setBusyIntent(intent.id);
+    try {
+      await api.post(`/tithe/intents/${intent.id}/reject`, { reason: typed.trim() || undefined });
+      notify.success('Pix marcado como não localizado');
+      await fetchOnline();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao processar'));
+    } finally {
+      setBusyIntent(null);
+    }
+  };
+
+  const reopenIntent = async (intent: OnlineIntent) => {
+    setBusyIntent(intent.id);
+    try {
+      await api.post(`/tithe/intents/${intent.id}/reopen`, {});
+      notify.success('Pix reaberto — volta para a fila de conferência');
+      await fetchOnline();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao reabrir'));
+    } finally {
+      setBusyIntent(null);
+    }
+  };
 
   const saveTitheConfig = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -280,39 +413,6 @@ const FinancePage: React.FC = () => {
     }
   };
 
-  const reviewIntent = async (intent: OnlineIntent, approve: boolean) => {
-    let reason: string | undefined;
-    if (!approve) {
-      const typed = window.prompt('Motivo (o fiel recebe o aviso):', 'Pix não localizado no extrato');
-      if (typed === null) return;
-      reason = typed.trim() || undefined;
-    }
-    let paidDate: string | undefined;
-    if (approve) {
-      const suggested = (intent.declaredAt ?? intent.createdAt).slice(0, 10);
-      const typed = window.prompt(
-        `Confirmar o Pix de ${formatBRL(intent.amount)} de ${intent.member.fullName} (id ${intent.txid}).\nData em que caiu no extrato (AAAA-MM-DD):`,
-        suggested,
-      );
-      if (typed === null) return;
-      paidDate = typed.trim() || suggested;
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(paidDate)) {
-        notify.error('Data inválida — use AAAA-MM-DD');
-        return;
-      }
-    }
-    setBusyIntent(intent.id);
-    try {
-      await api.post(`/tithe/intents/${intent.id}/${approve ? 'confirm' : 'reject'}`, approve ? { date: paidDate } : { reason });
-      notify.success(approve ? 'Contribuição confirmada e lançada no Financeiro' : 'Pix marcado como não localizado');
-      await fetchOnline();
-      if (approve) fetchFinance();
-    } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao processar'));
-    } finally {
-      setBusyIntent(null);
-    }
-  };
 
   useEffect(() => {
     api.get('/communities').then((res) => setCommunities(res.data)).catch(() => undefined);
@@ -544,10 +644,47 @@ const FinancePage: React.FC = () => {
                 )}
               </form>
               )}
+              {titheConfig?.titheEnabled && (
+                <div style={{ marginTop: '0.8rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className="btn-small"
+                    onClick={async () => {
+                      try {
+                        const res = await api.get('/tithe/config/institutional-qr', { params: configParishId ? { parishId: configParishId } : undefined });
+                        setInstitutionalQr(res.data);
+                      } catch (error) {
+                        notify.error(getErrorMessage(error, 'Erro ao gerar o QR'));
+                      }
+                    }}
+                  >
+                    📱 Ver QR da paróquia (sem valor)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-small"
+                    onClick={() => downloadBlob('/tithe/config/institutional-qr.pdf', 'pix-paroquia.pdf', configParishId ? { parishId: configParishId } : undefined)}
+                  >
+                    🖨 Cartaz do QR (PDF)
+                  </button>
+                  {institutionalQr && (
+                    <img src={institutionalQr.qrDataUrl} alt="QR Pix da paróquia" style={{ width: 160, height: 160, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                  )}
+                </div>
+              )}
             </div>
           )}
 
           <div className="filters-bar">
+            {Object.values(selectedIds).some(Boolean) && (
+              <button
+                className="btn-small success"
+                disabled={busyIntent !== null}
+                onClick={() => openConfirm(onlineIntents.filter((i) => selectedIds[i.id] && (i.status === 'DECLARED' || i.status === 'CREATED')))}
+              >
+                ✓ Confirmar selecionados ({Object.values(selectedIds).filter(Boolean).length})
+              </button>
+            )}
             <select className="filter-select" value={onlineStatus} onChange={(e) => setOnlineStatus(e.target.value)}>
               <option value="DECLARED">Aguardando conferência</option>
               <option value="CREATED">Pix gerados (não informados)</option>
@@ -569,6 +706,17 @@ const FinancePage: React.FC = () => {
               <table className="data-table">
                 <thead>
                   <tr>
+                    <th>
+                      <input
+                        type="checkbox"
+                        title="Selecionar todos os aguardando"
+                        onChange={(e) => {
+                          const next: Record<string, boolean> = {};
+                          if (e.target.checked) onlineIntents.filter((i) => i.status === 'DECLARED' || i.status === 'CREATED').forEach((i) => { next[i.id] = true; });
+                          setSelectedIds(next);
+                        }}
+                      />
+                    </th>
                     <th>Fiel</th>
                     <th>Comunidade</th>
                     <th>Tipo</th>
@@ -583,11 +731,24 @@ const FinancePage: React.FC = () => {
                 <tbody>
                   {onlineIntents.map((intent) => (
                     <tr key={intent.id}>
-                      <td>{intent.member.fullName}</td>
+                      <td>
+                        {(intent.status === 'DECLARED' || intent.status === 'CREATED') && (
+                          <input type="checkbox" checked={!!selectedIds[intent.id]} onChange={(e) => setSelectedIds({ ...selectedIds, [intent.id]: e.target.checked })} />
+                        )}
+                      </td>
+                      <td>
+                        {intent.member.fullName}
+                        {intent.contestNote && <div style={{ fontSize: '0.78rem', color: '#b45309' }}>💬 Contestação: {intent.contestNote}</div>}
+                      </td>
                       <td>{intent.member.community ?? '—'}</td>
                       <td>{intent.kind === 'TITHE' ? 'Dízimo' : 'Oferta'}</td>
                       <td>{intent.referenceMonth}</td>
-                      <td>{formatBRL(intent.amount)}</td>
+                      <td>
+                        {formatBRL(intent.amount)}
+                        {intent.amountPaid != null && intent.amountPaid !== intent.amount && (
+                          <div style={{ fontSize: '0.78rem', color: '#666' }}>pago {formatBRL(intent.amountPaid)}</div>
+                        )}
+                      </td>
                       <td><code>{intent.txid}</code></td>
                       <td>{intent.declaredAt ? new Date(intent.declaredAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                       <td>
@@ -597,15 +758,100 @@ const FinancePage: React.FC = () => {
                       <td className="actions-cell">
                         {(intent.status === 'DECLARED' || intent.status === 'CREATED') && (
                           <>
-                            <button className="btn-small success" disabled={busyIntent === intent.id} onClick={() => void reviewIntent(intent, true)}>Confirmar</button>
-                            <button className="btn-small" disabled={busyIntent === intent.id} onClick={() => void reviewIntent(intent, false)}>Não localizado</button>
+                            <button className="btn-small success" disabled={busyIntent !== null} onClick={() => openConfirm([intent])}>Confirmar</button>
+                            <button className="btn-small" disabled={busyIntent !== null} onClick={() => void rejectIntent(intent)}>Não localizado</button>
                           </>
+                        )}
+                        {intent.status === 'CANCELLED' && intent.note && intent.note !== 'Cancelado pelo fiel' && !intent.note.startsWith('Pix expirado') && (
+                          <button className="btn-small" disabled={busyIntent !== null} onClick={() => void reopenIntent(intent)}>Reabrir</button>
+                        )}
+                        {intent.status === 'CONFIRMED' && intent.member.id && (
+                          <button className="btn-small" onClick={() => downloadBlob(`/tithe/intents/${intent.id}/receipt.pdf`, 'comprovante.pdf')}>🧾</button>
                         )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          <h4 style={{ color: '#555', textTransform: 'uppercase', fontSize: '0.9rem', marginTop: '1.6rem' }}>Relatório do mês por comunidade</h4>
+          <div className="filters-bar">
+            <input type="month" className="filter-input" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} />
+            <select className="filter-select" value={reportCommunity} onChange={(e) => setReportCommunity(e.target.value)}>
+              <option value="">Todas as comunidades do escopo</option>
+              {communities.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+            <button className="btn-small" onClick={() => void loadReport()}>Gerar</button>
+            <button className="btn-small" onClick={() => downloadBlob('/tithe/report.csv', `dizimo-${reportMonth}.csv`, { referenceMonth: reportMonth, ...(reportCommunity ? { communityId: reportCommunity } : {}) })}>⬇ CSV</button>
+          </div>
+          {report && (
+            <div className="table-container">
+              <table className="data-table">
+                <thead><tr><th>Comunidade</th><th>Tipo</th><th>Meio</th><th>Qtde</th><th>Total</th></tr></thead>
+                <tbody>
+                  {report.rows.map((r) => (
+                    <tr key={`${r.communityId}-${r.kind}-${r.method}`}><td>{r.community}</td><td>{r.kind}</td><td>{r.method}</td><td>{r.count}</td><td>{formatBRL(r.total)}</td></tr>
+                  ))}
+                  <tr><td colSpan={3}><strong>Total {report.referenceMonth}</strong></td><td><strong>{report.totals.count}</strong></td><td><strong>{formatBRL(report.totals.total)}</strong></td></tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <h4 style={{ color: '#555', textTransform: 'uppercase', fontSize: '0.9rem', marginTop: '1.6rem' }}>Extrato anual do dizimista</h4>
+          <div className="filters-bar">
+            <select className="filter-select" value={statementMember} onChange={(e) => setStatementMember(e.target.value)}>
+              <option value="">Escolha o dizimista...</option>
+              {tithers.map((t: any) => (
+                <option key={t.id} value={t.member?.id ?? t.memberId}>{t.member?.fullName ?? t.memberId}</option>
+              ))}
+            </select>
+            <input type="number" className="filter-input" style={{ width: 110 }} value={statementYear} onChange={(e) => setStatementYear(e.target.value)} />
+            <button className="btn-small" disabled={!statementMember} onClick={() => downloadBlob(`/tithe/tithers/${statementMember}/statement.pdf`, `extrato-${statementYear}.pdf`, { year: statementYear })}>🖨 Extrato (PDF)</button>
+          </div>
+
+          {confirmTargets && (
+            <div className="module-modal-overlay" onClick={() => setConfirmTargets(null)}>
+              <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+                <h2>Confirmar {confirmTargets.length === 1 ? 'Pix' : `${confirmTargets.length} Pix`}</h2>
+                <p style={{ fontSize: '0.85rem', color: '#666' }}>
+                  {confirmTargets.length === 1
+                    ? `${confirmTargets[0].member.fullName} · ${formatBRL(confirmTargets[0].amount)} · id ${confirmTargets[0].txid}`
+                    : 'A mesma data vale para todos; valor pago e mês só podem ser ajustados um a um.'}
+                </p>
+                <form onSubmit={submitConfirm}>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Data em que caiu no extrato *</label>
+                      <input type="date" required value={confirmForm.date} onChange={(e) => setConfirmForm({ ...confirmForm, date: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                      <label>Nº no extrato (opcional)</label>
+                      <input type="text" value={confirmForm.receiptNumber} onChange={(e) => setConfirmForm({ ...confirmForm, receiptNumber: e.target.value })} />
+                    </div>
+                  </div>
+                  {confirmTargets.length === 1 && (
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Valor que caiu (R$)</label>
+                        <input type="text" value={confirmForm.amountPaid} onChange={(e) => setConfirmForm({ ...confirmForm, amountPaid: e.target.value })} />
+                      </div>
+                      <div className="form-group">
+                        <label>Mês de referência</label>
+                        <input type="month" value={confirmForm.referenceMonth} onChange={(e) => setConfirmForm({ ...confirmForm, referenceMonth: e.target.value })} />
+                      </div>
+                    </div>
+                  )}
+                  <div className="modal-actions">
+                    <button type="button" className="btn-cancel" onClick={() => setConfirmTargets(null)}>Cancelar</button>
+                    <button type="submit" className="btn-submit" disabled={busyIntent !== null}>{busyIntent ? 'Confirmando...' : 'Confirmar e lançar'}</button>
+                  </div>
+                </form>
+              </div>
             </div>
           )}
         </>
