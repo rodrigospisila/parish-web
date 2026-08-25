@@ -69,6 +69,7 @@ interface OnlineIntent {
   anonymous?: boolean;
   contestNote?: string | null;
   contestedAt?: string | null;
+  canReopen?: boolean;
   declaredAt?: string | null;
   confirmedAt?: string | null;
   createdAt: string;
@@ -136,9 +137,19 @@ const FinancePage: React.FC = () => {
   const [institutionalQr, setInstitutionalQr] = useState<{ qrDataUrl: string; brCode: string } | null>(null);
   const [statementMember, setStatementMember] = useState('');
   const [statementYear, setStatementYear] = useState(String(new Date().getFullYear()));
+  // Troca de chave Pix: senha atual num modal (nunca em texto claro)
+  const [pwdModal, setPwdModal] = useState(false);
+  const [pwd, setPwd] = useState('');
+
   // DIOCESAN/SYSTEM_ADMIN não têm paróquia própria: escolhem qual configurar
   const [parishOptions, setParishOptions] = useState<Array<{ id: string; name: string }>>([]);
   const [configParishId, setConfigParishId] = useState<string>(user?.parishId ?? '');
+  useEffect(() => {
+    // Trocar de paróquia zera o que era da anterior
+    setInstitutionalQr(null);
+    setTitheConfig(null);
+    setConfigError(null);
+  }, [configParishId]);
   const [loading, setLoading] = useState(true);
 
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -304,7 +315,7 @@ const FinancePage: React.FC = () => {
     if (!targets.length) return;
     const first = targets[0];
     setConfirmForm({
-      date: (first.declaredAt ?? first.createdAt).slice(0, 10),
+      date: new Date(first.declaredAt ?? first.createdAt).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }),
       receiptNumber: '',
       amountPaid: targets.length === 1 ? String(first.amount) : '',
       referenceMonth: targets.length === 1 ? first.referenceMonth : '',
@@ -326,7 +337,7 @@ const FinancePage: React.FC = () => {
         await api.post(`/tithe/intents/${intent.id}/confirm`, {
           date: confirmForm.date,
           receiptNumber: confirmForm.receiptNumber.trim() || undefined,
-          amountPaid: confirmTargets.length === 1 && confirmForm.amountPaid ? Number(confirmForm.amountPaid.replace(',', '.')) : undefined,
+          amountPaid: confirmTargets.length === 1 && confirmForm.amountPaid ? Number(confirmForm.amountPaid) : undefined,
           referenceMonth: confirmForm.referenceMonth || undefined,
         });
         done += 1;
@@ -372,23 +383,7 @@ const FinancePage: React.FC = () => {
     }
   };
 
-  const saveTitheConfig = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const keyChanged =
-      !!titheConfig?.pixKey &&
-      (configForm.pixKey.trim() !== (titheConfig.pixKey ?? '') || configForm.pixKeyType !== (titheConfig.pixKeyType ?? configForm.pixKeyType));
-    let currentPassword: string | undefined;
-    if (keyChanged) {
-      const typed = window.prompt(
-        'Você está TROCANDO a chave Pix da paróquia — todos os Pix ainda não informados serão cancelados e os outros administradores serão avisados.\n\nConfirme com a sua senha atual:',
-      );
-      if (typed === null) return;
-      currentPassword = typed;
-      if (!currentPassword.trim()) {
-        notify.error('Informe sua senha atual para trocar a chave Pix');
-        return;
-      }
-    }
+  const submitConfig = async (currentPassword?: string) => {
     setSavingConfig(true);
     try {
       const res = await api.patch('/tithe/config', {
@@ -402,15 +397,38 @@ const FinancePage: React.FC = () => {
         titheMessage: configForm.titheMessage.trim() || null,
       });
       setTitheConfig(res.data);
+      setConfigForm((current) => ({
+        ...current,
+        pixKey: res.data?.pixKey ?? '',
+        pixKeyType: res.data?.pixKeyType ?? current.pixKeyType,
+        pixMerchantName: res.data?.pixMerchantName ?? '',
+        pixMerchantCity: res.data?.pixMerchantCity ?? '',
+      }));
       notify.success(res.data?.titheEnabled ? 'Dízimo pelo app ATIVO para os fiéis' : 'Configuração salva (dízimo pelo app desativado)');
       if (res.data?.cancelledOpenIntents > 0) {
         notify.success(`${res.data.cancelledOpenIntents} Pix em aberto foram cancelados — os fiéis geram um novo código`);
       }
+      setPwdModal(false);
+      setPwd('');
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao salvar a configuração'));
     } finally {
       setSavingConfig(false);
     }
+  };
+
+  const saveTitheConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Qualquer mudança de chave/tipo (inclusive a primeira) pede a senha atual
+    const keyChanged =
+      configForm.pixKey.trim() !== (titheConfig?.pixKey ?? '') ||
+      configForm.pixKeyType !== (titheConfig?.pixKeyType ?? configForm.pixKeyType);
+    if (keyChanged) {
+      setPwd('');
+      setPwdModal(true);
+      return;
+    }
+    void submitConfig();
   };
 
 
@@ -762,7 +780,7 @@ const FinancePage: React.FC = () => {
                             <button className="btn-small" disabled={busyIntent !== null} onClick={() => void rejectIntent(intent)}>Não localizado</button>
                           </>
                         )}
-                        {intent.status === 'CANCELLED' && intent.note && intent.note !== 'Cancelado pelo fiel' && !intent.note.startsWith('Pix expirado') && (
+                        {intent.status === 'CANCELLED' && intent.canReopen && (
                           <button className="btn-small" disabled={busyIntent !== null} onClick={() => void reopenIntent(intent)}>Reabrir</button>
                         )}
                         {intent.status === 'CONFIRMED' && intent.member.id && (
@@ -814,6 +832,37 @@ const FinancePage: React.FC = () => {
             <button className="btn-small" disabled={!statementMember} onClick={() => downloadBlob(`/tithe/tithers/${statementMember}/statement.pdf`, `extrato-${statementYear}.pdf`, { year: statementYear })}>🖨 Extrato (PDF)</button>
           </div>
 
+          {pwdModal && (
+            <div className="module-modal-overlay" onClick={() => setPwdModal(false)}>
+              <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+                <h2>🔐 Confirmar troca da chave Pix</h2>
+                <p style={{ fontSize: '0.88rem', color: '#666' }}>
+                  Você está alterando a chave Pix da paróquia. Os Pix ainda não informados serão cancelados e os outros
+                  administradores serão avisados. Confirme com a sua senha atual.
+                </p>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!pwd.trim()) {
+                      notify.error('Informe sua senha atual');
+                      return;
+                    }
+                    void submitConfig(pwd);
+                  }}
+                >
+                  <div className="form-group">
+                    <label>Senha atual</label>
+                    <input type="password" autoComplete="current-password" autoFocus value={pwd} onChange={(e) => setPwd(e.target.value)} />
+                  </div>
+                  <div className="modal-actions">
+                    <button type="button" className="btn-cancel" onClick={() => setPwdModal(false)}>Cancelar</button>
+                    <button type="submit" className="btn-submit" disabled={savingConfig}>{savingConfig ? 'Salvando...' : 'Confirmar e salvar'}</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
           {confirmTargets && (
             <div className="module-modal-overlay" onClick={() => setConfirmTargets(null)}>
               <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
@@ -838,7 +887,7 @@ const FinancePage: React.FC = () => {
                     <div className="form-row">
                       <div className="form-group">
                         <label>Valor que caiu (R$)</label>
-                        <input type="text" value={confirmForm.amountPaid} onChange={(e) => setConfirmForm({ ...confirmForm, amountPaid: e.target.value })} />
+                        <input type="number" step="0.01" min="1" value={confirmForm.amountPaid} onChange={(e) => setConfirmForm({ ...confirmForm, amountPaid: e.target.value })} />
                       </div>
                       <div className="form-group">
                         <label>Mês de referência</label>
