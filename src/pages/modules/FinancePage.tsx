@@ -109,6 +109,10 @@ const FinancePage: React.FC = () => {
     titheMessage: '',
   });
   const [savingConfig, setSavingConfig] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
+  // DIOCESAN/SYSTEM_ADMIN não têm paróquia própria: escolhem qual configurar
+  const [parishOptions, setParishOptions] = useState<Array<{ id: string; name: string }>>([]);
+  const [configParishId, setConfigParishId] = useState<string>(user?.parishId ?? '');
   const [loading, setLoading] = useState(true);
 
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -183,7 +187,19 @@ const FinancePage: React.FC = () => {
     try {
       const [intentsRes, configRes] = await Promise.all([
         api.get('/tithe/intents', { params: { status: onlineStatus } }),
-        canConfigureTithe ? api.get('/tithe/config').catch(() => ({ data: null })) : Promise.resolve({ data: null }),
+        canConfigureTithe && (configParishId || user?.parishId)
+          ? api
+              .get('/tithe/config', { params: configParishId ? { parishId: configParishId } : undefined })
+              .then((res) => {
+                setConfigError(null);
+                return res;
+              })
+              .catch((error) => {
+                setConfigError(getErrorMessage(error, 'Não foi possível carregar a configuração do Pix'));
+                setTitheConfig(null);
+                return { data: null };
+              })
+          : Promise.resolve({ data: null }),
       ]);
       setOnlineIntents(intentsRes.data ?? []);
       if (configRes.data) {
@@ -203,17 +219,30 @@ const FinancePage: React.FC = () => {
     } finally {
       setOnlineLoading(false);
     }
-  }, [onlineStatus, canConfigureTithe]);
+  }, [onlineStatus, canConfigureTithe, configParishId, user?.parishId]);
 
   useEffect(() => {
     if (tab === 'online') void fetchOnline();
   }, [tab, fetchOnline]);
+
+  useEffect(() => {
+    if (tab === 'online' && canConfigureTithe && !user?.parishId && parishOptions.length === 0) {
+      api
+        .get('/parishes')
+        .then((res) => {
+          const list = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+          setParishOptions(list.map((parish: any) => ({ id: parish.id, name: parish.name })));
+        })
+        .catch(() => setParishOptions([]));
+    }
+  }, [tab, canConfigureTithe, user?.parishId, parishOptions.length]);
 
   const saveTitheConfig = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingConfig(true);
     try {
       const res = await api.patch('/tithe/config', {
+        parishId: configParishId || undefined,
         titheEnabled: configForm.titheEnabled,
         pixKeyType: configForm.pixKeyType,
         pixKey: configForm.pixKey.trim() || null,
@@ -236,12 +265,24 @@ const FinancePage: React.FC = () => {
       const typed = window.prompt('Motivo (o fiel recebe o aviso):', 'Pix não localizado no extrato');
       if (typed === null) return;
       reason = typed.trim() || undefined;
-    } else if (!window.confirm(`Confirmar o Pix de ${formatBRL(intent.amount)} de ${intent.member.fullName} (id ${intent.txid})? Vira contribuição e entra no Financeiro.`)) {
-      return;
+    }
+    let paidDate: string | undefined;
+    if (approve) {
+      const suggested = (intent.declaredAt ?? intent.createdAt).slice(0, 10);
+      const typed = window.prompt(
+        `Confirmar o Pix de ${formatBRL(intent.amount)} de ${intent.member.fullName} (id ${intent.txid}).\nData em que caiu no extrato (AAAA-MM-DD):`,
+        suggested,
+      );
+      if (typed === null) return;
+      paidDate = typed.trim() || suggested;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(paidDate)) {
+        notify.error('Data inválida — use AAAA-MM-DD');
+        return;
+      }
     }
     setBusyIntent(intent.id);
     try {
-      await api.post(`/tithe/intents/${intent.id}/${approve ? 'confirm' : 'reject'}`, approve ? {} : { reason });
+      await api.post(`/tithe/intents/${intent.id}/${approve ? 'confirm' : 'reject'}`, approve ? { date: paidDate } : { reason });
       notify.success(approve ? 'Contribuição confirmada e lançada no Financeiro' : 'Pix marcado como não localizado');
       await fetchOnline();
       if (approve) fetchFinance();
@@ -413,10 +454,26 @@ const FinancePage: React.FC = () => {
               <h4 style={{ margin: '0 0 0.3rem', color: '#555', textTransform: 'uppercase', fontSize: '0.9rem' }}>
                 Pix da paróquia {titheConfig ? `· ${titheConfig.name}` : ''}
               </h4>
+              {!user?.parishId && (
+                <div className="form-group" style={{ maxWidth: 420 }}>
+                  <label>Paróquia</label>
+                  <select className="filter-select" value={configParishId} onChange={(e) => setConfigParishId(e.target.value)}>
+                    <option value="">Escolha a paróquia...</option>
+                    {parishOptions.map((parish) => (
+                      <option key={parish.id} value={parish.id}>{parish.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {configError && <p style={{ color: '#b91c1c', fontSize: '0.85rem' }}>{configError}</p>}
+              {!titheConfig && !configError && (configParishId || user?.parishId) && (
+                <p style={{ color: '#666', fontSize: '0.85rem' }}>Carregando a configuração...</p>
+              )}
               <p style={{ fontSize: '0.85rem', color: '#666', margin: '0 0 0.8rem' }}>
                 O app gera um Pix “copia e cola” com a chave abaixo, o valor e um identificador. O fiel paga no próprio
                 banco e avisa; você confere no extrato e confirma aqui. Sem gateway, sem taxa.
               </p>
+              {titheConfig && (
               <form onSubmit={saveTitheConfig}>
                 <div className="form-row">
                   <div className="form-group">
@@ -431,7 +488,7 @@ const FinancePage: React.FC = () => {
                   </div>
                   <div className="form-group">
                     <label>Chave Pix</label>
-                    <input type="text" value={configForm.pixKey} onChange={(e) => setConfigForm({ ...configForm, pixKey: e.target.value })} placeholder="Só números para CPF/CNPJ" />
+                    <input type="text" maxLength={77} autoCapitalize="off" autoCorrect="off" spellCheck={false} value={configForm.pixKey} onChange={(e) => setConfigForm({ ...configForm, pixKey: e.target.value })} placeholder="CPF só números · CNPJ pode ter letras · e-mail em minúsculas" />
                   </div>
                 </div>
                 <div className="form-row">
@@ -459,6 +516,7 @@ const FinancePage: React.FC = () => {
                   </p>
                 )}
               </form>
+              )}
             </div>
           )}
 
