@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
+import { useAuth } from '../../contexts/AuthContext';
 import './ModulePages.css';
 
 interface Transaction {
@@ -55,8 +56,59 @@ function currentMonth(): string {
 const formatBRL = (value: number) =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
+interface OnlineIntent {
+  id: string;
+  member: { id: string; fullName: string; community: string | null };
+  amount: number;
+  referenceMonth: string;
+  kind: 'TITHE' | 'OFFERING';
+  status: 'CREATED' | 'DECLARED' | 'CONFIRMED' | 'CANCELLED';
+  txid: string;
+  note?: string | null;
+  declaredAt?: string | null;
+  confirmedAt?: string | null;
+  createdAt: string;
+}
+
+interface TitheConfig {
+  id: string;
+  name: string;
+  titheEnabled: boolean;
+  pixKey?: string | null;
+  pixKeyType?: string | null;
+  pixMerchantName?: string | null;
+  pixMerchantCity?: string | null;
+  titheMessage?: string | null;
+  brCodePreview?: string | null;
+}
+
+const INTENT_STATUS: Record<string, { label: string; color: string }> = {
+  CREATED: { label: 'Pix gerado', color: 'gray' },
+  DECLARED: { label: 'Aguardando conferência', color: 'yellow' },
+  CONFIRMED: { label: 'Confirmado', color: 'green' },
+  CANCELLED: { label: 'Cancelado', color: 'red' },
+};
+
 const FinancePage: React.FC = () => {
-  const [tab, setTab] = useState<'transactions' | 'tithe'>('transactions');
+  const { user } = useAuth();
+  const canConfigureTithe = ['PARISH_ADMIN', 'DIOCESAN_ADMIN', 'SYSTEM_ADMIN'].includes(user?.role ?? '');
+  const [tab, setTab] = useState<'transactions' | 'tithe' | 'online'>('transactions');
+
+  // Dízimo online (Pix da paróquia)
+  const [onlineIntents, setOnlineIntents] = useState<OnlineIntent[]>([]);
+  const [onlineStatus, setOnlineStatus] = useState('DECLARED');
+  const [onlineLoading, setOnlineLoading] = useState(false);
+  const [busyIntent, setBusyIntent] = useState<string | null>(null);
+  const [titheConfig, setTitheConfig] = useState<TitheConfig | null>(null);
+  const [configForm, setConfigForm] = useState({
+    titheEnabled: false,
+    pixKeyType: 'CNPJ',
+    pixKey: '',
+    pixMerchantName: '',
+    pixMerchantCity: '',
+    titheMessage: '',
+  });
+  const [savingConfig, setSavingConfig] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -125,6 +177,80 @@ const FinancePage: React.FC = () => {
   useEffect(() => {
     if (tab === 'tithe') fetchTithe();
   }, [tab, fetchTithe]);
+
+  const fetchOnline = useCallback(async () => {
+    setOnlineLoading(true);
+    try {
+      const [intentsRes, configRes] = await Promise.all([
+        api.get('/tithe/intents', { params: { status: onlineStatus } }),
+        canConfigureTithe ? api.get('/tithe/config').catch(() => ({ data: null })) : Promise.resolve({ data: null }),
+      ]);
+      setOnlineIntents(intentsRes.data ?? []);
+      if (configRes.data) {
+        const cfg: TitheConfig = configRes.data;
+        setTitheConfig(cfg);
+        setConfigForm({
+          titheEnabled: !!cfg.titheEnabled,
+          pixKeyType: cfg.pixKeyType ?? 'CNPJ',
+          pixKey: cfg.pixKey ?? '',
+          pixMerchantName: cfg.pixMerchantName ?? '',
+          pixMerchantCity: cfg.pixMerchantCity ?? '',
+          titheMessage: cfg.titheMessage ?? '',
+        });
+      }
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao carregar o dízimo online'));
+    } finally {
+      setOnlineLoading(false);
+    }
+  }, [onlineStatus, canConfigureTithe]);
+
+  useEffect(() => {
+    if (tab === 'online') void fetchOnline();
+  }, [tab, fetchOnline]);
+
+  const saveTitheConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingConfig(true);
+    try {
+      const res = await api.patch('/tithe/config', {
+        titheEnabled: configForm.titheEnabled,
+        pixKeyType: configForm.pixKeyType,
+        pixKey: configForm.pixKey.trim() || null,
+        pixMerchantName: configForm.pixMerchantName.trim() || null,
+        pixMerchantCity: configForm.pixMerchantCity.trim() || null,
+        titheMessage: configForm.titheMessage.trim() || null,
+      });
+      setTitheConfig(res.data);
+      notify.success(res.data?.titheEnabled ? 'Dízimo pelo app ATIVO para os fiéis' : 'Configuração salva (dízimo pelo app desativado)');
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao salvar a configuração'));
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  const reviewIntent = async (intent: OnlineIntent, approve: boolean) => {
+    let reason: string | undefined;
+    if (!approve) {
+      const typed = window.prompt('Motivo (o fiel recebe o aviso):', 'Pix não localizado no extrato');
+      if (typed === null) return;
+      reason = typed.trim() || undefined;
+    } else if (!window.confirm(`Confirmar o Pix de ${formatBRL(intent.amount)} de ${intent.member.fullName} (id ${intent.txid})? Vira contribuição e entra no Financeiro.`)) {
+      return;
+    }
+    setBusyIntent(intent.id);
+    try {
+      await api.post(`/tithe/intents/${intent.id}/${approve ? 'confirm' : 'reject'}`, approve ? {} : { reason });
+      notify.success(approve ? 'Contribuição confirmada e lançada no Financeiro' : 'Pix marcado como não localizado');
+      await fetchOnline();
+      if (approve) fetchFinance();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao processar'));
+    } finally {
+      setBusyIntent(null);
+    }
+  };
 
   useEffect(() => {
     api.get('/communities').then((res) => setCommunities(res.data)).catch(() => undefined);
@@ -221,6 +347,9 @@ const FinancePage: React.FC = () => {
         <button className={`tab-btn ${tab === 'tithe' ? 'active' : ''}`} onClick={() => setTab('tithe')}>
           Dízimo
         </button>
+        <button className={`tab-btn ${tab === 'online' ? 'active' : ''}`} onClick={() => setTab('online')}>
+          Dízimo online (Pix)
+        </button>
       </div>
 
       {tab === 'transactions' && (
@@ -274,6 +403,126 @@ const FinancePage: React.FC = () => {
             </table>
             {transactions.length === 0 && <div className="empty-state">Nenhum lançamento no período.</div>}
           </div>
+        </>
+      )}
+
+      {tab === 'online' && (
+        <>
+          {canConfigureTithe && (
+            <div className="filters-bar" style={{ display: 'block', marginBottom: '1rem' }}>
+              <h4 style={{ margin: '0 0 0.3rem', color: '#555', textTransform: 'uppercase', fontSize: '0.9rem' }}>
+                Pix da paróquia {titheConfig ? `· ${titheConfig.name}` : ''}
+              </h4>
+              <p style={{ fontSize: '0.85rem', color: '#666', margin: '0 0 0.8rem' }}>
+                O app gera um Pix “copia e cola” com a chave abaixo, o valor e um identificador. O fiel paga no próprio
+                banco e avisa; você confere no extrato e confirma aqui. Sem gateway, sem taxa.
+              </p>
+              <form onSubmit={saveTitheConfig}>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Tipo da chave</label>
+                    <select className="filter-select" value={configForm.pixKeyType} onChange={(e) => setConfigForm({ ...configForm, pixKeyType: e.target.value })}>
+                      <option value="CNPJ">CNPJ</option>
+                      <option value="CPF">CPF</option>
+                      <option value="EMAIL">E-mail</option>
+                      <option value="PHONE">Telefone (+55…)</option>
+                      <option value="RANDOM">Chave aleatória</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Chave Pix</label>
+                    <input type="text" value={configForm.pixKey} onChange={(e) => setConfigForm({ ...configForm, pixKey: e.target.value })} placeholder="Só números para CPF/CNPJ" />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Nome do recebedor (até 25, sem acento)</label>
+                    <input type="text" maxLength={25} value={configForm.pixMerchantName} onChange={(e) => setConfigForm({ ...configForm, pixMerchantName: e.target.value })} placeholder="PAROQUIA SANTA RITA" />
+                  </div>
+                  <div className="form-group">
+                    <label>Cidade (até 15)</label>
+                    <input type="text" maxLength={15} value={configForm.pixMerchantCity} onChange={(e) => setConfigForm({ ...configForm, pixMerchantCity: e.target.value })} placeholder="PONTA GROSSA" />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Mensagem ao fiel (opcional)</label>
+                  <input type="text" maxLength={500} value={configForm.titheMessage} onChange={(e) => setConfigForm({ ...configForm, titheMessage: e.target.value })} placeholder="Seu dízimo sustenta a missão da paróquia…" />
+                </div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem', marginBottom: '0.6rem' }}>
+                  <input type="checkbox" checked={configForm.titheEnabled} onChange={(e) => setConfigForm({ ...configForm, titheEnabled: e.target.checked })} />
+                  Ativar o dízimo pelo app para os fiéis desta paróquia
+                </label>
+                <button type="submit" className="btn-small success" disabled={savingConfig}>{savingConfig ? 'Salvando...' : 'Salvar configuração'}</button>
+                {titheConfig?.brCodePreview && (
+                  <p style={{ fontSize: '0.75rem', color: '#888', marginTop: '0.6rem', wordBreak: 'break-all' }}>
+                    Prévia do código: {titheConfig.brCodePreview}
+                  </p>
+                )}
+              </form>
+            </div>
+          )}
+
+          <div className="filters-bar">
+            <select className="filter-select" value={onlineStatus} onChange={(e) => setOnlineStatus(e.target.value)}>
+              <option value="DECLARED">Aguardando conferência</option>
+              <option value="CREATED">Pix gerados (não informados)</option>
+              <option value="CONFIRMED">Confirmados</option>
+              <option value="CANCELLED">Cancelados / não localizados</option>
+              <option value="ALL">Todos</option>
+            </select>
+            <button className="btn-small" onClick={() => void fetchOnline()} disabled={onlineLoading}>↻ Atualizar</button>
+          </div>
+
+          {onlineLoading && <div className="loading">Carregando...</div>}
+          {!onlineLoading && onlineIntents.length === 0 && (
+            <p style={{ color: '#666' }}>
+              {onlineStatus === 'DECLARED' ? 'Nenhum Pix aguardando conferência.' : 'Nada por aqui.'}
+            </p>
+          )}
+          {!onlineLoading && onlineIntents.length > 0 && (
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Fiel</th>
+                    <th>Comunidade</th>
+                    <th>Tipo</th>
+                    <th>Referência</th>
+                    <th>Valor</th>
+                    <th>Identificador (txid)</th>
+                    <th>Informado em</th>
+                    <th>Situação</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {onlineIntents.map((intent) => (
+                    <tr key={intent.id}>
+                      <td>{intent.member.fullName}</td>
+                      <td>{intent.member.community ?? '—'}</td>
+                      <td>{intent.kind === 'TITHE' ? 'Dízimo' : 'Oferta'}</td>
+                      <td>{intent.referenceMonth}</td>
+                      <td>{formatBRL(intent.amount)}</td>
+                      <td><code>{intent.txid}</code></td>
+                      <td>{intent.declaredAt ? new Date(intent.declaredAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                      <td>
+                        <span className={`status-badge ${INTENT_STATUS[intent.status]?.color ?? 'gray'}`}>{INTENT_STATUS[intent.status]?.label ?? intent.status}</span>
+                        {intent.note && intent.status === 'CANCELLED' ? <div style={{ fontSize: '0.75rem', color: '#888' }}>{intent.note}</div> : null}
+                      </td>
+                      <td className="actions-cell">
+                        {(intent.status === 'DECLARED' || intent.status === 'CREATED') && (
+                          <>
+                            <button className="btn-small success" disabled={busyIntent === intent.id} onClick={() => void reviewIntent(intent, true)}>Confirmar</button>
+                            <button className="btn-small" disabled={busyIntent === intent.id} onClick={() => void reviewIntent(intent, false)}>Não localizado</button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
 
