@@ -66,7 +66,8 @@ interface ProviderSetupResult {
 
 interface OnlineIntent {
   id: string;
-  member: { id: string; fullName: string; community: string | null };
+  /** id null = oferta anônima (sem fiel vinculado) */
+  member: { id: string | null; fullName: string; community: string | null };
   amount: number;
   referenceMonth: string;
   kind: 'TITHE' | 'OFFERING';
@@ -89,7 +90,7 @@ interface OnlineIntent {
   feeAmount: number;
   /** Meio escolhido pelo fiel; cartão e boleto só existem com o Asaas (confirmação por webhook) */
   paymentMethod: 'PIX' | 'CARD' | 'BOLETO';
-  /** Página de pagamento do Asaas (cartão/boleto); null no Pix */
+  /** Página de pagamento do Asaas (cartão/boleto); null no Pix e nas ofertas anônimas */
   paymentUrl: string | null;
 }
 
@@ -124,13 +125,17 @@ interface TitheConfig {
   providerWebhookSecretByAdmin?: boolean;
   webhookUrl?: string | null;
   paymentsCryptoReady?: boolean;
+  /** Motivo exato quando a criptografia das chaves não está pronta (null = ok) */
+  paymentsCryptoProblem?: string | null;
+  /** Resultado do cadastro automático na conta Asaas (vem no PATCH e na rotação do token) */
+  providerSetup?: ProviderSetupResult | null;
   feePolicy?: string;
   feeFixed?: number;
   feePercent?: number;
 }
 
 const INTENT_STATUS: Record<string, { label: string; color: string }> = {
-  CREATED: { label: 'Pix gerado', color: 'gray' },
+  CREATED: { label: 'Cobrança gerada', color: 'gray' },
   DECLARED: { label: 'Aguardando conferência', color: 'yellow' },
   CONFIRMED: { label: 'Confirmado', color: 'green' },
   CANCELLED: { label: 'Cancelado', color: 'red' },
@@ -146,6 +151,8 @@ const PROVIDER_STATUS_LABEL: Record<string, string> = {
   refunded: 'estornado',
   cancelled: 'cancelado no provedor',
   mismatch: 'divergência de valor — conciliar',
+  in_review: 'cartão em análise',
+  disputed: 'estorno/chargeback em disputa',
 };
 const providerStatusLabel = (status: string | null | undefined): string | null =>
   status ? PROVIDER_STATUS_LABEL[status.toLowerCase()] ?? status : null;
@@ -162,12 +169,23 @@ const PAYMENT_METHOD_BADGE: Record<string, string> = {
   CARD: '💳 Cartão',
   BOLETO: '📄 Boleto',
 };
+// Nome do meio para textos curtos ("Pix não localizado", "Cartão · R$ 50,00")
+const PAYMENT_METHOD_NAME: Record<string, string> = { PIX: 'Pix', CARD: 'Cartão', BOLETO: 'Boleto' };
+const methodName = (intent: OnlineIntent): string => PAYMENT_METHOD_NAME[intent.paymentMethod] ?? 'Pagamento';
 
 const isOpenIntent = (intent: OnlineIntent) => intent.status === 'DECLARED' || intent.status === 'CREATED';
-// Pix do provedor em aberto é confirmado pelo webhook/consulta — a tesouraria só
-// mexe manualmente no Pix estático ou quando o provedor apontou divergência de valor
+// Provedor apontou pagamento com valor/ref diferente do declarado: só conciliação individual
+const isMismatch = (intent: OnlineIntent) => intent.method === 'GATEWAY' && intent.providerStatus === 'mismatch';
+// Cobrança do provedor em aberto é confirmada pelo webhook/consulta — a tesouraria só
+// mexe manualmente no Pix estático, quando o provedor apontou divergência de valor ou
+// quando a cobrança nem chegou a existir no provedor (sem providerRef)
 const needsManualCheck = (intent: OnlineIntent) =>
-  isOpenIntent(intent) && (intent.method !== 'GATEWAY' || intent.providerStatus === 'mismatch');
+  isOpenIntent(intent) && (intent.method !== 'GATEWAY' || isMismatch(intent) || !intent.providerRef);
+// Lote só para conferência simples; divergência de valor exige olhar item a item
+const canBatchConfirm = (intent: OnlineIntent) => needsManualCheck(intent) && !isMismatch(intent);
+// Consulta ao provedor: em aberto (webhook pode ter atrasado) ou já confirmada (detectar estorno/chargeback)
+const canSyncProvider = (intent: OnlineIntent) =>
+  intent.method === 'GATEWAY' && !!intent.providerRef && (intent.status === 'CONFIRMED' || (isOpenIntent(intent) && !isMismatch(intent)));
 
 const THROTTLE_MESSAGE = 'Muitas tentativas — aguarde um minuto e tente de novo';
 const THROTTLE_PATTERN = /ThrottlerException|Too Many Requests/i;
@@ -440,7 +458,7 @@ const FinancePage: React.FC = () => {
     e.preventDefault();
     if (!confirmTargets) return;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(confirmForm.date)) {
-      notify.error('Informe a data em que o Pix caiu no extrato');
+      notify.error('Informe a data em que o pagamento caiu no extrato');
       return;
     }
     setBusyIntent('batch');
@@ -487,12 +505,26 @@ const FinancePage: React.FC = () => {
   };
 
   const rejectIntent = async (intent: OnlineIntent) => {
-    const typed = window.prompt('Motivo (o fiel recebe o aviso e pode contestar):', 'Pix não localizado no extrato');
+    const mismatch = isMismatch(intent);
+    // Divergência: o provedor consta pago — encerrar sem lançar precisa de aviso explícito
+    if (
+      mismatch &&
+      !window.confirm(
+        `Atenção: o provedor consta este pagamento como PAGO${intent.note ? ` (${intent.note})` : ''}. ` +
+          'Encerrar sem lançar no Financeiro? O valor recebido não será contabilizado nesta contribuição.',
+      )
+    ) {
+      return;
+    }
+    const typed = window.prompt(
+      'Motivo (o fiel recebe o aviso e pode contestar):',
+      mismatch ? 'Divergência de valor com o provedor — encerrado sem lançamento' : `${methodName(intent)} não localizado no extrato`,
+    );
     if (typed === null) return;
     setBusyIntent(intent.id);
     try {
       await api.post(`/tithe/intents/${intent.id}/reject`, { reason: typed.trim() || undefined });
-      notify.success('Pix marcado como não localizado');
+      notify.success(mismatch ? 'Encerrado sem lançamento no Financeiro' : `${methodName(intent)} marcado como não localizado`);
       await fetchOnline();
     } catch (error) {
       notify.error(friendlyError(error, 'Erro ao processar'));
@@ -505,7 +537,7 @@ const FinancePage: React.FC = () => {
     setBusyIntent(intent.id);
     try {
       await api.post(`/tithe/intents/${intent.id}/reopen`, {});
-      notify.success('Pix reaberto — volta para a fila de conferência');
+      notify.success('Contribuição reaberta — volta para a fila de conferência');
       await fetchOnline();
     } catch (error) {
       notify.error(friendlyError(error, 'Erro ao reabrir'));
@@ -514,7 +546,10 @@ const FinancePage: React.FC = () => {
     }
   };
 
-  /** Pix do provedor: consulta a situação lá (o webhook pode ter atrasado) e troca o item da lista pelo retorno */
+  /**
+   * Cobrança do provedor: consulta a situação lá e troca o item da lista pelo retorno.
+   * Em aberto, cobre webhook atrasado; já confirmada, detecta estorno/chargeback (o backend reverte a contribuição).
+   */
   const syncIntent = async (intent: OnlineIntent) => {
     setBusyIntent(intent.id);
     try {
@@ -525,13 +560,29 @@ const FinancePage: React.FC = () => {
         return;
       }
       setOnlineIntents((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-      if (updated.status === 'CONFIRMED') {
-        notify.success('Pago no provedor — confirmado');
+      const wasConfirmed = intent.status === 'CONFIRMED';
+      const providerStatus = updated.providerStatus?.toLowerCase() ?? null;
+      if (updated.status === 'CANCELLED' && providerStatus === 'refunded') {
+        notify.warning('Estornado pelo provedor — contribuição revertida');
         fetchFinance();
+      } else if (updated.status === 'CONFIRMED' && providerStatus === 'disputed') {
+        notify.warning('Estorno/chargeback em disputa no provedor — se for concluído, a contribuição será revertida');
+      } else if (updated.status === 'CONFIRMED') {
+        if (wasConfirmed) {
+          notify.info('Sem estorno — pagamento segue confirmado no provedor');
+        } else {
+          notify.success('Pago no provedor — confirmado');
+          fetchFinance();
+        }
       } else if (updated.status === 'CANCELLED') {
         notify.warning(updated.note ? `Encerrado no provedor — ${updated.note}` : 'Encerrado no provedor');
-      } else if (updated.providerStatus === 'mismatch') {
-        notify.warning('Divergência de valor no provedor — concilie manualmente');
+        if (wasConfirmed) fetchFinance();
+      } else if (providerStatus === 'mismatch') {
+        notify.warning(
+          updated.note ? `Divergência de valor no provedor (${updated.note}) — concilie manualmente` : 'Divergência de valor no provedor — concilie manualmente',
+        );
+      } else if (providerStatus === 'in_review') {
+        notify.info('Cartão em análise de risco no provedor — aguarde a liberação');
       } else {
         notify.info('Ainda aguardando pagamento no provedor');
       }
@@ -594,10 +645,20 @@ const FinancePage: React.FC = () => {
             ? providerForm.providerWebhookSecret.trim()
             : undefined,
       });
-      setTitheConfig(res.data);
-      setProviderSetup(res.data?.providerSetup ?? null);
+      const saved: TitheConfig | null = res.data ?? null;
+      const setup = saved?.providerSetup ?? null;
+      setTitheConfig(saved);
+      setProviderSetup(setup);
       setProviderForm((current) => ({ ...current, providerApiKey: '', providerWebhookSecret: '' }));
-      notify.success(res.data?.providerConfigured ? 'Provedor configurado — confirmação automática ativa' : 'Configuração do provedor salva');
+      if (!saved?.providerConfigured) {
+        notify.success('Configuração do provedor salva');
+      } else if (saved.paymentProvider !== 'ASAAS' || (setup?.pixKeyReady && setup?.webhookRegistered)) {
+        notify.success('Provedor configurado — confirmação automática ativa');
+      } else {
+        // O bloco de status abaixo do formulário mostra o detalhe de cada pendência
+        const pending = [setup?.pixKeyReady ? null : 'chave Pix', setup?.webhookRegistered ? null : 'webhook'].filter(Boolean);
+        notify.warning(`Provedor salvo, mas a conta Asaas ainda tem pendência: ${pending.join(' e ')} — veja os detalhes abaixo`);
+      }
       setProviderPwdModal(false);
       setPwd('');
     } catch (error) {
@@ -609,10 +670,12 @@ const FinancePage: React.FC = () => {
 
   const saveProvider = (e: React.FormEvent) => {
     e.preventDefault();
+    // Chave, assinatura, provedor ou ambiente: o backend exige a senha atual em todos (sandbox → produção inclusive)
     const sensitive =
       providerForm.providerApiKey.trim().length > 0 ||
       providerForm.providerWebhookSecret.trim().length > 0 ||
-      (providerForm.paymentProvider || null) !== (titheConfig?.paymentProvider ?? null);
+      (providerForm.paymentProvider || null) !== (titheConfig?.paymentProvider ?? null) ||
+      providerForm.providerEnv !== (titheConfig?.providerEnv ?? 'sandbox');
     if (sensitive) {
       setPwd('');
       setProviderPwdModal(true);
@@ -637,13 +700,18 @@ const FinancePage: React.FC = () => {
 
   const rotateWebhookToken = async () => {
     if (rotatingToken) return;
-    if (!window.confirm('Gerar um novo token do webhook? O Parish atualiza o webhook na conta Asaas automaticamente.')) return;
+    if (!window.confirm('Gerar um novo token do webhook? O token anterior deixa de valer.')) return;
     setRotatingToken(true);
     try {
       const res = await api.post('/tithe/config/webhook-token', { parishId: configParishId || undefined });
-      setTitheConfig((current) => (current ? { ...current, providerWebhookToken: res.data.providerWebhookToken } : current));
-      setProviderSetup(res.data?.providerSetup ?? null);
-      notify.success('Novo token gerado — atualize agora no painel do Asaas');
+      const setup: ProviderSetupResult | null = res.data?.providerSetup ?? null;
+      setTitheConfig((current) => (current ? { ...current, providerWebhookToken: res.data.providerWebhookToken, providerSetup: setup } : current));
+      setProviderSetup(setup);
+      if (setup?.webhookRegistered) {
+        notify.success('Novo token gerado e webhook do Asaas atualizado');
+      } else {
+        notify.warning('Token gerado, mas não foi possível atualizar o webhook no Asaas — verifique a conta');
+      }
     } catch (error) {
       notify.error(friendlyError(error, 'Erro ao gerar o token'));
     } finally {
@@ -685,8 +753,8 @@ const FinancePage: React.FC = () => {
   }, [pwdModal, providerPwdModal]);
 
   const isMercadoPago = providerForm.paymentProvider === 'MERCADOPAGO';
-  // Só o que está na lista atual E pede conferência manual conta na seleção
-  const selectedTargets = onlineIntents.filter((intent) => selectedIds[intent.id] && needsManualCheck(intent));
+  // Só o que está na lista atual E pode ir em lote conta na seleção (divergências de valor ficam de fora)
+  const selectedTargets = onlineIntents.filter((intent) => selectedIds[intent.id] && canBatchConfirm(intent));
 
   useEffect(() => {
     api.get('/communities').then((res) => setCommunities(res.data)).catch(() => undefined);
@@ -956,7 +1024,7 @@ const FinancePage: React.FC = () => {
                     Com um provedor, o Pix do fiel é confirmado sozinho (sem conferir extrato) e o dízimo pode ser
                     automático (Pix Automático). Recomendado: <strong>Asaas</strong> (CNPJ da paróquia, sem mensalidade).
                     {titheConfig.paymentsCryptoReady === false && (
-                      <span style={{ color: '#b91c1c' }}> Servidor sem PAYMENTS_ENCRYPTION_KEY — peça ao administrador do sistema para configurar antes de cadastrar a chave.</span>
+                      <span style={{ color: '#b91c1c' }}> {titheConfig.paymentsCryptoProblem ?? 'Servidor sem PAYMENTS_ENCRYPTION_KEY'} — peça ao administrador do sistema para configurar antes de cadastrar a chave.</span>
                     )}
                   </p>
                   <p style={{ fontSize: '0.85rem', color: '#666', margin: '0 0 0.8rem' }}>
@@ -1028,7 +1096,8 @@ const FinancePage: React.FC = () => {
                     <div style={{ marginTop: '0.8rem', fontSize: '0.85rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '0.7rem 0.9rem' }}>
                       <div><strong>Webhook</strong> — cadastre no painel do provedor:</div>
                       <div style={{ wordBreak: 'break-all' }}>URL: <code>{titheConfig.webhookUrl}</code></div>
-                      {isMercadoPago ? (
+                      {/* Decide pelo provedor salvo (config), não pelo formulário ainda não salvo */}
+                      {titheConfig.providerWebhookSecretByAdmin ? (
                         <>
                           <div style={{ marginTop: '0.3rem', fontWeight: 600, color: titheConfig.providerWebhookSecretSet ? '#0f6e56' : '#b45309' }}>
                             {titheConfig.providerWebhookSecretSet ? 'Assinatura cadastrada ✓' : 'Assinatura pendente — o webhook será recusado até cadastrar'}
@@ -1085,7 +1154,7 @@ const FinancePage: React.FC = () => {
             )}
             <select className="filter-select" value={onlineStatus} onChange={(e) => setOnlineStatus(e.target.value)}>
               <option value="DECLARED">Aguardando conferência</option>
-              <option value="CREATED">Pix gerados (não informados)</option>
+              <option value="CREATED">Gerados (não informados)</option>
               <option value="CONFIRMED">Confirmados</option>
               <option value="CANCELLED">Cancelados / não localizados</option>
               <option value="ALL">Todos</option>
@@ -1096,7 +1165,7 @@ const FinancePage: React.FC = () => {
           {onlineLoading && <div className="loading">Carregando...</div>}
           {!onlineLoading && onlineIntents.length === 0 && (
             <p style={{ color: '#666' }}>
-              {onlineStatus === 'DECLARED' ? 'Nenhum Pix aguardando conferência.' : 'Nada por aqui.'}
+              {onlineStatus === 'DECLARED' ? 'Nenhum pagamento aguardando conferência.' : 'Nada por aqui.'}
             </p>
           )}
           {!onlineLoading && onlineIntents.length > 0 && (
@@ -1107,10 +1176,10 @@ const FinancePage: React.FC = () => {
                     <th>
                       <input
                         type="checkbox"
-                        title="Selecionar todos os aguardando conferência manual (Pix do provedor ficam de fora)"
+                        title="Selecionar todos os aguardando conferência manual (cobranças do provedor e divergências de valor ficam de fora)"
                         onChange={(e) => {
                           const next: Record<string, boolean> = {};
-                          if (e.target.checked) onlineIntents.filter(needsManualCheck).forEach((i) => { next[i.id] = true; });
+                          if (e.target.checked) onlineIntents.filter(canBatchConfirm).forEach((i) => { next[i.id] = true; });
                           setSelectedIds(next);
                         }}
                       />
@@ -1128,9 +1197,9 @@ const FinancePage: React.FC = () => {
                 </thead>
                 <tbody>
                   {onlineIntents.map((intent) => (
-                    <tr key={intent.id}>
+                    <tr key={intent.id} style={isMismatch(intent) ? { background: '#fffbeb' } : undefined}>
                       <td>
-                        {needsManualCheck(intent) && (
+                        {canBatchConfirm(intent) && (
                           <input type="checkbox" checked={!!selectedIds[intent.id]} onChange={(e) => setSelectedIds({ ...selectedIds, [intent.id]: e.target.checked })} />
                         )}
                       </td>
@@ -1157,7 +1226,8 @@ const FinancePage: React.FC = () => {
                         {intent.paymentMethod && intent.paymentMethod !== 'PIX' && (
                           <div style={{ fontSize: '0.72rem', color: '#555' }}>
                             {PAYMENT_METHOD_BADGE[intent.paymentMethod] ?? intent.paymentMethod}
-                            {intent.paymentUrl && isOpenIntent(intent) ? (
+                            {/* Oferta anônima (sem fiel) não tem página de cobrança para reabrir */}
+                            {intent.paymentUrl && intent.member.id && isOpenIntent(intent) ? (
                               <>
                                 {' · '}
                                 <a href={intent.paymentUrl} target="_blank" rel="noreferrer">abrir cobrança</a>
@@ -1177,25 +1247,40 @@ const FinancePage: React.FC = () => {
                       <td>
                         <span className={`status-badge ${INTENT_STATUS[intent.status]?.color ?? 'gray'}`}>{INTENT_STATUS[intent.status]?.label ?? intent.status}</span>
                         {intent.note && intent.status === 'CANCELLED' ? <div style={{ fontSize: '0.75rem', color: '#888' }}>{intent.note}</div> : null}
+                        {isMismatch(intent) && intent.note ? (
+                          <div style={{ fontSize: '0.75rem', color: '#b45309', fontWeight: 600 }}>⚠ Provedor informou: {intent.note}</div>
+                        ) : null}
                       </td>
                       <td className="actions-cell">
                         {needsManualCheck(intent) && (
                           <>
                             <button className="btn-small success" disabled={busyIntent !== null} onClick={() => openConfirm([intent])}>Confirmar</button>
-                            <button className="btn-small" disabled={busyIntent !== null} onClick={() => void rejectIntent(intent)}>Não localizado</button>
+                            <button
+                              className="btn-small"
+                              disabled={busyIntent !== null}
+                              title={isMismatch(intent) ? 'O provedor consta pago com outro valor; encerra sem lançar no Financeiro' : undefined}
+                              onClick={() => void rejectIntent(intent)}
+                            >
+                              {isMismatch(intent) ? 'Encerrar sem lançar' : 'Não localizado'}
+                            </button>
                           </>
                         )}
-                        {isOpenIntent(intent) && !needsManualCheck(intent) && (
+                        {canSyncProvider(intent) && (
                           <button
                             className="btn-small"
                             disabled={busyIntent !== null}
-                            title="O provedor confirma sozinho; consulte se o webhook atrasou"
+                            title={
+                              intent.status === 'CONFIRMED'
+                                ? 'Consulta o provedor para detectar estorno ou chargeback; se houver, a contribuição é revertida'
+                                : 'O provedor confirma sozinho; consulte se o webhook atrasou'
+                            }
                             onClick={() => void syncIntent(intent)}
                           >
-                            {busyIntent === intent.id ? 'Consultando...' : 'Consultar provedor'}
+                            {busyIntent === intent.id ? 'Consultando...' : intent.status === 'CONFIRMED' ? 'Verificar estorno' : 'Consultar provedor'}
                           </button>
                         )}
-                        {intent.status === 'CANCELLED' && intent.canReopen && (
+                        {/* Reabrir: a regra vem do backend (canReopen), sem condição local extra */}
+                        {intent.canReopen && (
                           <button className="btn-small" disabled={busyIntent !== null} onClick={() => void reopenIntent(intent)}>Reabrir</button>
                         )}
                         {intent.status === 'CONFIRMED' && intent.member.id && (
@@ -1252,7 +1337,8 @@ const FinancePage: React.FC = () => {
               <div className="module-modal" role="dialog" aria-modal="true" aria-labelledby="provider-pwd-title" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
                 <h2 id="provider-pwd-title">🔐 Confirmar provedor de pagamento</h2>
                 <p style={{ fontSize: '0.88rem', color: '#666' }}>
-                  Trocar o provedor ou a chave de API muda para onde o dinheiro do dízimo vai. Confirme com a sua senha atual.
+                  Trocar o provedor, o ambiente ou a chave de API muda para onde o dinheiro do dízimo vai. Trocar provedor ou
+                  ambiente encerra as cobranças e dízimos automáticos em aberto no provedor anterior. Confirme com a sua senha atual.
                 </p>
                 <form
                   onSubmit={(e) => {
@@ -1311,12 +1397,17 @@ const FinancePage: React.FC = () => {
           {confirmTargets && (
             <div className="module-modal-overlay" onClick={() => setConfirmTargets(null)}>
               <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
-                <h2>Confirmar {confirmTargets.length === 1 ? 'Pix' : `${confirmTargets.length} Pix`}</h2>
+                <h2>{confirmTargets.length === 1 ? 'Confirmar pagamento' : `Confirmar ${confirmTargets.length} pagamentos`}</h2>
                 <p style={{ fontSize: '0.85rem', color: '#666' }}>
                   {confirmTargets.length === 1
-                    ? `${confirmTargets[0].member.fullName} · ${formatBRL(confirmTargets[0].amount)} · id ${confirmTargets[0].txid}`
+                    ? `${confirmTargets[0].member.fullName} · ${methodName(confirmTargets[0])} · ${formatBRL(confirmTargets[0].amount)} · id ${confirmTargets[0].txid}`
                     : 'A mesma data vale para todos; valor pago e mês só podem ser ajustados um a um.'}
                 </p>
+                {confirmTargets.length === 1 && isMismatch(confirmTargets[0]) && confirmTargets[0].note ? (
+                  <p style={{ fontSize: '0.85rem', color: '#b45309', fontWeight: 600 }}>
+                    ⚠ Provedor informou: {confirmTargets[0].note} — confira o valor que caiu antes de lançar.
+                  </p>
+                ) : null}
                 <form onSubmit={submitConfirm}>
                   <div className="form-row">
                     <div className="form-group">
