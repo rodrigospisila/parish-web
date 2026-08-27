@@ -990,3 +990,25 @@
   flex-wrap: wrap;
   margin-top: 0.5rem;
 }
+
+/* Campanhas (Financeiro): barra de progresso da meta */
+.campaign-progress {
+  height: 8px;
+  min-width: 120px;
+  margin-top: 0.3rem;
+  background: #e9ecef;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.campaign-progress > span {
+  display: block;
+  height: 100%;
+  background: #28a745;
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+
+.campaign-progress.over > span {
+  background: #0d6efd;
+}

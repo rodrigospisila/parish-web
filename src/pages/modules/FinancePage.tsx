@@ -3,6 +3,8 @@ import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
 import { useAuth } from '../../contexts/AuthContext';
+import CampaignsTab from './finance/CampaignsTab';
+import { formatBRL, httpStatus, friendlyError, plural, downloadBlob } from './finance/financeShared';
 import './ModulePages.css';
 
 interface Transaction {
@@ -40,6 +42,7 @@ interface Contribution {
 interface Community {
   id: string;
   name: string;
+  parishId?: string;
 }
 
 interface Member {
@@ -52,9 +55,6 @@ const METHODS = ['Dinheiro', 'PIX', 'Cartão', 'Transferência', 'Envelope'];
 function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
 }
-
-const formatBRL = (value: number) =>
-  value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 interface ProviderSetupResult {
   pixKeyReady: boolean;
@@ -187,17 +187,6 @@ const canBatchConfirm = (intent: OnlineIntent) => needsManualCheck(intent) && !i
 const canSyncProvider = (intent: OnlineIntent) =>
   intent.method === 'GATEWAY' && !!intent.providerRef && (intent.status === 'CONFIRMED' || (isOpenIntent(intent) && !isMismatch(intent)));
 
-const THROTTLE_MESSAGE = 'Muitas tentativas — aguarde um minuto e tente de novo';
-const THROTTLE_PATTERN = /ThrottlerException|Too Many Requests/i;
-const httpStatus = (error: unknown): number | undefined =>
-  typeof error === 'object' && error !== null ? (error as { response?: { status?: number } }).response?.status : undefined;
-/** Mensagem de erro amigável: 429/throttler vira um aviso claro em vez do texto técnico do Nest */
-const friendlyError = (error: unknown, fallback: string): string => {
-  const message = getErrorMessage(error, fallback);
-  if (httpStatus(error) === 429 || THROTTLE_PATTERN.test(message)) return THROTTLE_MESSAGE;
-  return message;
-};
-const plural = (count: number, one: string, many: string) => (count === 1 ? one : many);
 
 const EMPTY_CONFIG_FORM = {
   titheEnabled: false,
@@ -220,7 +209,7 @@ const EMPTY_PROVIDER_FORM = {
 const FinancePage: React.FC = () => {
   const { user } = useAuth();
   const canConfigureTithe = ['PARISH_ADMIN', 'DIOCESAN_ADMIN', 'SYSTEM_ADMIN'].includes(user?.role ?? '');
-  const [tab, setTab] = useState<'transactions' | 'tithe' | 'online'>('transactions');
+  const [tab, setTab] = useState<'transactions' | 'tithe' | 'online' | 'campaigns'>('transactions');
 
   // Dízimo online (Pix da paróquia)
   const [onlineIntents, setOnlineIntents] = useState<OnlineIntent[]>([]);
@@ -396,7 +385,7 @@ const FinancePage: React.FC = () => {
   }, [tab, fetchOnline, fetchTithe]);
 
   useEffect(() => {
-    if (tab === 'online' && canConfigureTithe && !user?.parishId && parishOptions.length === 0) {
+    if ((tab === 'online' || tab === 'campaigns') && canConfigureTithe && !user?.parishId && parishOptions.length === 0) {
       api
         .get('/parishes')
         .then((res) => {
@@ -406,30 +395,6 @@ const FinancePage: React.FC = () => {
         .catch(() => setParishOptions([]));
     }
   }, [tab, canConfigureTithe, user?.parishId, parishOptions.length]);
-
-  const downloadBlob = async (path: string, filename: string, params?: Record<string, string>) => {
-    try {
-      const res = await api.get(path, { responseType: 'blob', params });
-      const url = URL.createObjectURL(res.data);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (error: any) {
-      let message = 'Erro ao gerar o arquivo';
-      try {
-        if (error?.response?.data instanceof Blob) {
-          const parsed = JSON.parse(await error.response.data.text());
-          if (parsed?.message) message = Array.isArray(parsed.message) ? parsed.message.join(', ') : parsed.message;
-        }
-      } catch {
-        // genérico
-      }
-      if (httpStatus(error) === 429 || THROTTLE_PATTERN.test(message)) message = THROTTLE_MESSAGE;
-      notify.error(message);
-    }
-  };
 
   const loadReport = async () => {
     try {
@@ -819,6 +784,8 @@ const FinancePage: React.FC = () => {
   };
 
   const formatDate = (value: string) => new Date(value).toLocaleDateString('pt-BR');
+  // Admin diocesano/sistema recebe comunidades de todas as paróquias: só as da paróquia escolhida servem para campanhas
+  const campaignCommunities = configParishId ? communities.filter((c) => !c.parishId || c.parishId === configParishId) : communities;
   const monthTotal = contributions.reduce((sum, c) => sum + c.amount, 0);
 
   if (loading) return <div className="module-page"><div className="loading">Carregando...</div></div>;
@@ -830,7 +797,7 @@ const FinancePage: React.FC = () => {
         <div className="header-actions">
           {tab === 'transactions' ? (
             <button className="btn-primary" onClick={() => setShowTxModal(true)}>+ Lançamento</button>
-          ) : (
+          ) : tab === 'campaigns' ? null : (
             <>
               <button className="btn-secondary" onClick={() => setShowTitherModal(true)}>+ Dizimista</button>
               <button className="btn-primary" onClick={() => setShowContributionModal(true)}>+ Contribuição</button>
@@ -853,6 +820,9 @@ const FinancePage: React.FC = () => {
         </button>
         <button className={`tab-btn ${tab === 'online' ? 'active' : ''}`} onClick={() => setTab('online')}>
           Dízimo online
+        </button>
+        <button className={`tab-btn ${tab === 'campaigns' ? 'active' : ''}`} onClick={() => setTab('campaigns')}>
+          Campanhas
         </button>
       </div>
 
@@ -1439,6 +1409,29 @@ const FinancePage: React.FC = () => {
               </div>
             </div>
           )}
+        </>
+      )}
+
+      {tab === 'campaigns' && (
+        <>
+          {canConfigureTithe && !user?.parishId && (
+            <div className="filters" style={{ marginBottom: '1rem' }}>
+              <select className="filter-select" value={configParishId} onChange={(e) => setConfigParishId(e.target.value)}>
+                <option value="">Escolha a paróquia...</option>
+                {parishOptions.map((parish) => (
+                  <option key={parish.id} value={parish.id}>{parish.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <CampaignsTab
+            communities={campaignCommunities}
+            parishIdParam={configParishId}
+            parishReady={!!(configParishId || user?.parishId)}
+            userRole={user?.role ?? ''}
+            userCommunityId={user?.communityId}
+            onDataChanged={fetchFinance}
+          />
         </>
       )}
 
