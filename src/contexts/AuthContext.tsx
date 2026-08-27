@@ -1,9 +1,10 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import api, { getErrorMessage } from '../services/api';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
-interface User {
+export interface User {
   id: string;
   email: string;
   name: string;
@@ -20,19 +21,63 @@ interface User {
     role?: string;
   }[];
   forcePasswordChange: boolean;
+  /** Autenticação em duas etapas ativa (Governança de acesso — D4.7) */
+  twoFactorEnabled?: boolean;
+}
+
+/** Usuário resumido devolvido no desafio 2FA (ainda sem tokens). */
+export interface TwoFactorChallengeUser {
+  id: string;
+  email: string;
+  name: string;
+}
+
+export type LoginResult =
+  | { requiresTwoFactor: true; challengeToken: string; user: TwoFactorChallengeUser }
+  | { requiresTwoFactor: false; newDevice: boolean };
+
+/** Erro de autenticação com o status HTTP (distingue código inválido de desafio expirado). */
+export class AuthError extends Error {
+  readonly status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'AuthError';
+    this.status = status;
+  }
+}
+
+interface LoginResponse {
+  requiresTwoFactor?: boolean;
+  challengeToken?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  newDevice?: boolean;
+  user: User;
 }
 
 interface AuthContextType {
   user: User | null;
   token: string | null;
-  login: (email: string, password: string) => Promise<void>;
+  /** Etapa 1: e-mail + senha. Pode devolver um desafio 2FA em vez de sessão. */
+  login: (email: string, password: string) => Promise<LoginResult>;
+  /** Etapa 2: código do autenticador (ou de recuperação) para concluir o desafio. */
+  loginWithTwoFactor: (challengeToken: string, code: string) => Promise<LoginResult>;
   logout: () => void;
   /** Recarrega o perfil do servidor (vínculos/pastorais novos sem relogin) */
   refreshUser: () => Promise<void>;
+  /** Atualiza campos do usuário em memória/localStorage (ex.: twoFactorEnabled) */
+  updateUser: (patch: Partial<User>) => void;
   loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+function toAuthError(error: unknown, fallback: string): AuthError {
+  if (error instanceof AuthError) return error;
+  const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+  return new AuthError(getErrorMessage(error, fallback), status);
+}
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -51,27 +96,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(false);
   }, []);
 
-  const login = async (email: string, password: string) => {
-    try {
-      const response = await axios.post(`${API_URL}/auth/login`, {
-        email,
-        password,
-      });
-
-      const { accessToken, refreshToken, user: userData } = response.data;
-
-      setToken(accessToken);
-      setUser(userData);
-
-      localStorage.setItem('token', accessToken);
-      if (refreshToken) {
-        localStorage.setItem('refreshToken', refreshToken);
+  /** Interpreta a resposta de /auth/login ou /auth/2fa/login e abre a sessão quando há tokens. */
+  const applyLoginResponse = (data: LoginResponse): LoginResult => {
+    if (data.requiresTwoFactor) {
+      if (!data.challengeToken) {
+        throw new AuthError('Resposta inválida do servidor ao iniciar a verificação em duas etapas');
       }
-      localStorage.setItem('user', JSON.stringify(userData));
+      const { id, email, name } = data.user;
+      return { requiresTwoFactor: true, challengeToken: data.challengeToken, user: { id, email, name } };
+    }
 
-      axios.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Erro ao fazer login');
+    const { accessToken, refreshToken, user: userData } = data;
+    if (!accessToken) {
+      throw new AuthError('Resposta inválida do servidor ao fazer login');
+    }
+
+    setToken(accessToken);
+    setUser(userData);
+
+    localStorage.setItem('token', accessToken);
+    if (refreshToken) {
+      localStorage.setItem('refreshToken', refreshToken);
+    }
+    localStorage.setItem('user', JSON.stringify(userData));
+
+    axios.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
+    return { requiresTwoFactor: false, newDevice: Boolean(data.newDevice) };
+  };
+
+  const login = async (email: string, password: string): Promise<LoginResult> => {
+    try {
+      const response = await api.post<LoginResponse>('/auth/login', { email, password });
+      return applyLoginResponse(response.data);
+    } catch (error) {
+      throw toAuthError(error, 'Erro ao fazer login');
+    }
+  };
+
+  const loginWithTwoFactor = async (challengeToken: string, code: string): Promise<LoginResult> => {
+    try {
+      const response = await api.post<LoginResponse>('/auth/2fa/login', { challengeToken, code });
+      return applyLoginResponse(response.data);
+    } catch (error) {
+      throw toAuthError(error, 'Código inválido');
     }
   };
 
@@ -83,6 +150,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('user');
     delete axios.defaults.headers.common['Authorization'];
   };
+
+  const updateUser = useCallback((patch: Partial<User>) => {
+    setUser((previous) => {
+      if (!previous) return previous;
+      const next = { ...previous, ...patch };
+      localStorage.setItem('user', JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const refreshUser = async () => {
     const storedToken = localStorage.getItem('token');
@@ -104,6 +180,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         pastoralIds: fresh.pastoralIds ?? [],
         pastorals: fresh.pastorals ?? [],
         forcePasswordChange: fresh.forcePasswordChange ?? false,
+        twoFactorEnabled: fresh.twoFactorEnabled ?? false,
       };
       setUser(mapped);
       localStorage.setItem('user', JSON.stringify(mapped));
@@ -113,7 +190,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, refreshUser, loading }}>
+    <AuthContext.Provider
+      value={{ user, token, login, loginWithTwoFactor, logout, refreshUser, updateUser, loading }}
+    >
       {children}
     </AuthContext.Provider>
   );

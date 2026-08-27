@@ -187,6 +187,19 @@ const AdminLayout: React.FC = () => {
               <NavIcon name="usuarios" /> Usuários
             </NavLink>
           )}
+          {isCommunityManagement && (
+            <NavLink to="/admin/audit" className="nav-link">
+              <NavIcon name="documento" /> Auditoria
+            </NavLink>
+          )}
+
+          <span className="nav-section-label">Conta</span>
+          <NavLink to="/admin/account" className="nav-link">
+            <NavIcon name="membros" /> Minha conta
+          </NavLink>
+          <NavLink to="/admin/security" className="nav-link">
+            <NavIcon name="sino" /> Segurança
+          </NavLink>
         </nav>
 
         <div className="sidebar-footer">

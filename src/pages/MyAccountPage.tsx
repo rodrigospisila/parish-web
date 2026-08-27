@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import TitleIcon from '../components/TitleIcon';
 import { useAuth } from '../contexts/AuthContext';
@@ -192,6 +193,33 @@ const MyAccountPage: React.FC = () => {
         <p style={{ margin: '0.2rem 0', color: '#66788c' }}>
           {ROLE_LABELS[user?.role ?? ''] ?? user?.role}
         </p>
+      </div>
+
+      <div
+        style={{
+          background: '#fff',
+          border: '1px solid #e4ebf4',
+          borderRadius: 14,
+          padding: '1.2rem 1.4rem',
+          marginBottom: '1rem',
+          maxWidth: 760,
+        }}
+      >
+        <h3 style={{ margin: '0 0 0.4rem' }}>🔐 Segurança</h3>
+        <p style={{ margin: '0 0 0.8rem', color: '#66788c', fontSize: '0.9rem' }}>
+          Autenticação em duas etapas:{' '}
+          <strong style={{ color: user?.twoFactorEnabled ? '#1f9d61' : '#a96a0d' }}>
+            {user?.twoFactorEnabled ? 'ativa' : 'inativa'}
+          </strong>
+          . Gerencie o 2FA, os dispositivos conectados e veja a atividade recente da conta.
+        </p>
+        <Link
+          to="/admin/security"
+          className="btn-small btn-surface"
+          style={{ display: 'inline-block', textDecoration: 'none' }}
+        >
+          Abrir Segurança
+        </Link>
       </div>
 
       <div

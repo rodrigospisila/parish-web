@@ -8,7 +8,7 @@ import type { Campaign } from './CampaignsTab';
  * Aba "Registro presencial" do Financeiro (balcão/secretaria): o agente localiza o fiel
  * (nome, nº de dizimista, CPF ou telefone), registra o dízimo/oferta recebido em mãos
  * (dinheiro, envelope, maquininha, Pix, transferência ou cheque), emite o comprovante em
- * PDF e pode desfazer um lançamento seu dentro de 48 h.
+ * PDF e pode desfazer um lançamento seu dentro de 24 h.
  */
 
 export type PresentialMethod = 'CASH' | 'ENVELOPE' | 'POS' | 'PIX' | 'TRANSFER' | 'CHECK';
@@ -18,6 +18,8 @@ export interface AgentMember {
   id: string;
   fullName: string;
   community: { id: string; name: string } | null;
+  /** Paróquia do fiel: campanha de outra paróquia não vale para ele */
+  parishId?: string | null;
   registrationNumber: string | null;
   titherStatus: string | null;
   cpfMasked: string | null;
@@ -31,13 +33,14 @@ export interface AgentContribution {
   amount: number;
   referenceMonth: string | null;
   kind: ContributionKind;
-  txid: string | null;
+  /** Identificador do lançamento (nome do comprovante); pode faltar em registros antigos */
+  txid?: string | null;
   paymentMethod: string | null;
   /** O backend pode mandar o objeto da campanha ou só o nome */
   campaign: { id: string; name: string } | string | null;
   confirmedAt: string | null;
   member: { id: string; fullName: string } | null;
-  /** Só o próprio agente, dentro de 48 h, e enquanto confirmada */
+  /** Só o próprio agente, dentro de 24 h, e enquanto confirmada */
   canUndo: boolean;
 }
 
@@ -93,10 +96,13 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const todayIso = () => new Date().toLocaleDateString('sv-SE', { timeZone: TZ });
 const currentMonth = () => todayIso().slice(0, 7);
 
+/** ISO/datetime → 'AAAA-MM-DD' no fuso de Brasília; data-only passa direto (não perde um dia) */
+const isoDay = (value: string): string => (DATE_ONLY.test(value) ? value : new Date(value).toLocaleDateString('sv-SE', { timeZone: TZ }));
+
 /** ISO/datetime → 'DD/MM/AAAA' (fuso de Brasília); data-only não perde um dia */
 const formatDay = (value: string | null | undefined): string => {
   if (!value) return '—';
-  const iso = DATE_ONLY.test(value) ? value : new Date(value).toLocaleDateString('sv-SE', { timeZone: TZ });
+  const iso = isoDay(value);
   if (!DATE_ONLY.test(iso)) return '—';
   const [year, month, day] = iso.split('-');
   return `${day}/${month}/${year}`;
@@ -151,6 +157,10 @@ const lastContributionLabel = (last: AgentMember['lastContribution']): string =>
 
 const SEARCH_MIN = 2;
 const SEARCH_DEBOUNCE_MS = 300;
+/** Mesmos limites e mensagem do backend (POST /tithe/agent/contributions) */
+const AMOUNT_MIN = 1;
+const AMOUNT_MAX = 50000;
+const AMOUNT_RANGE_MESSAGE = 'Informe um valor entre R$ 1,00 e R$ 50.000';
 
 const fieldStyle: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.82rem', color: '#555' };
 const inputStyle: React.CSSProperties = { padding: '0.5rem 0.65rem', border: '1px solid #ddd', borderRadius: 6, fontSize: '0.9rem' };
@@ -240,11 +250,18 @@ const PresentialTab: React.FC<PresentialTabProps> = ({ parishIdParam, onDataChan
     void fetchRecent();
   }, [fetchRecent]);
 
-  // Campanhas da paróquia inteira ou da comunidade do fiel escolhido
+  // Campanhas que valem para o fiel escolhido: da paróquia dele (inteira ou da comunidade dele), já iniciadas e com prazo em dia
   const eligibleCampaigns = useMemo(() => {
     if (!selected) return [];
     const communityId = selected.community?.id ?? null;
-    return campaigns.filter((campaign) => campaign.communityId === null || campaign.communityId === communityId);
+    const memberParishId = selected.parishId ?? null;
+    const today = todayIso();
+    return campaigns.filter((campaign) => {
+      if (campaign.expired) return false;
+      if (campaign.startsAt && isoDay(campaign.startsAt) > today) return false;
+      if (memberParishId && campaign.parishId && campaign.parishId !== memberParishId) return false;
+      return campaign.communityId === null || campaign.communityId === communityId;
+    });
   }, [campaigns, selected]);
 
   const selectedCampaign = form.campaignId ? eligibleCampaigns.find((campaign) => campaign.id === form.campaignId) ?? null : null;
@@ -270,8 +287,8 @@ const PresentialTab: React.FC<PresentialTabProps> = ({ parishIdParam, onDataChan
     e.preventDefault();
     if (!selected || saving) return;
     const amount = Number(form.amount.replace(',', '.'));
-    if (!Number.isFinite(amount) || amount <= 0) {
-      notify.error('Informe um valor maior que zero');
+    if (!Number.isFinite(amount) || amount < AMOUNT_MIN || amount > AMOUNT_MAX) {
+      notify.error(AMOUNT_RANGE_MESSAGE);
       amountRef.current?.focus();
       return;
     }
@@ -280,7 +297,7 @@ const PresentialTab: React.FC<PresentialTabProps> = ({ parishIdParam, onDataChan
       return;
     }
     if (form.campaignId && !selectedCampaign) {
-      notify.error('A campanha escolhida não vale para a comunidade deste fiel');
+      notify.error('A campanha escolhida não vale para este fiel (comunidade, paróquia ou prazo)');
       return;
     }
     const member = selected;
@@ -344,7 +361,7 @@ const PresentialTab: React.FC<PresentialTabProps> = ({ parishIdParam, onDataChan
   const receipt = async (item: AgentContribution) => {
     setBusyId(item.id);
     try {
-      await downloadBlob(`/tithe/intents/${item.id}/receipt.pdf`, `comprovante-${item.txid ?? item.id}.pdf`);
+      await downloadBlob(`/tithe/intents/${item.id}/receipt.pdf`, `comprovante-${item.txid || item.id}.pdf`);
     } finally {
       setBusyId(null);
     }
@@ -362,7 +379,7 @@ const PresentialTab: React.FC<PresentialTabProps> = ({ parishIdParam, onDataChan
     <>
       <p style={{ ...hintStyle, margin: '0 0 1rem' }}>
         Atendimento no balcão: localize o fiel, registre o que ele entregou em mãos e imprima o comprovante. O lançamento entra como receita
-        no Financeiro e pode ser desfeito por você em até 48 h.
+        no Financeiro e pode ser desfeito por você em até 24 h.
       </p>
 
       {!selected ? (
@@ -474,7 +491,8 @@ const PresentialTab: React.FC<PresentialTabProps> = ({ parishIdParam, onDataChan
                   style={inputStyle}
                   type="number"
                   step="0.01"
-                  min="0.01"
+                  min={AMOUNT_MIN}
+                  max={AMOUNT_MAX}
                   inputMode="decimal"
                   required
                   value={form.amount}

@@ -107,3 +107,42 @@
     width: 170px;
   }
 }
+
+/* ===== Verificação em duas etapas (D4.7) ===== */
+.login-2fa-hint {
+  color: #48607a;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  margin: -1rem 0 1.5rem;
+  text-align: center;
+}
+
+.login-form .login-code-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.35rem;
+  letter-spacing: 0.25em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.login-2fa-help {
+  display: block;
+  margin-top: 0.4rem;
+  color: #66788c;
+  font-size: 0.8rem;
+}
+
+.login-link-btn {
+  background: none;
+  border: none;
+  color: #075AA9;
+  font-size: 0.95rem;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.login-link-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

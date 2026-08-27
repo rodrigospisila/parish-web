@@ -31,6 +31,8 @@ interface Summary {
 
 interface Tither {
   id: string;
+  /** Alguns retornos trazem só o id do fiel, sem o objeto `member` */
+  memberId?: string;
   registrationNumber?: string | null;
   status: string;
   member: { id: string; fullName: string };
@@ -205,6 +207,10 @@ const EMPTY_PROVIDER_FORM = {
 const FinancePage: React.FC = () => {
   const { user } = useAuth();
   const canConfigureTithe = ['PARISH_ADMIN', 'DIOCESAN_ADMIN', 'SYSTEM_ADMIN'].includes(user?.role ?? '');
+  // Admin diocesano/sistema não tem paróquia própria: lançamento sem comunidade vai com a paróquia escolhida (o backend recusa sem paróquia)
+  const needsParishForTx = canConfigureTithe && !user?.parishId;
+  // Coordenação de comunidade lança só na própria comunidade (a opção "Paróquia" não aparece para ela)
+  const emptyTxForm = () => ({ ...EMPTY_TX_FORM, communityId: canConfigureTithe ? '' : user?.communityId ?? '' });
   const [tab, setTab] = useState<'transactions' | 'tithe' | 'presential' | 'online' | 'guests' | 'retention' | 'campaigns' | 'statements'>('transactions');
 
   // Dízimo online (Pix da paróquia)
@@ -268,7 +274,7 @@ const FinancePage: React.FC = () => {
   const [contributions, setContributions] = useState<Contribution[]>([]);
 
   const [showTxModal, setShowTxModal] = useState(false);
-  const [txForm, setTxForm] = useState({ ...EMPTY_TX_FORM });
+  const [txForm, setTxForm] = useState(emptyTxForm);
   // Centros de custo já usados na paróquia (sugestões do <datalist>; o campo continua livre)
   const [costCenters, setCostCenters] = useState<string[]>([]);
 
@@ -287,10 +293,11 @@ const FinancePage: React.FC = () => {
 
   const fetchFinance = useCallback(async () => {
     try {
+      // 'AAAA-MM-DD': o backend interpreta no dia civil (o `to` cobre o dia inteiro)
       const params = {
         communityId: filters.communityId || undefined,
-        from: filters.from ? new Date(filters.from).toISOString() : undefined,
-        to: filters.to ? new Date(filters.to).toISOString() : undefined,
+        from: filters.from || undefined,
+        to: filters.to || undefined,
       };
       const [summaryRes, txRes] = await Promise.all([
         api.get('/finance/summary', { params }),
@@ -299,7 +306,7 @@ const FinancePage: React.FC = () => {
       setSummary(summaryRes.data);
       setTransactions(txRes.data);
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao carregar dados financeiros'));
+      notify.error(friendlyError(error, 'Erro ao carregar dados financeiros'));
     } finally {
       setLoading(false);
     }
@@ -314,7 +321,7 @@ const FinancePage: React.FC = () => {
       setTithers(tithersRes.data);
       setContributions(contributionsRes.data);
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao carregar dízimo'));
+      notify.error(friendlyError(error, 'Erro ao carregar dízimo'));
     }
   }, [referenceMonth]);
 
@@ -385,16 +392,17 @@ const FinancePage: React.FC = () => {
   }, [tab, fetchOnline, fetchTithe]);
 
   useEffect(() => {
-    if ((tab === 'online' || tab === 'guests' || tab === 'campaigns' || tab === 'statements' || tab === 'retention') && canConfigureTithe && !user?.parishId && parishOptions.length === 0) {
+    const needsParishList = tab === 'online' || tab === 'guests' || tab === 'campaigns' || tab === 'statements' || tab === 'retention' || showTxModal;
+    if (needsParishList && canConfigureTithe && !user?.parishId && parishOptions.length === 0) {
       api
         .get('/parishes')
         .then((res) => {
-          const list = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
-          setParishOptions(list.map((parish: any) => ({ id: parish.id, name: parish.name })));
+          const list: Array<{ id: string; name: string }> = Array.isArray(res.data) ? res.data : res.data?.data ?? [];
+          setParishOptions(list.map((parish) => ({ id: parish.id, name: parish.name })));
         })
         .catch(() => setParishOptions([]));
     }
-  }, [tab, canConfigureTithe, user?.parishId, parishOptions.length]);
+  }, [tab, showTxModal, canConfigureTithe, user?.parishId, parishOptions.length]);
 
   const loadReport = async () => {
     try {
@@ -765,22 +773,28 @@ const FinancePage: React.FC = () => {
 
   const handleCreateTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!txForm.communityId && needsParishForTx && !configParishId) {
+      notify.error('Escolha a paróquia do lançamento (ou uma comunidade)');
+      return;
+    }
     try {
       await api.post('/finance/transactions', {
         type: txForm.type,
         category: txForm.category,
         amount: Number(txForm.amount),
         description: txForm.description || undefined,
-        date: new Date(txForm.date).toISOString(),
+        // 'AAAA-MM-DD': o backend normaliza para o dia civil (sem o fuso do navegador)
+        date: txForm.date,
         communityId: txForm.communityId || undefined,
+        parishId: !txForm.communityId && needsParishForTx ? configParishId || undefined : undefined,
         costCenter: txForm.costCenter.trim() || undefined,
       });
       notify.success('Lançamento registrado!');
       setShowTxModal(false);
-      setTxForm({ ...EMPTY_TX_FORM });
+      setTxForm(emptyTxForm());
       fetchFinance();
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao registrar lançamento'));
+      notify.error(friendlyError(error, 'Erro ao registrar lançamento'));
     }
   };
 
@@ -796,7 +810,7 @@ const FinancePage: React.FC = () => {
       setTitherForm({ memberId: '', registrationNumber: '' });
       fetchTithe();
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao cadastrar dizimista'));
+      notify.error(friendlyError(error, 'Erro ao cadastrar dizimista'));
     }
   };
 
@@ -806,7 +820,8 @@ const FinancePage: React.FC = () => {
       await api.post('/finance/tithe/contributions', {
         titherId: contributionForm.titherId,
         amount: Number(contributionForm.amount),
-        date: new Date(contributionForm.date).toISOString(),
+        // 'AAAA-MM-DD': o backend normaliza para o dia civil
+        date: contributionForm.date,
         referenceMonth: contributionForm.referenceMonth,
         method: contributionForm.method,
         receiptNumber: contributionForm.receiptNumber || undefined,
@@ -817,7 +832,7 @@ const FinancePage: React.FC = () => {
       fetchTithe();
       fetchFinance();
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao lançar contribuição'));
+      notify.error(friendlyError(error, 'Erro ao lançar contribuição'));
     }
   };
 
@@ -1376,8 +1391,8 @@ const FinancePage: React.FC = () => {
           <div className="filters-bar">
             <select className="filter-select" value={statementMember} onChange={(e) => setStatementMember(e.target.value)}>
               <option value="">Escolha o dizimista...</option>
-              {tithers.map((t: any) => (
-                <option key={t.id} value={t.member?.id ?? t.memberId}>{t.member?.fullName ?? t.memberId}</option>
+              {tithers.map((t) => (
+                <option key={t.id} value={t.member?.id ?? t.memberId ?? ''}>{t.member?.fullName ?? t.memberId ?? '—'}</option>
               ))}
             </select>
             <input type="number" className="filter-input" style={{ width: 110 }} value={statementYear} onChange={(e) => setStatementYear(e.target.value)} />
@@ -1675,11 +1690,21 @@ const FinancePage: React.FC = () => {
                   <input type="date" required value={txForm.date} onChange={(e) => setTxForm({ ...txForm, date: e.target.value })} />
                 </div>
               </div>
+              {needsParishForTx && (
+                <div className="form-group">
+                  <label htmlFor="tx-parish">Paróquia {txForm.communityId ? '' : '*'}</label>
+                  <select id="tx-parish" required={!txForm.communityId} value={configParishId} onChange={(e) => setConfigParishId(e.target.value)}>
+                    <option value="">Escolha a paróquia...</option>
+                    {parishOptions.map((parish) => <option key={parish.id} value={parish.id}>{parish.name}</option>)}
+                  </select>
+                  <small style={{ color: '#888' }}>Lançamento sem comunidade entra na paróquia escolhida</small>
+                </div>
+              )}
               <div className="form-row">
                 <div className="form-group">
-                  <label htmlFor="tx-community">Comunidade (opcional)</label>
-                  <select id="tx-community" value={txForm.communityId} onChange={(e) => setTxForm({ ...txForm, communityId: e.target.value })}>
-                    <option value="">Paróquia</option>
+                  <label htmlFor="tx-community">{canConfigureTithe ? 'Comunidade (opcional)' : 'Comunidade *'}</label>
+                  <select id="tx-community" required={!canConfigureTithe} value={txForm.communityId} onChange={(e) => setTxForm({ ...txForm, communityId: e.target.value })}>
+                    {canConfigureTithe ? <option value="">Paróquia</option> : <option value="" disabled>Escolha a comunidade...</option>}
                     {communities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>

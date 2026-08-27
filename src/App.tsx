@@ -13,6 +13,8 @@ import MembersPage from './pages/MembersPage';
 import MyAccountPage from './pages/MyAccountPage';
 import EventsPage from './pages/EventsPage';
 import UsersPage from './pages/UsersPage';
+import SecurityPage from './pages/SecurityPage';
+import AuditPage from './pages/AuditPage';
 import SchedulesPage from './pages/SchedulesPage';
 import GlobalPastoralsPage from './pages/pastorals/GlobalPastoralsPage';
 import CommunityPastoralsPage from './pages/pastorals/CommunityPastoralsPage';
@@ -145,6 +147,13 @@ const App: React.FC = () => {
             } />
             <Route path="schedules" element={<SchedulesPage />} />
             <Route path="users" element={<UsersPage />} />
+            {/* Governança de acesso (D4.7): segurança da conta e auditoria escopada */}
+            <Route path="security" element={<SecurityPage />} />
+            <Route path="audit" element={
+              <RoleProtectedRoute allowedRoles={COMMUNITY_MANAGEMENT_ROLES}>
+                <AuditPage />
+              </RoleProtectedRoute>
+            } />
             <Route path="pastorals/my" element={
               <RoleProtectedRoute allowedRoles={['PASTORAL_COORDINATOR']}>
                 <MyPastoralsPage />

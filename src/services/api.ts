@@ -1,11 +1,14 @@
-import axios from 'axios';
+import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+import { getDeviceId, getDeviceName } from './device';
+
+const API_BASE = String(import.meta.env.VITE_API_URL ?? '');
 
 /**
  * Cliente HTTP compartilhado das páginas de módulos (Fases 3–4).
  * Anexa o token automaticamente; as páginas legadas seguem usando axios direto.
  */
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
+  baseURL: API_BASE,
 });
 
 api.interceptors.request.use((config) => {
@@ -15,6 +18,35 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+/**
+ * Governança de acesso (D4.7): identifica o dispositivo em TODAS as requisições
+ * à API Parish (`X-Device-Id` / `X-Device-Name`). Registrado na instância `api`
+ * e no axios global (páginas legadas), mas nunca em chamadas a outros hosts —
+ * headers customizados forçariam preflight CORS em serviços de terceiros.
+ */
+function targetsParishApi(config: InternalAxiosRequestConfig): boolean {
+  const url = config.url ?? '';
+  if (/^https?:\/\//i.test(url)) {
+    return API_BASE !== '' && url.startsWith(API_BASE);
+  }
+  // URL relativa: usa o baseURL da instância (`api`) ou a mesma origem
+  const base = config.baseURL ?? '';
+  return base === '' || base === API_BASE;
+}
+
+function attachDeviceInterceptor(instance: AxiosInstance) {
+  instance.interceptors.request.use((config) => {
+    if (targetsParishApi(config)) {
+      config.headers['X-Device-Id'] = getDeviceId();
+      config.headers['X-Device-Name'] = getDeviceName();
+    }
+    return config;
+  });
+}
+
+attachDeviceInterceptor(api);
+attachDeviceInterceptor(axios);
 
 /**
  * Renovação automática de sessão: ao receber 401 (token expirado), tenta o
@@ -44,6 +76,9 @@ async function refreshAccessToken(): Promise<string | null> {
   }
 }
 
+// Rotas de autenticação: um 401 aqui é "credencial/código inválido", não sessão expirada
+const AUTH_ROUTES = ['/auth/login', '/auth/2fa/login', '/auth/refresh'];
+
 function attachRefreshInterceptor(instance: { interceptors: any }) {
   instance.interceptors.response.use(
     (response: any) => response,
@@ -51,7 +86,7 @@ function attachRefreshInterceptor(instance: { interceptors: any }) {
       const original = error.config;
       const status = error.response?.status;
       const url: string = original?.url || '';
-      const isAuthRoute = url.includes('/auth/login') || url.includes('/auth/refresh');
+      const isAuthRoute = AUTH_ROUTES.some((route) => url.includes(route));
       if (status !== 401 || isAuthRoute || !original || original._retried) {
         return Promise.reject(error);
       }

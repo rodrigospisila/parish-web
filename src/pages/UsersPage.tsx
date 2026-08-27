@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { notify, confirm } from '../services/notification.service';
 import { avatarColor, initials } from '../components/SaintAvatar';
+import api, { getErrorMessage } from '../services/api';
 import './UsersPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -453,6 +454,29 @@ const UsersPage: React.FC = () => {
     }
   };
 
+  // Governança de acesso (D4.7): PARISH_ADMIN+ pode redefinir o 2FA de quem perdeu o autenticador
+  const canResetTwoFactor = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN'].includes(currentUser?.role ?? '');
+
+  const handleResetTwoFactor = async (user: User) => {
+    const confirmed = await confirm.action(
+      'Redefinir 2FA',
+      `Remover a autenticação em duas etapas de ${user.name}? A pessoa volta a entrar só com a senha e pode ativar o 2FA novamente depois.`,
+      'Redefinir 2FA',
+    );
+    if (!confirmed) return;
+
+    try {
+      const { data } = await api.post<{ reset: boolean; wasEnabled: boolean }>(`/auth/2fa/reset/${user.id}`);
+      notify.success(
+        data.wasEnabled
+          ? `2FA de ${user.name} redefinido. Avise a pessoa para ativar novamente.`
+          : `${user.name} não tinha 2FA ativo — nada a redefinir.`,
+      );
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao redefinir o 2FA'));
+    }
+  };
+
   const resetForm = () => {
     setEditingUser(null);
     setFormData({
@@ -888,6 +912,15 @@ const UsersPage: React.FC = () => {
                   <button className="entity-btn accent" onClick={() => handleToggleActive(user)}>
                     {user.isActive ? 'Desativar' : 'Ativar'}
                   </button>
+                  {canResetTwoFactor && (
+                    <button
+                      className="entity-btn"
+                      onClick={() => handleResetTwoFactor(user)}
+                      title="Remover a autenticação em duas etapas deste usuário"
+                    >
+                      Redefinir 2FA
+                    </button>
+                  )}
                   <button className="entity-btn danger" onClick={() => handleDelete(user.id)}>
                     Excluir
                   </button>
@@ -972,6 +1005,15 @@ const UsersPage: React.FC = () => {
                       >
                         {user.isActive ? '🚫' : '✅'}
                       </button>
+                      {canResetTwoFactor && (
+                        <button
+                          className="entity-icon-btn"
+                          onClick={() => handleResetTwoFactor(user)}
+                          title="Redefinir 2FA"
+                        >
+                          🔐
+                        </button>
+                      )}
                       <button className="entity-icon-btn danger" onClick={() => handleDelete(user.id)} title="Excluir">
                         🗑️
                       </button>

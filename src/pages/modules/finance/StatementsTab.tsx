@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../../services/api';
 import { notify } from '../../../services/notification.service';
-import { downloadBlob, formatBRL, friendlyError, httpStatus } from './financeShared';
+import { downloadBlob, formatBRL, friendlyError, httpStatus, plural } from './financeShared';
 
 /**
  * Aba "Balancete" do Financeiro (transparência — Dízimo D4.3): a tesouraria gera o
@@ -35,6 +35,8 @@ export interface StatementSnapshot {
   campaigns: Array<{ id: string; name: string; total: number }>;
   /** id null = lançamentos da paróquia sem comunidade */
   communities: Array<{ id: string | null; name: string; income: number; expense: number }>;
+  /** Estornos de receita do mês — a receita acima já vem líquida deles; ausente em balancetes antigos */
+  reversals?: { total: number; count: number };
 }
 
 export interface Statement {
@@ -136,6 +138,13 @@ const fileBase = (statement: Statement) =>
   `balancete-${statement.referenceMonth}-${statement.community ? slug(statement.community.name) : 'paroquia'}`;
 const percentOf = (part: number, total: number): string => (total > 0 ? `${Math.round((part / total) * 100)}%` : '—');
 const entriesCount = (statement: Statement) => (statement.snapshot?.income?.count ?? 0) + (statement.snapshot?.expense?.count ?? 0);
+/** Estornos de receita do mês, só quando houve algum (a receita do balancete já vem líquida deles) */
+const reversalsOf = (statement: Statement | null | undefined): { total: number; count: number } | null => {
+  const reversals = statement?.snapshot?.reversals;
+  return reversals && reversals.total > 0 ? reversals : null;
+};
+const reversalsLabel = (reversals: { total: number; count: number }): string =>
+  `${formatBRL(reversals.total)} em ${reversals.count} ${plural(reversals.count, 'estorno', 'estornos')} (já descontados das receitas)`;
 
 /** Erros do backend (400/403) chegam ao usuário; um 403 sem texto vira algo que a coordenação entende */
 const statementError = (error: unknown, fallback: string): string => {
@@ -234,6 +243,9 @@ const StatementsTab: React.FC<StatementsTabProps> = ({ communities, parishIdPara
 
   const monthOptions = useMemo(buildMonthOptions, []);
 
+  // Coordenação de comunidade: pede os balancetes da comunidade escolhida (sem isso a lista vem vazia e "Gerar" duplica o balancete, zerando a aprovação)
+  const listCommunityId = isParishAdmin ? undefined : scope || undefined;
+
   const fetchStatements = useCallback(async () => {
     const requestId = ++requestRef.current;
     if (!parishReady) {
@@ -243,7 +255,7 @@ const StatementsTab: React.FC<StatementsTabProps> = ({ communities, parishIdPara
     }
     setLoading(true);
     try {
-      const res = await api.get('/finance/statements', { params: { parishId: parishIdParam || undefined } });
+      const res = await api.get('/finance/statements', { params: { parishId: parishIdParam || undefined, communityId: listCommunityId } });
       if (requestId !== requestRef.current) return;
       setStatements(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
@@ -252,7 +264,7 @@ const StatementsTab: React.FC<StatementsTabProps> = ({ communities, parishIdPara
     } finally {
       if (requestId === requestRef.current) setLoading(false);
     }
-  }, [parishIdParam, parishReady]);
+  }, [parishIdParam, parishReady, listCommunityId]);
 
   useEffect(() => {
     void fetchStatements();
@@ -338,6 +350,20 @@ const StatementsTab: React.FC<StatementsTabProps> = ({ communities, parishIdPara
     setOpeningId(null);
   };
 
+  /** Recarrega o painel sem perguntar pela mensagem em edição (o texto não salvo é mantido) */
+  const refreshOpened = async (id: string) => {
+    const requestId = ++openRequestRef.current;
+    try {
+      const res = await api.get(`/finance/statements/${id}`);
+      if (requestId !== openRequestRef.current) return;
+      const fresh: Statement = res.data;
+      setOpened(fresh);
+      if (!notesDirty) setNotes(fresh.notes ?? '');
+    } catch {
+      // a lista já foi recarregada; o painel fica com a versão anterior até o próximo "Atualizar"
+    }
+  };
+
   const generate = async () => {
     if (!isParishAdmin && !scope) {
       notify.error('Escolha a comunidade do balancete');
@@ -415,14 +441,22 @@ const StatementsTab: React.FC<StatementsTabProps> = ({ communities, parishIdPara
       notify.error('Informe quem aprova o balancete');
       return;
     }
+    const target = approveTarget;
     setApproving(true);
     try {
-      const res = await api.post(`/finance/statements/${approveTarget.id}/approve`, { approvedByName: name });
+      // generatedAt = guarda de versão: se o balancete foi regenerado depois de aberto, o backend recusa (400)
+      const res = await api.post(`/finance/statements/${target.id}/approve`, { approvedByName: name, generatedAt: target.generatedAt });
       replaceInList(res.data);
-      notify.success(`Balancete de ${monthOf(approveTarget)} aprovado em nome de ${name}`);
+      notify.success(`Balancete de ${monthOf(target)} aprovado em nome de ${name}`);
       setApproveTarget(null);
     } catch (error) {
       notify.error(statementError(error, 'Erro ao aprovar o balancete'));
+      if (httpStatus(error) === 400) {
+        // Versão desatualizada (ou já aprovado por outra pessoa): fecha o modal e recarrega a lista e o painel
+        setApproveTarget(null);
+        await fetchStatements();
+        if (opened?.id === target.id) await refreshOpened(target.id);
+      }
     } finally {
       setApproving(false);
     }
@@ -504,14 +538,16 @@ const StatementsTab: React.FC<StatementsTabProps> = ({ communities, parishIdPara
       <button type="button" className="btn-small" title="Balancete em PDF para o mural e o site" onClick={() => void downloadBlob(`/finance/statements/${statement.id}/pdf`, `${fileBase(statement)}.pdf`)}>
         🖨 PDF
       </button>
-      <button
-        type="button"
-        className="btn-small"
-        title="Exportação contábil com todos os lançamentos do mês"
-        onClick={() => void downloadBlob(`/finance/statements/${statement.id}/export.csv`, `${fileBase(statement)}.csv`)}
-      >
-        ⬇ CSV
-      </button>
+      {(isParishAdmin || statement.communityId !== null) && (
+        <button
+          type="button"
+          className="btn-small"
+          title="Exportação contábil com todos os lançamentos do mês"
+          onClick={() => void downloadBlob(`/finance/statements/${statement.id}/export.csv`, `${fileBase(statement)}.csv`)}
+        >
+          ⬇ CSV
+        </button>
+      )}
     </>
   );
 
@@ -540,6 +576,8 @@ const StatementsTab: React.FC<StatementsTabProps> = ({ communities, parishIdPara
   const campaigns = snapshot?.campaigns ?? [];
   const byCommunity = snapshot?.communities ?? [];
   const openedBadge = opened ? badgeOf(opened.status) : null;
+  const openedReversals = reversalsOf(opened);
+  const approveReversals = reversalsOf(approveTarget);
   const notesLocked = opened?.status === 'PUBLISHED';
 
   return (
@@ -626,12 +664,20 @@ const StatementsTab: React.FC<StatementsTabProps> = ({ communities, parishIdPara
                     const badge = badgeOf(statement.status);
                     const snap = statement.snapshot;
                     const rowBalance = snap?.balance ?? 0;
+                    const rowReversals = reversalsOf(statement);
                     return (
                       <tr key={statement.id} style={opened?.id === statement.id ? { background: '#f0f7ff' } : undefined}>
                         <td><strong>{capitalize(monthOf(statement))}</strong></td>
                         <td>{scopeLabel(statement)}</td>
                         <td><span className={`status-badge ${badge.color}`}>{badge.label}</span></td>
-                        <td style={{ color: '#0f5132' }}>{formatBRL(snap?.income?.total ?? 0)}</td>
+                        <td style={{ color: '#0f5132' }}>
+                          {formatBRL(snap?.income?.total ?? 0)}
+                          {rowReversals && (
+                            <div style={{ fontSize: '0.72rem', color: '#888' }} title={reversalsLabel(rowReversals)}>
+                              líquido de {formatBRL(rowReversals.total)} em estornos
+                            </div>
+                          )}
+                        </td>
                         <td style={{ color: '#842029' }}>{formatBRL(snap?.expense?.total ?? 0)}</td>
                         <td style={{ fontWeight: 600, color: rowBalance >= 0 ? '#0f5132' : '#842029' }}>{formatBRL(rowBalance)}</td>
                         <td>
@@ -685,7 +731,16 @@ const StatementsTab: React.FC<StatementsTabProps> = ({ communities, parishIdPara
           </div>
 
           <div className="summary-cards" style={{ marginTop: '1rem' }}>
-            <div className="summary-card"><div className="label">Receitas</div><div className="value positive">{formatBRL(income.total)}</div></div>
+            <div className="summary-card"><div className="label">{openedReversals ? 'Receitas (líquidas de estornos)' : 'Receitas'}</div><div className="value positive">{formatBRL(income.total)}</div></div>
+            {openedReversals && (
+              <div className="summary-card" title="Receitas estornadas no mês; o total de receitas já está líquido delas">
+                <div className="label">Estornos de receita</div>
+                <div className="value negative">− {formatBRL(openedReversals.total)}</div>
+                <div style={{ fontSize: '0.75rem', color: '#888' }}>
+                  {openedReversals.count} {plural(openedReversals.count, 'estorno já descontado', 'estornos já descontados')} das receitas
+                </div>
+              </div>
+            )}
             <div className="summary-card"><div className="label">Despesas</div><div className="value negative">{formatBRL(expense.total)}</div></div>
             <div className="summary-card"><div className="label">Saldo</div><div className={`value ${balance >= 0 ? 'positive' : 'negative'}`}>{formatBRL(balance)}</div></div>
             <div className="summary-card"><div className="label">Lançamentos</div><div className="value">{entriesCount(opened)}</div></div>
@@ -813,6 +868,7 @@ const StatementsTab: React.FC<StatementsTabProps> = ({ communities, parishIdPara
             <p style={{ fontSize: '0.88rem', color: '#666' }}>
               <strong>{capitalize(monthOf(approveTarget))}</strong> · {scopeLabel(approveTarget)} · receitas {formatBRL(approveTarget.snapshot?.income?.total ?? 0)} ·
               despesas {formatBRL(approveTarget.snapshot?.expense?.total ?? 0)} · saldo {formatBRL(approveTarget.snapshot?.balance ?? 0)}.
+              {approveReversals && <> Estornos de receita: {reversalsLabel(approveReversals)}.</>}
             </p>
             <p style={{ fontSize: '0.85rem', color: '#666' }}>
               A aprovação é registrada em nome do Conselho de Assuntos Econômicos Paroquiais (CAEP). Depois dela o balancete pode ser
