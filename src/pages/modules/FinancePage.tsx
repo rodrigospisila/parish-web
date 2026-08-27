@@ -4,6 +4,7 @@ import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
 import { useAuth } from '../../contexts/AuthContext';
 import CampaignsTab from './finance/CampaignsTab';
+import PresentialTab from './finance/PresentialTab';
 import { formatBRL, httpStatus, friendlyError, plural, downloadBlob } from './finance/financeShared';
 import './ModulePages.css';
 
@@ -209,7 +210,7 @@ const EMPTY_PROVIDER_FORM = {
 const FinancePage: React.FC = () => {
   const { user } = useAuth();
   const canConfigureTithe = ['PARISH_ADMIN', 'DIOCESAN_ADMIN', 'SYSTEM_ADMIN'].includes(user?.role ?? '');
-  const [tab, setTab] = useState<'transactions' | 'tithe' | 'online' | 'campaigns'>('transactions');
+  const [tab, setTab] = useState<'transactions' | 'tithe' | 'presential' | 'online' | 'campaigns'>('transactions');
 
   // Dízimo online (Pix da paróquia)
   const [onlineIntents, setOnlineIntents] = useState<OnlineIntent[]>([]);
@@ -797,7 +798,7 @@ const FinancePage: React.FC = () => {
         <div className="header-actions">
           {tab === 'transactions' ? (
             <button className="btn-primary" onClick={() => setShowTxModal(true)}>+ Lançamento</button>
-          ) : tab === 'campaigns' ? null : (
+          ) : tab === 'campaigns' || tab === 'presential' ? null : (
             <>
               <button className="btn-secondary" onClick={() => setShowTitherModal(true)}>+ Dizimista</button>
               <button className="btn-primary" onClick={() => setShowContributionModal(true)}>+ Contribuição</button>
@@ -817,6 +818,9 @@ const FinancePage: React.FC = () => {
         </button>
         <button className={`tab-btn ${tab === 'tithe' ? 'active' : ''}`} onClick={() => setTab('tithe')}>
           Dízimo
+        </button>
+        <button className={`tab-btn ${tab === 'presential' ? 'active' : ''}`} onClick={() => setTab('presential')}>
+          Registro presencial
         </button>
         <button className={`tab-btn ${tab === 'online' ? 'active' : ''}`} onClick={() => setTab('online')}>
           Dízimo online
@@ -1435,6 +1439,10 @@ const FinancePage: React.FC = () => {
         </>
       )}
 
+      {tab === 'presential' && (
+        <PresentialTab parishIdParam={configParishId} onDataChanged={fetchFinance} />
+      )}
+
       {tab === 'tithe' && (
         <>
           <div className="summary-cards">
@@ -1577,6 +1585,21 @@ const FinancePage: React.FC = () => {
         <div className="module-modal-overlay" onClick={() => setShowContributionModal(false)}>
           <div className="module-modal" onClick={(e) => e.stopPropagation()}>
             <h2>Lançar Contribuição</h2>
+            <div className="privacy-note" style={{ marginBottom: '1rem' }}>
+              Atendendo o fiel no balcão? Use o <strong>Registro presencial</strong>: busca por nome, nº de dizimista, CPF ou telefone,
+              comprovante em PDF e opção de desfazer em 48 h.{' '}
+              <button
+                type="button"
+                className="btn-small"
+                style={{ marginLeft: '0.4rem' }}
+                onClick={() => {
+                  setShowContributionModal(false);
+                  setTab('presential');
+                }}
+              >
+                Ir para o Registro presencial
+              </button>
+            </div>
             <form onSubmit={handleAddContribution}>
               <div className="form-group">
                 <label>Dizimista *</label>
