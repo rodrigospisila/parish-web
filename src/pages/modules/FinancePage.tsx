@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import CampaignsTab from './finance/CampaignsTab';
 import PresentialTab from './finance/PresentialTab';
 import StatementsTab from './finance/StatementsTab';
+import RetentionTab from './finance/RetentionTab';
 import { formatBRL, httpStatus, friendlyError, plural, downloadBlob } from './finance/financeShared';
 import './ModulePages.css';
 
@@ -214,7 +215,7 @@ const EMPTY_PROVIDER_FORM = {
 const FinancePage: React.FC = () => {
   const { user } = useAuth();
   const canConfigureTithe = ['PARISH_ADMIN', 'DIOCESAN_ADMIN', 'SYSTEM_ADMIN'].includes(user?.role ?? '');
-  const [tab, setTab] = useState<'transactions' | 'tithe' | 'presential' | 'online' | 'campaigns' | 'statements'>('transactions');
+  const [tab, setTab] = useState<'transactions' | 'tithe' | 'presential' | 'online' | 'retention' | 'campaigns' | 'statements'>('transactions');
 
   // Dízimo online (Pix da paróquia)
   const [onlineIntents, setOnlineIntents] = useState<OnlineIntent[]>([]);
@@ -392,7 +393,7 @@ const FinancePage: React.FC = () => {
   }, [tab, fetchOnline, fetchTithe]);
 
   useEffect(() => {
-    if ((tab === 'online' || tab === 'campaigns' || tab === 'statements') && canConfigureTithe && !user?.parishId && parishOptions.length === 0) {
+    if ((tab === 'online' || tab === 'campaigns' || tab === 'statements' || tab === 'retention') && canConfigureTithe && !user?.parishId && parishOptions.length === 0) {
       api
         .get('/parishes')
         .then((res) => {
@@ -819,7 +820,7 @@ const FinancePage: React.FC = () => {
         <div className="header-actions">
           {tab === 'transactions' ? (
             <button className="btn-primary" onClick={() => setShowTxModal(true)}>+ Lançamento</button>
-          ) : tab === 'campaigns' || tab === 'presential' || tab === 'statements' ? null : (
+          ) : tab === 'campaigns' || tab === 'presential' || tab === 'statements' || tab === 'retention' ? null : (
             <>
               <button className="btn-secondary" onClick={() => setShowTitherModal(true)}>+ Dizimista</button>
               <button className="btn-primary" onClick={() => setShowContributionModal(true)}>+ Contribuição</button>
@@ -845,6 +846,9 @@ const FinancePage: React.FC = () => {
         </button>
         <button className={`tab-btn ${tab === 'online' ? 'active' : ''}`} onClick={() => setTab('online')}>
           Dízimo online
+        </button>
+        <button className={`tab-btn ${tab === 'retention' ? 'active' : ''}`} onClick={() => setTab('retention')}>
+          Retenção
         </button>
         <button className={`tab-btn ${tab === 'campaigns' ? 'active' : ''}`} onClick={() => setTab('campaigns')}>
           Campanhas
@@ -1481,6 +1485,29 @@ const FinancePage: React.FC = () => {
             communities={campaignCommunities}
             parishIdParam={configParishId}
             parishReady={!!(configParishId || user?.parishId)}
+            userRole={user?.role ?? ''}
+            userCommunityId={user?.communityId}
+          />
+        </>
+      )}
+
+      {tab === 'retention' && (
+        <>
+          {canConfigureTithe && !user?.parishId && (
+            <div className="filters" style={{ marginBottom: '1rem' }}>
+              <select className="filter-select" value={configParishId} onChange={(e) => setConfigParishId(e.target.value)}>
+                <option value="">Escolha a paróquia...</option>
+                {parishOptions.map((parish) => (
+                  <option key={parish.id} value={parish.id}>{parish.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <RetentionTab
+            communities={campaignCommunities}
+            parishIdParam={configParishId}
+            parishReady={!!(configParishId || user?.parishId)}
+            wideScope={canConfigureTithe && !user?.parishId}
             userRole={user?.role ?? ''}
             userCommunityId={user?.communityId}
           />
