@@ -6,9 +6,9 @@ import './LoginPage.css';
 
 type Step = 'credentials' | 'twoFactor';
 
-// Código TOTP (6 dígitos) ou código de recuperação (XXXXX-XXXXX)
+// Código TOTP (6 dígitos) ou código de recuperação (XXXXX-XXXXX, com ou sem hífen/espaço)
 const TOTP_PATTERN = /^\d{6}$/;
-const RECOVERY_PATTERN = /^[a-z0-9]{5}-[a-z0-9]{5}$/i;
+const RECOVERY_PATTERN = /^[a-z0-9]{5}-?[a-z0-9]{5}$/i;
 
 function isValidCode(value: string): boolean {
   return TOTP_PATTERN.test(value) || RECOVERY_PATTERN.test(value);
@@ -84,9 +84,13 @@ const LoginPage: React.FC = () => {
       finishLogin(result.newDevice);
     } catch (err) {
       // Desafio expirado (401): volta à etapa de e-mail/senha
-      const expired = err instanceof AuthError && err.status === 401 && /expir/i.test(err.message);
+      const expired = err instanceof AuthError && err.status === 401 && /expir|utilizado/i.test(err.message);
       if (expired) {
         backToCredentials('A verificação expirou. Faça login novamente.');
+        return;
+      }
+      if (err instanceof AuthError && err.status === 429) {
+        setError('Muitas tentativas. Aguarde um minuto e tente de novo.');
         return;
       }
       setError(err instanceof Error ? err.message : 'Código inválido');

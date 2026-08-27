@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import api, { getErrorMessage } from '../services/api';
+import api, { adoptTokens, getErrorMessage } from '../services/api';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -68,6 +68,8 @@ interface AuthContextType {
   refreshUser: () => Promise<void>;
   /** Atualiza campos do usuário em memória/localStorage (ex.: twoFactorEnabled) */
   updateUser: (patch: Partial<User>) => void;
+  /** Troca a sessão pelos tokens novos devolvidos por ações que encerram as demais (2FA, aparelhos) */
+  adoptSession: (tokens: { accessToken?: string; refreshToken?: string } | null | undefined) => boolean;
   loading: boolean;
 }
 
@@ -143,6 +145,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
+    // Revoga o refresh token no servidor (best-effort) antes de limpar o local
+    if (localStorage.getItem('token')) {
+      void api.post('/auth/logout').catch(() => undefined);
+    }
     setToken(null);
     setUser(null);
     localStorage.removeItem('token');
@@ -158,6 +164,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('user', JSON.stringify(next));
       return next;
     });
+  }, []);
+
+  const adoptSession = useCallback((tokens: { accessToken?: string; refreshToken?: string } | null | undefined) => {
+    if (!adoptTokens(tokens)) return false;
+    setToken(tokens?.accessToken ?? null);
+    return true;
   }, []);
 
   const refreshUser = async () => {
@@ -191,7 +203,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider
-      value={{ user, token, login, loginWithTwoFactor, logout, refreshUser, updateUser, loading }}
+      value={{ user, token, login, loginWithTwoFactor, logout, refreshUser, updateUser, adoptSession, loading }}
     >
       {children}
     </AuthContext.Provider>

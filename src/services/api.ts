@@ -49,6 +49,19 @@ attachDeviceInterceptor(api);
 attachDeviceInterceptor(axios);
 
 /**
+ * Troca a sessão pelos tokens devolvidos por uma ação que encerra as demais
+ * (ativar 2FA, esquecer outro aparelho). Devolve false quando a resposta não
+ * trouxe tokens (servidor antigo) — nesse caso a sessão atual segue como está.
+ */
+export function adoptTokens(tokens: { accessToken?: string; refreshToken?: string } | null | undefined): boolean {
+  if (!tokens?.accessToken) return false;
+  localStorage.setItem('token', tokens.accessToken);
+  if (tokens.refreshToken) localStorage.setItem('refreshToken', tokens.refreshToken);
+  axios.defaults.headers.common['Authorization'] = `Bearer ${tokens.accessToken}`;
+  return true;
+}
+
+/**
  * Renovação automática de sessão: ao receber 401 (token expirado), tenta o
  * refresh token UMA vez (com fila única) e reexecuta a requisição original.
  * Registrado na instância `api` e no axios global (páginas legadas usam axios

@@ -264,17 +264,33 @@ export async function copyText(text: string): Promise<boolean> {
 
 export const giftStorageKey = (parishId: string): string => `parish-gift-${parishId}`;
 
+/** Oferta lembrada só por algumas horas: num computador compartilhado, o próximo visitante não vê a oferta anterior. */
+const GIFT_MEMORY_MS = 6 * 60 * 60 * 1000;
+
 export function readStoredGiftToken(parishId: string): string | null {
   try {
-    return localStorage.getItem(giftStorageKey(parishId));
+    const raw = localStorage.getItem(giftStorageKey(parishId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { token?: string; at?: number };
+    if (!parsed?.token || typeof parsed.at !== 'number' || Date.now() - parsed.at > GIFT_MEMORY_MS) {
+      localStorage.removeItem(giftStorageKey(parishId));
+      return null;
+    }
+    return parsed.token;
   } catch {
+    // formato antigo (token cru) ou storage bloqueado: esquece
+    try {
+      localStorage.removeItem(giftStorageKey(parishId));
+    } catch {
+      // idem
+    }
     return null;
   }
 }
 
 export function storeGiftToken(parishId: string, token: string): void {
   try {
-    localStorage.setItem(giftStorageKey(parishId), token);
+    localStorage.setItem(giftStorageKey(parishId), JSON.stringify({ token, at: Date.now() }));
   } catch {
     // navegação privada / storage bloqueado: segue sem lembrar
   }

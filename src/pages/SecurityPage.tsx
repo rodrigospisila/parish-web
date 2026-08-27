@@ -63,7 +63,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
  * autenticação em duas etapas, dispositivos conhecidos e atividade recente.
  */
 const SecurityPage: React.FC = () => {
-  const { user, updateUser, logout } = useAuth();
+  const { user, updateUser, logout, adoptSession } = useAuth();
   const navigate = useNavigate();
 
   // ---- 2FA
@@ -166,9 +166,14 @@ const SecurityPage: React.FC = () => {
     }
     setEnabling(true);
     try {
-      const { data } = await api.post<{ enabled: boolean; backupCodes: string[] }>('/auth/2fa/enable', {
-        code,
-      });
+      const { data } = await api.post<{
+        enabled: boolean;
+        backupCodes: string[];
+        accessToken?: string;
+        refreshToken?: string;
+      }>('/auth/2fa/enable', { code });
+      // As outras sessões caem; esta continua com os tokens novos
+      adoptSession(data);
       setBackupCodes(data.backupCodes ?? []);
       setCodesSaved(false);
       setSetup(null);
@@ -284,13 +289,20 @@ const SecurityPage: React.FC = () => {
     if (!ok) return;
     setForgettingId(device.id);
     try {
-      await api.delete<{ forgotten: boolean }>(`/auth/devices/${device.id}`);
-      if (device.current) {
+      const { data } = await api.delete<{
+        forgotten: boolean;
+        current?: boolean;
+        accessToken?: string;
+        refreshToken?: string;
+      }>(`/auth/devices/${device.id}`);
+      if (device.current || data.current) {
         notify.info('Dispositivo esquecido. Entre novamente para continuar.');
         logout();
         navigate('/login');
         return;
       }
+      // Todas as sessões caíram; esta segue com os tokens novos
+      adoptSession(data);
       notify.success('Dispositivo esquecido e sessões encerradas.');
       void loadDevices();
       void loadActivity();

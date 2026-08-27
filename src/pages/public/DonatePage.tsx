@@ -195,6 +195,9 @@ const DonatePage: React.FC = () => {
   };
 
   const resetForm = () => {
+    // "Fazer outra oferta" também esquece a anterior neste navegador (computador compartilhado)
+    clearStoredGiftToken(parishId);
+    setPending(null);
     setGift(null);
     setActionError('');
     setFormError('');
@@ -458,7 +461,9 @@ const DonatePage: React.FC = () => {
           {submitting ? 'Gerando…' : method === 'PIX' ? 'Gerar Pix' : 'Continuar'}
         </button>
         <p className="donate-hint donate-center" style={{ marginTop: 12 }}>
-          Seus dados são usados apenas para registrar esta oferta e enviar o comprovante.{' '}
+          Seus dados são usados apenas para registrar esta oferta e enviar o comprovante. Para cobranças pelo
+          provedor de pagamento, nome, e-mail e CPF são compartilhados com ele para gerar a cobrança; o endereço
+          IP é registrado para prevenir fraudes.{' '}
           <Link to="/privacidade">Política de privacidade</Link>
         </p>
       </form>
