@@ -31,6 +31,8 @@ import SaintsPage from './pages/modules/SaintsPage';
 import ClergyMessagesPage from './pages/modules/ClergyMessagesPage';
 import FixedSchedulePage from './pages/modules/FixedSchedulePage';
 import { PrivacyPage, TermsPage, SupportPage } from './pages/LegalPages';
+import DonatePage from './pages/public/DonatePage';
+import GiftStatusPage from './pages/public/GiftStatusPage';
 
 // Papéis com acesso às telas de coordenação (módulos das Fases 3–4)
 const COORDINATION_ROLES = [
@@ -108,6 +110,10 @@ const App: React.FC = () => {
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/suporte" element={<SupportPage />} />
           <Route path="/support" element={<SupportPage />} />
+
+          {/* Doação pública (Dízimo D4.6): sem login, layout próprio */}
+          <Route path="/doar/recibo/:token" element={<GiftStatusPage />} />
+          <Route path="/doar/:parishId" element={<DonatePage />} />
           
           <Route
             path="/admin"

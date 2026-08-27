@@ -46,3 +46,19 @@ export const downloadBlob = async (path: string, filename: string, params?: Reco
     notify.error(message);
   }
 };
+
+// Situação no provedor (Asaas/Mercado Pago), traduzida para a tesouraria — usada no Dízimo online e em Visitantes
+export const PROVIDER_STATUS_LABEL: Record<string, string> = {
+  pending: 'aguardando pagamento',
+  confirmed: 'pago no provedor',
+  received: 'pago no provedor',
+  paid: 'pago no provedor',
+  overdue: 'vencido no provedor (ainda pagável)',
+  refunded: 'estornado',
+  cancelled: 'cancelado no provedor',
+  mismatch: 'divergência de valor — conciliar',
+  in_review: 'cartão em análise',
+  disputed: 'estorno/chargeback em disputa',
+};
+export const providerStatusLabel = (status: string | null | undefined): string | null =>
+  status ? PROVIDER_STATUS_LABEL[status.toLowerCase()] ?? status : null;

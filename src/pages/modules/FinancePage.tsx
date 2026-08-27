@@ -7,7 +7,8 @@ import CampaignsTab from './finance/CampaignsTab';
 import PresentialTab from './finance/PresentialTab';
 import StatementsTab from './finance/StatementsTab';
 import RetentionTab from './finance/RetentionTab';
-import { formatBRL, httpStatus, friendlyError, plural, downloadBlob } from './finance/financeShared';
+import GuestsTab from './finance/GuestsTab';
+import { formatBRL, httpStatus, friendlyError, plural, downloadBlob, providerStatusLabel } from './finance/financeShared';
 import './ModulePages.css';
 
 interface Transaction {
@@ -137,6 +138,9 @@ interface TitheConfig {
   feePolicy?: string;
   feeFixed?: number;
   feePercent?: number;
+  /** WhatsApp do dízimo (D4.5): opção da paróquia; só envia se o servidor tiver o Twilio (TWILIO_WHATSAPP_FROM) */
+  whatsappEnabled?: boolean;
+  whatsappConfigured?: boolean;
 }
 
 const INTENT_STATUS: Record<string, { label: string; color: string }> = {
@@ -146,21 +150,7 @@ const INTENT_STATUS: Record<string, { label: string; color: string }> = {
   CANCELLED: { label: 'Cancelado', color: 'red' },
 };
 
-// Situação no provedor (Asaas/Mercado Pago), traduzida para a tesouraria
-const PROVIDER_STATUS_LABEL: Record<string, string> = {
-  pending: 'aguardando pagamento',
-  confirmed: 'pago no provedor',
-  received: 'pago no provedor',
-  paid: 'pago no provedor',
-  overdue: 'vencido no provedor (ainda pagável)',
-  refunded: 'estornado',
-  cancelled: 'cancelado no provedor',
-  mismatch: 'divergência de valor — conciliar',
-  in_review: 'cartão em análise',
-  disputed: 'estorno/chargeback em disputa',
-};
-const providerStatusLabel = (status: string | null | undefined): string | null =>
-  status ? PROVIDER_STATUS_LABEL[status.toLowerCase()] ?? status : null;
+// Situação no provedor (Asaas/Mercado Pago): rótulos em financeShared (providerStatusLabel), compartilhados com a aba Visitantes
 
 // Meio de pagamento no relatório mensal — aceita tanto o rótulo já em pt-BR quanto o código do provedor
 const REPORT_METHOD_LABEL: Record<string, string> = {
@@ -215,7 +205,7 @@ const EMPTY_PROVIDER_FORM = {
 const FinancePage: React.FC = () => {
   const { user } = useAuth();
   const canConfigureTithe = ['PARISH_ADMIN', 'DIOCESAN_ADMIN', 'SYSTEM_ADMIN'].includes(user?.role ?? '');
-  const [tab, setTab] = useState<'transactions' | 'tithe' | 'presential' | 'online' | 'retention' | 'campaigns' | 'statements'>('transactions');
+  const [tab, setTab] = useState<'transactions' | 'tithe' | 'presential' | 'online' | 'guests' | 'retention' | 'campaigns' | 'statements'>('transactions');
 
   // Dízimo online (Pix da paróquia)
   const [onlineIntents, setOnlineIntents] = useState<OnlineIntent[]>([]);
@@ -247,6 +237,8 @@ const FinancePage: React.FC = () => {
   // Resultado do setup automático na conta do provedor (chave Pix + webhook)
   const [providerSetup, setProviderSetup] = useState<ProviderSetupResult | null>(null);
   const [checkingSetup, setCheckingSetup] = useState(false);
+  // WhatsApp do dízimo (D4.5): liga/desliga direto no PATCH, sem senha
+  const [savingWhatsapp, setSavingWhatsapp] = useState(false);
 
   // DIOCESAN/SYSTEM_ADMIN não têm paróquia própria: escolhem qual configurar
   const [parishOptions, setParishOptions] = useState<Array<{ id: string; name: string }>>([]);
@@ -393,7 +385,7 @@ const FinancePage: React.FC = () => {
   }, [tab, fetchOnline, fetchTithe]);
 
   useEffect(() => {
-    if ((tab === 'online' || tab === 'campaigns' || tab === 'statements' || tab === 'retention') && canConfigureTithe && !user?.parishId && parishOptions.length === 0) {
+    if ((tab === 'online' || tab === 'guests' || tab === 'campaigns' || tab === 'statements' || tab === 'retention') && canConfigureTithe && !user?.parishId && parishOptions.length === 0) {
       api
         .get('/parishes')
         .then((res) => {
@@ -692,6 +684,29 @@ const FinancePage: React.FC = () => {
     }
   };
 
+  /** Liga/desliga o WhatsApp do dízimo da paróquia (não mexe em chave nem provedor: sem senha) */
+  const toggleWhatsapp = async (enabled: boolean) => {
+    if (savingWhatsapp) return;
+    setSavingWhatsapp(true);
+    try {
+      const res = await api.patch('/tithe/config', { parishId: configParishId || undefined, whatsappEnabled: enabled });
+      const saved: Partial<TitheConfig> = res.data ?? {};
+      setTitheConfig((current) => (current ? { ...current, ...saved, whatsappEnabled: saved.whatsappEnabled ?? enabled } : current));
+      const serverReady = saved.whatsappConfigured ?? titheConfig?.whatsappConfigured;
+      if (!enabled) {
+        notify.success('WhatsApp do dízimo desligado');
+      } else if (serverReady === false) {
+        notify.warning('WhatsApp do dízimo ligado, mas o servidor ainda não tem o Twilio configurado — nada será enviado por enquanto');
+      } else {
+        notify.success('WhatsApp do dízimo ligado — os fiéis ativam a opção no app');
+      }
+    } catch (error) {
+      notify.error(friendlyError(error, 'Erro ao salvar o WhatsApp do dízimo'));
+    } finally {
+      setSavingWhatsapp(false);
+    }
+  };
+
   const saveTitheConfig = (e: React.FormEvent) => {
     e.preventDefault();
     // Qualquer mudança de chave/tipo (inclusive a primeira) pede a senha atual
@@ -820,7 +835,7 @@ const FinancePage: React.FC = () => {
         <div className="header-actions">
           {tab === 'transactions' ? (
             <button className="btn-primary" onClick={() => setShowTxModal(true)}>+ Lançamento</button>
-          ) : tab === 'campaigns' || tab === 'presential' || tab === 'statements' || tab === 'retention' ? null : (
+          ) : tab === 'campaigns' || tab === 'presential' || tab === 'statements' || tab === 'retention' || tab === 'guests' ? null : (
             <>
               <button className="btn-secondary" onClick={() => setShowTitherModal(true)}>+ Dizimista</button>
               <button className="btn-primary" onClick={() => setShowContributionModal(true)}>+ Contribuição</button>
@@ -847,6 +862,11 @@ const FinancePage: React.FC = () => {
         <button className={`tab-btn ${tab === 'online' ? 'active' : ''}`} onClick={() => setTab('online')}>
           Dízimo online
         </button>
+        {canConfigureTithe && (
+          <button className={`tab-btn ${tab === 'guests' ? 'active' : ''}`} onClick={() => setTab('guests')}>
+            Visitantes
+          </button>
+        )}
         <button className={`tab-btn ${tab === 'retention' ? 'active' : ''}`} onClick={() => setTab('retention')}>
           Retenção
         </button>
@@ -1141,6 +1161,34 @@ const FinancePage: React.FC = () => {
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {titheConfig && (
+                <div style={{ marginTop: '1.4rem', borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>
+                  <h4 style={{ margin: '0 0 0.3rem', color: '#555', textTransform: 'uppercase', fontSize: '0.9rem' }}>
+                    WhatsApp do dízimo
+                  </h4>
+                  <p style={{ fontSize: '0.85rem', color: '#666', margin: '0 0 0.8rem' }}>
+                    Com o canal ligado, o fiel que ativar a opção no app recebe o Pix do mês pelo WhatsApp, responde <strong>PAGUEI</strong> para
+                    avisar o pagamento e recebe o agradecimento quando a tesouraria confirma. O fiel precisa ter celular no cadastro; quem não
+                    ativar no app continua só com o app.
+                  </p>
+                  {titheConfig.whatsappConfigured === false && (
+                    <p style={{ fontSize: '0.85rem', color: '#b45309', fontWeight: 600, margin: '0 0 0.8rem' }}>
+                      ⚠ O servidor ainda não tem o WhatsApp do Twilio configurado (TWILIO_WHATSAPP_FROM) — ligar aqui não envia nada até isso ser feito.
+                    </p>
+                  )}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!titheConfig.whatsappEnabled}
+                      disabled={savingWhatsapp}
+                      onChange={(e) => void toggleWhatsapp(e.target.checked)}
+                    />
+                    📲 WhatsApp do dízimo (Pix do mês por WhatsApp, PAGUEI e agradecimento)
+                    {savingWhatsapp && <span style={{ fontSize: '0.8rem', color: '#888' }}>Salvando...</span>}
+                  </label>
                 </div>
               )}
             </div>
@@ -1511,6 +1559,22 @@ const FinancePage: React.FC = () => {
             userRole={user?.role ?? ''}
             userCommunityId={user?.communityId}
           />
+        </>
+      )}
+
+      {tab === 'guests' && canConfigureTithe && (
+        <>
+          {!user?.parishId && (
+            <div className="filters" style={{ marginBottom: '1rem' }}>
+              <select className="filter-select" value={configParishId} onChange={(e) => setConfigParishId(e.target.value)}>
+                <option value="">Escolha a paróquia...</option>
+                {parishOptions.map((parish) => (
+                  <option key={parish.id} value={parish.id}>{parish.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <GuestsTab parishId={configParishId || user?.parishId || ''} onDataChanged={fetchFinance} />
         </>
       )}
 
