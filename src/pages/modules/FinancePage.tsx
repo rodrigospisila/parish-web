@@ -5,6 +5,7 @@ import { notify } from '../../services/notification.service';
 import { useAuth } from '../../contexts/AuthContext';
 import CampaignsTab from './finance/CampaignsTab';
 import PresentialTab from './finance/PresentialTab';
+import StatementsTab from './finance/StatementsTab';
 import { formatBRL, httpStatus, friendlyError, plural, downloadBlob } from './finance/financeShared';
 import './ModulePages.css';
 
@@ -15,6 +16,8 @@ interface Transaction {
   amount: number;
   description?: string | null;
   date: string;
+  /** Centro de custo (agrupa receitas e despesas no balancete mensal) */
+  costCenter?: string | null;
 }
 
 interface Summary {
@@ -189,6 +192,7 @@ const canSyncProvider = (intent: OnlineIntent) =>
   intent.method === 'GATEWAY' && !!intent.providerRef && (intent.status === 'CONFIRMED' || (isOpenIntent(intent) && !isMismatch(intent)));
 
 
+const EMPTY_TX_FORM = { type: 'INCOME', category: '', amount: '', description: '', date: '', communityId: '', costCenter: '' };
 const EMPTY_CONFIG_FORM = {
   titheEnabled: false,
   pixKeyType: 'CNPJ',
@@ -210,7 +214,7 @@ const EMPTY_PROVIDER_FORM = {
 const FinancePage: React.FC = () => {
   const { user } = useAuth();
   const canConfigureTithe = ['PARISH_ADMIN', 'DIOCESAN_ADMIN', 'SYSTEM_ADMIN'].includes(user?.role ?? '');
-  const [tab, setTab] = useState<'transactions' | 'tithe' | 'presential' | 'online' | 'campaigns'>('transactions');
+  const [tab, setTab] = useState<'transactions' | 'tithe' | 'presential' | 'online' | 'campaigns' | 'statements'>('transactions');
 
   // Dízimo online (Pix da paróquia)
   const [onlineIntents, setOnlineIntents] = useState<OnlineIntent[]>([]);
@@ -271,7 +275,9 @@ const FinancePage: React.FC = () => {
   const [contributions, setContributions] = useState<Contribution[]>([]);
 
   const [showTxModal, setShowTxModal] = useState(false);
-  const [txForm, setTxForm] = useState({ type: 'INCOME', category: '', amount: '', description: '', date: '', communityId: '' });
+  const [txForm, setTxForm] = useState({ ...EMPTY_TX_FORM });
+  // Centros de custo já usados na paróquia (sugestões do <datalist>; o campo continua livre)
+  const [costCenters, setCostCenters] = useState<string[]>([]);
 
   const [showTitherModal, setShowTitherModal] = useState(false);
   const [titherForm, setTitherForm] = useState({ memberId: '', registrationNumber: '' });
@@ -386,7 +392,7 @@ const FinancePage: React.FC = () => {
   }, [tab, fetchOnline, fetchTithe]);
 
   useEffect(() => {
-    if ((tab === 'online' || tab === 'campaigns') && canConfigureTithe && !user?.parishId && parishOptions.length === 0) {
+    if ((tab === 'online' || tab === 'campaigns' || tab === 'statements') && canConfigureTithe && !user?.parishId && parishOptions.length === 0) {
       api
         .get('/parishes')
         .then((res) => {
@@ -727,6 +733,20 @@ const FinancePage: React.FC = () => {
     api.get('/members').then((res) => setMembers(res.data)).catch(() => undefined);
   }, []);
 
+  // Sugestões de centro de custo: carrega ao abrir o formulário (um centro novo entra na lista na próxima abertura)
+  const fetchCostCenters = useCallback(async () => {
+    try {
+      const res = await api.get('/finance/statements/cost-centers', { params: { parishId: configParishId || undefined } });
+      setCostCenters(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      // sugestões são opcionais: o campo continua aceitando texto livre
+    }
+  }, [configParishId]);
+
+  useEffect(() => {
+    if (showTxModal) void fetchCostCenters();
+  }, [showTxModal, fetchCostCenters]);
+
   const handleCreateTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -737,10 +757,11 @@ const FinancePage: React.FC = () => {
         description: txForm.description || undefined,
         date: new Date(txForm.date).toISOString(),
         communityId: txForm.communityId || undefined,
+        costCenter: txForm.costCenter.trim() || undefined,
       });
       notify.success('Lançamento registrado!');
       setShowTxModal(false);
-      setTxForm({ type: 'INCOME', category: '', amount: '', description: '', date: '', communityId: '' });
+      setTxForm({ ...EMPTY_TX_FORM });
       fetchFinance();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao registrar lançamento'));
@@ -785,7 +806,7 @@ const FinancePage: React.FC = () => {
   };
 
   const formatDate = (value: string) => new Date(value).toLocaleDateString('pt-BR');
-  // Admin diocesano/sistema recebe comunidades de todas as paróquias: só as da paróquia escolhida servem para campanhas
+  // Admin diocesano/sistema recebe comunidades de todas as paróquias: só as da paróquia escolhida servem para campanhas e balancetes
   const campaignCommunities = configParishId ? communities.filter((c) => !c.parishId || c.parishId === configParishId) : communities;
   const monthTotal = contributions.reduce((sum, c) => sum + c.amount, 0);
 
@@ -798,7 +819,7 @@ const FinancePage: React.FC = () => {
         <div className="header-actions">
           {tab === 'transactions' ? (
             <button className="btn-primary" onClick={() => setShowTxModal(true)}>+ Lançamento</button>
-          ) : tab === 'campaigns' || tab === 'presential' ? null : (
+          ) : tab === 'campaigns' || tab === 'presential' || tab === 'statements' ? null : (
             <>
               <button className="btn-secondary" onClick={() => setShowTitherModal(true)}>+ Dizimista</button>
               <button className="btn-primary" onClick={() => setShowContributionModal(true)}>+ Contribuição</button>
@@ -827,6 +848,9 @@ const FinancePage: React.FC = () => {
         </button>
         <button className={`tab-btn ${tab === 'campaigns' ? 'active' : ''}`} onClick={() => setTab('campaigns')}>
           Campanhas
+        </button>
+        <button className={`tab-btn ${tab === 'statements' ? 'active' : ''}`} onClick={() => setTab('statements')}>
+          Balancete
         </button>
       </div>
 
@@ -857,6 +881,7 @@ const FinancePage: React.FC = () => {
                   <th>Data</th>
                   <th>Tipo</th>
                   <th>Categoria</th>
+                  <th>Centro de custo</th>
                   <th>Descrição</th>
                   <th>Valor</th>
                 </tr>
@@ -871,6 +896,7 @@ const FinancePage: React.FC = () => {
                         : <span className="status-badge red">Despesa</span>}
                     </td>
                     <td>{tx.category}</td>
+                    <td>{tx.costCenter ? <span className="status-badge gray">{tx.costCenter}</span> : '—'}</td>
                     <td>{tx.description || '—'}</td>
                     <td style={{ fontWeight: 600, color: tx.type === 'INCOME' ? '#0f5132' : '#842029' }}>
                       {tx.type === 'INCOME' ? '+' : '−'} {formatBRL(tx.amount)}
@@ -1439,6 +1465,28 @@ const FinancePage: React.FC = () => {
         </>
       )}
 
+      {tab === 'statements' && (
+        <>
+          {canConfigureTithe && !user?.parishId && (
+            <div className="filters" style={{ marginBottom: '1rem' }}>
+              <select className="filter-select" value={configParishId} onChange={(e) => setConfigParishId(e.target.value)}>
+                <option value="">Escolha a paróquia...</option>
+                {parishOptions.map((parish) => (
+                  <option key={parish.id} value={parish.id}>{parish.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <StatementsTab
+            communities={campaignCommunities}
+            parishIdParam={configParishId}
+            parishReady={!!(configParishId || user?.parishId)}
+            userRole={user?.role ?? ''}
+            userCommunityId={user?.communityId}
+          />
+        </>
+      )}
+
       {tab === 'presential' && (
         <PresentialTab parishIdParam={configParishId} onDataChanged={fetchFinance} />
       )}
@@ -1536,12 +1584,31 @@ const FinancePage: React.FC = () => {
                   <input type="date" required value={txForm.date} onChange={(e) => setTxForm({ ...txForm, date: e.target.value })} />
                 </div>
               </div>
-              <div className="form-group">
-                <label>Comunidade (opcional)</label>
-                <select value={txForm.communityId} onChange={(e) => setTxForm({ ...txForm, communityId: e.target.value })}>
-                  <option value="">Paróquia</option>
-                  {communities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="tx-community">Comunidade (opcional)</label>
+                  <select id="tx-community" value={txForm.communityId} onChange={(e) => setTxForm({ ...txForm, communityId: e.target.value })}>
+                    <option value="">Paróquia</option>
+                    {communities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="tx-cost-center">Centro de custo (opcional)</label>
+                  <input
+                    id="tx-cost-center"
+                    type="text"
+                    list="tx-cost-center-options"
+                    maxLength={60}
+                    autoComplete="off"
+                    placeholder="Ex.: Pastoral, Manutenção, Secretaria"
+                    value={txForm.costCenter}
+                    onChange={(e) => setTxForm({ ...txForm, costCenter: e.target.value })}
+                  />
+                  <datalist id="tx-cost-center-options">
+                    {costCenters.map((name) => <option key={name} value={name} />)}
+                  </datalist>
+                  <small style={{ color: '#888' }}>Agrupa receitas e despesas no balancete mensal</small>
+                </div>
               </div>
               <div className="form-group">
                 <label>Descrição</label>
