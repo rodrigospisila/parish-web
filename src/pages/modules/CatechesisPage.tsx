@@ -465,6 +465,12 @@ const CatechesisPage: React.FC = () => {
     fetchData();
   }, [fetchData]);
 
+  // Cabeçalho do detalhe sempre com os dados frescos da lista (vagas/ocupação
+  // mudam a cada matrícula/edição — o objeto guardado no clique ficaria velho)
+  useEffect(() => {
+    setSelectedClass((prev) => (prev ? classes.find((klass) => klass.id === prev.id) ?? prev : prev));
+  }, [classes]);
+
   const openClassDetail = async (klass: CatechesisClass) => {
     setSelectedClass(klass);
     setReportLoading(true);
@@ -576,21 +582,8 @@ const CatechesisPage: React.FC = () => {
       notify.success('Turma atualizada!');
       if (data?.capacityWarning) notify.warning(data.capacityWarning);
       setShowEditClassModal(false);
+      // A lista recarregada reidrata o detalhe (occupied/openSpots/isFull inclusos)
       await fetchData();
-      // Atualiza o cabeçalho do detalhe aberto com os novos dados da lista
-      setSelectedClass((prev) =>
-        prev && prev.id === selectedClass.id
-          ? {
-              ...prev,
-              name: editClassForm.name,
-              year: Number(editClassForm.year),
-              weekday: editClassForm.weekday === '' ? null : Number(editClassForm.weekday),
-              time: editClassForm.time || null,
-              room: editClassForm.room || null,
-              capacity: editClassForm.capacity === '' ? null : Number(editClassForm.capacity),
-            }
-          : prev,
-      );
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao atualizar a turma'));
     } finally {
@@ -1613,7 +1606,15 @@ const CatechesisPage: React.FC = () => {
             </div>
 
             <div className="cate-toolbar">
-              <button className="cate-btn cate-btn--primary" onClick={() => setShowEnrollModal(true)}>
+              <button
+                className="cate-btn cate-btn--primary"
+                onClick={() => {
+                  // Sempre abre limpo — um "matricular mesmo assim" marcado num
+                  // cancelamento anterior não pode vazar para a próxima matrícula
+                  setEnrollForm({ memberId: '', waiveBaptism: false, overrideCapacity: false });
+                  setShowEnrollModal(true);
+                }}
+              >
                 + Matricular
               </button>
               <button className="cate-btn cate-btn--primary" onClick={() => setShowSessionModal(true)}>
