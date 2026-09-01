@@ -134,6 +134,24 @@
   color: #b91c1c;
 }
 
+/* ===== Turmas em lista ===== */
+.cate-viewbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 0.7rem;
+}
+.cate-table--click tbody tr {
+  cursor: pointer;
+}
+.cate-table--click tbody tr:hover {
+  background: color-mix(in srgb, var(--cate-primary) 5%, transparent);
+}
+.cate-list-year {
+  font-size: 0.75rem;
+  color: var(--cate-muted);
+  margin-left: 0.3rem;
+}
+
 /* ===== Catecumenato (preparação para o Batismo) ===== */
 .cate-baptism {
   display: inline-flex;

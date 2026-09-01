@@ -348,6 +348,22 @@ const CatechesisPage: React.FC = () => {
   // Filtro da tabela de catequizandos (padrão: só quem está na turma)
   const [studentsFilter, setStudentsFilter] = useState<'current' | 'all'>('current');
 
+  // Turmas em cards ou lista (preferência lembrada neste navegador)
+  const [classesView, setClassesView] = useState<'cards' | 'list'>(() => {
+    try {
+      return localStorage.getItem('cate-classes-view') === 'list' ? 'list' : 'cards';
+    } catch {
+      return 'cards';
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('cate-classes-view', classesView);
+    } catch {
+      // navegação privada: segue sem lembrar
+    }
+  }, [classesView]);
+
   // Editar turma (nome/dia/horário/sala/vagas — etapa e comunidade não mudam)
   const [showEditClassModal, setShowEditClassModal] = useState(false);
   const [savingClass, setSavingClass] = useState(false);
@@ -1526,6 +1542,78 @@ const CatechesisPage: React.FC = () => {
 
       {tab === 'classes' && !selectedClass && (
         <div className="cate-root">
+          {classes.length > 0 && (
+            <div className="cate-viewbar">
+              <div className="cate-filter" role="group" aria-label="Modo de exibição das turmas">
+                <button
+                  type="button"
+                  className={`cate-filter__opt${classesView === 'cards' ? ' is-on' : ''}`}
+                  onClick={() => setClassesView('cards')}
+                >
+                  ▦ Cards
+                </button>
+                <button
+                  type="button"
+                  className={`cate-filter__opt${classesView === 'list' ? ' is-on' : ''}`}
+                  onClick={() => setClassesView('list')}
+                >
+                  ☰ Lista
+                </button>
+              </div>
+            </div>
+          )}
+          {classesView === 'list' && classes.length > 0 && (
+            <div className="cate-table-wrap">
+              <table className="cate-table cate-table--click">
+                <thead>
+                  <tr>
+                    <th>Turma</th>
+                    <th>Etapa</th>
+                    <th>Comunidade</th>
+                    <th>Dia e horário</th>
+                    <th>Sala</th>
+                    <th style={{ textAlign: 'right' }}>Ativos</th>
+                    <th style={{ textAlign: 'right' }}>Encontros</th>
+                    <th>Vagas</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {classes
+                    .slice()
+                    .sort((a, b) => a.stage.name.localeCompare(b.stage.name, 'pt-BR') || a.name.localeCompare(b.name, 'pt-BR'))
+                    .map((klass) => (
+                      <tr key={klass.id} onClick={() => openClassDetail(klass)}>
+                        <td>
+                          <strong>{klass.name}</strong> <span className="cate-list-year">{klass.year}</span>
+                        </td>
+                        <td>{klass.stage.name}</td>
+                        <td>{klass.community.name}</td>
+                        <td>
+                          {klass.weekday !== null && klass.weekday !== undefined ? WEEKDAYS[klass.weekday] : 'Dia a definir'}
+                          {klass.time ? ` às ${klass.time}` : ''}
+                        </td>
+                        <td>{klass.room || '—'}</td>
+                        <td style={{ textAlign: 'right' }}><strong>{klass._count.enrollments}</strong></td>
+                        <td style={{ textAlign: 'right' }}>{klass._count.sessions}</td>
+                        <td>
+                          {klass.capacity != null ? (
+                            <span className={`cate-seats ${klass.isFull ? 'is-full' : ''}`}>
+                              {klass.isFull ? 'Lotada' : `${klass.openSpots} vaga${klass.openSpots === 1 ? '' : 's'}`}
+                              {' '}({klass.occupied ?? 0}/{klass.capacity})
+                            </span>
+                          ) : (
+                            <span className="cate-seats is-open">Sem limite</span>
+                          )}
+                        </td>
+                        <td className="cate-card__open">Abrir →</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {classesView === 'cards' && (
           <div className="cate-grid">
             {classes.map((klass) => (
               <div key={klass.id} className="cate-card" onClick={() => openClassDetail(klass)}>
@@ -1564,6 +1652,7 @@ const CatechesisPage: React.FC = () => {
               </div>
             ))}
           </div>
+          )}
           {classes.length === 0 && <div className="cate-empty">Nenhuma turma cadastrada — crie a primeira em “+ Nova Turma”.</div>}
         </div>
       )}
