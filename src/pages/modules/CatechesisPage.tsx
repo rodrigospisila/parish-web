@@ -45,6 +45,10 @@ interface ClassReport {
     status: string;
     pendingDocuments?: string | null;
     rejectionReason?: string | null;
+    /** Catecumenato: ainda não batizado — 1 ano de catequese antes do Batismo */
+    unbaptized?: boolean;
+    baptismSince?: string | null;
+    baptismReady?: boolean;
     contact?: { name: string | null; phone: string | null } | null;
     submittedDocs: number;
     docsCount: number;
@@ -362,7 +366,7 @@ const CatechesisPage: React.FC = () => {
   const [renewing, setRenewing] = useState(false);
 
   const [showEnrollModal, setShowEnrollModal] = useState(false);
-  const [enrollForm, setEnrollForm] = useState({ memberId: '', waiveBaptism: false, overrideCapacity: false });
+  const [enrollForm, setEnrollForm] = useState({ memberId: '', waiveBaptism: false, overrideCapacity: false, unbaptized: false });
 
   const [showCatechistModal, setShowCatechistModal] = useState(false);
   const [catechistForm, setCatechistForm] = useState({ memberId: '', role: 'Catequista' });
@@ -609,10 +613,11 @@ const CatechesisPage: React.FC = () => {
         memberId: enrollForm.memberId,
         ...(enrollForm.waiveBaptism ? { requireBaptism: false } : {}),
         ...(enrollForm.overrideCapacity ? { overrideCapacity: true } : {}),
+        ...(enrollForm.unbaptized ? { unbaptized: true } : {}),
       });
       notify.success('Catequizando matriculado!');
       setShowEnrollModal(false);
-      setEnrollForm({ memberId: '', waiveBaptism: false, overrideCapacity: false });
+      setEnrollForm({ memberId: '', waiveBaptism: false, overrideCapacity: false, unbaptized: false });
       refreshDetail();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao matricular'));
@@ -1620,7 +1625,7 @@ const CatechesisPage: React.FC = () => {
                 onClick={() => {
                   // Sempre abre limpo — um "matricular mesmo assim" marcado num
                   // cancelamento anterior não pode vazar para a próxima matrícula
-                  setEnrollForm({ memberId: '', waiveBaptism: false, overrideCapacity: false });
+                  setEnrollForm({ memberId: '', waiveBaptism: false, overrideCapacity: false, unbaptized: false });
                   setShowEnrollModal(true);
                 }}
               >
@@ -1877,9 +1882,21 @@ const CatechesisPage: React.FC = () => {
                                       </button>
                                     ) : (
                                       <>
+                                        {student.unbaptized && (
+                                          <span className={student.baptismReady ? 'cate-baptism cate-baptism--ready' : 'cate-baptism'}>
+                                            🕊{' '}
+                                            {student.baptismReady
+                                              ? 'Apto ao Batismo (1+ ano de catequese)'
+                                              : `Preparação p/ Batismo${
+                                                  student.baptismSince
+                                                    ? ` · desde ${new Date(student.baptismSince).toLocaleDateString('pt-BR', { month: '2-digit', year: 'numeric', timeZone: 'UTC' })}`
+                                                    : ''
+                                                }`}
+                                          </span>
+                                        )}
                                         {student.pendingDocuments ? (
                                           <span className="cate-doc-pending">📄 {student.pendingDocuments}</span>
-                                        ) : student.docsCount === 0 ? (
+                                        ) : student.docsCount === 0 && !student.unbaptized ? (
                                           <span style={{ color: '#94a3b8' }}>—</span>
                                         ) : null}
                                         {student.docsCount > 0 && (
@@ -2098,11 +2115,21 @@ const CatechesisPage: React.FC = () => {
               <label className="form-check">
                 <input
                   type="checkbox"
-                  checked={enrollForm.waiveBaptism}
-                  onChange={(e) => setEnrollForm({ ...enrollForm, waiveBaptism: e.target.checked })}
+                  checked={enrollForm.unbaptized}
+                  onChange={(e) => setEnrollForm({ ...enrollForm, unbaptized: e.target.checked })}
                 />
-                Dispensar comprovação de Batismo (ex.: etapa de preparação para o próprio Batismo)
+                Ainda não foi batizado(a) — entra em preparação para o Batismo (1 ano de catequese antes de receber o sacramento)
               </label>
+              {!enrollForm.unbaptized && (
+                <label className="form-check">
+                  <input
+                    type="checkbox"
+                    checked={enrollForm.waiveBaptism}
+                    onChange={(e) => setEnrollForm({ ...enrollForm, waiveBaptism: e.target.checked })}
+                  />
+                  Dispensar comprovação de Batismo (ex.: etapa de preparação para o próprio Batismo)
+                </label>
+              )}
               {selectedClass.isFull && (
                 <label className="form-check">
                   <input

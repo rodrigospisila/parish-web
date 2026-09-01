@@ -134,6 +134,25 @@
   color: #b91c1c;
 }
 
+/* ===== Catecumenato (preparação para o Batismo) ===== */
+.cate-baptism {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  background: color-mix(in srgb, #d97706 12%, transparent);
+  color: #b45309;
+  margin-right: 0.4rem;
+  white-space: nowrap;
+}
+.cate-baptism--ready {
+  background: color-mix(in srgb, #16a34a 12%, transparent);
+  color: #15803d;
+}
+
 /* ===== Filtro de catequizandos ===== */
 .cate-filter {
   display: inline-flex;
