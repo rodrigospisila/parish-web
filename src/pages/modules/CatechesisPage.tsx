@@ -24,6 +24,12 @@ interface CatechesisClass {
   stage: { name: string; sacramentType?: string | null };
   community: { name: string };
   _count: { enrollments: number; sessions: number };
+  /** Limite de vagas (null = sem limite) */
+  capacity?: number | null;
+  /** Ocupação = matriculados ativos + inscrições aguardando aprovação */
+  occupied?: number;
+  openSpots?: number | null;
+  isFull?: boolean;
 }
 
 interface ClassReport {
@@ -330,13 +336,25 @@ const CatechesisPage: React.FC = () => {
     capacity: '',
   });
 
+  // Editar turma (nome/dia/horário/sala/vagas — etapa e comunidade não mudam)
+  const [showEditClassModal, setShowEditClassModal] = useState(false);
+  const [savingClass, setSavingClass] = useState(false);
+  const [editClassForm, setEditClassForm] = useState({
+    name: '',
+    year: new Date().getFullYear(),
+    weekday: '',
+    time: '',
+    room: '',
+    capacity: '',
+  });
+
   const [renewal, setRenewal] = useState<RenewalPreview | null>(null);
   const [renewalTarget, setRenewalTarget] = useState('');
   const [renewalSelection, setRenewalSelection] = useState<Record<string, boolean>>({});
   const [renewing, setRenewing] = useState(false);
 
   const [showEnrollModal, setShowEnrollModal] = useState(false);
-  const [enrollForm, setEnrollForm] = useState({ memberId: '', waiveBaptism: false });
+  const [enrollForm, setEnrollForm] = useState({ memberId: '', waiveBaptism: false, overrideCapacity: false });
 
   const [showCatechistModal, setShowCatechistModal] = useState(false);
   const [catechistForm, setCatechistForm] = useState({ memberId: '', role: 'Catequista' });
@@ -529,6 +547,57 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
+  const openEditClass = () => {
+    if (!selectedClass) return;
+    setEditClassForm({
+      name: selectedClass.name,
+      year: selectedClass.year,
+      weekday: selectedClass.weekday === null || selectedClass.weekday === undefined ? '' : String(selectedClass.weekday),
+      time: selectedClass.time ?? '',
+      room: selectedClass.room ?? '',
+      capacity: selectedClass.capacity == null ? '' : String(selectedClass.capacity),
+    });
+    setShowEditClassModal(true);
+  };
+
+  const handleUpdateClass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClass) return;
+    setSavingClass(true);
+    try {
+      const { data } = await api.patch<{ capacityWarning?: string | null }>(`/catechesis/classes/${selectedClass.id}`, {
+        name: editClassForm.name,
+        year: Number(editClassForm.year),
+        weekday: editClassForm.weekday === '' ? null : Number(editClassForm.weekday),
+        time: editClassForm.time || null,
+        room: editClassForm.room || null,
+        capacity: editClassForm.capacity === '' ? null : Number(editClassForm.capacity),
+      });
+      notify.success('Turma atualizada!');
+      if (data?.capacityWarning) notify.warning(data.capacityWarning);
+      setShowEditClassModal(false);
+      await fetchData();
+      // Atualiza o cabeçalho do detalhe aberto com os novos dados da lista
+      setSelectedClass((prev) =>
+        prev && prev.id === selectedClass.id
+          ? {
+              ...prev,
+              name: editClassForm.name,
+              year: Number(editClassForm.year),
+              weekday: editClassForm.weekday === '' ? null : Number(editClassForm.weekday),
+              time: editClassForm.time || null,
+              room: editClassForm.room || null,
+              capacity: editClassForm.capacity === '' ? null : Number(editClassForm.capacity),
+            }
+          : prev,
+      );
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao atualizar a turma'));
+    } finally {
+      setSavingClass(false);
+    }
+  };
+
   const handleEnroll = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedClass) return;
@@ -537,10 +606,11 @@ const CatechesisPage: React.FC = () => {
         classId: selectedClass.id,
         memberId: enrollForm.memberId,
         ...(enrollForm.waiveBaptism ? { requireBaptism: false } : {}),
+        ...(enrollForm.overrideCapacity ? { overrideCapacity: true } : {}),
       });
       notify.success('Catequizando matriculado!');
       setShowEnrollModal(false);
-      setEnrollForm({ memberId: '', waiveBaptism: false });
+      setEnrollForm({ memberId: '', waiveBaptism: false, overrideCapacity: false });
       refreshDetail();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao matricular'));
@@ -1473,6 +1543,14 @@ const CatechesisPage: React.FC = () => {
                   <div className="cate-card__stats">
                     <span><strong>{klass._count.enrollments}</strong> ativos</span>
                     <span><strong>{klass._count.sessions}</strong> encontros</span>
+                    {klass.capacity != null ? (
+                      <span className={`cate-seats ${klass.isFull ? 'is-full' : ''}`}>
+                        {klass.isFull ? 'Lotada' : `${klass.openSpots} vaga${klass.openSpots === 1 ? '' : 's'}`}
+                        {' '}({klass.occupied ?? 0}/{klass.capacity})
+                      </span>
+                    ) : (
+                      <span className="cate-seats is-open">Sem limite</span>
+                    )}
                   </div>
                   <span className="cate-card__open">Abrir turma →</span>
                 </div>
@@ -1541,6 +1619,16 @@ const CatechesisPage: React.FC = () => {
               <button className="cate-btn cate-btn--primary" onClick={() => setShowSessionModal(true)}>
                 + Encontro (chamada)
               </button>
+              <button className="cate-btn" onClick={openEditClass}>
+                ✏️ Editar turma
+              </button>
+              {selectedClass.capacity != null && (
+                <span className={`cate-seats ${selectedClass.isFull ? 'is-full' : ''}`}>
+                  {selectedClass.isFull
+                    ? `Lotada (${selectedClass.occupied ?? 0}/${selectedClass.capacity})`
+                    : `${selectedClass.openSpots} vaga${selectedClass.openSpots === 1 ? '' : 's'} de ${selectedClass.capacity}`}
+                </span>
+              )}
               <span className="cate-toolbar__sep" />
               <button
                 className="cate-btn"
@@ -1954,6 +2042,13 @@ const CatechesisPage: React.FC = () => {
         <div className="module-modal-overlay" onClick={() => setShowEnrollModal(false)}>
           <div className="module-modal" onClick={(e) => e.stopPropagation()}>
             <h2>Matricular em {selectedClass.name}</h2>
+            {selectedClass.capacity != null && (
+              <p className={`cate-seats-note ${selectedClass.isFull ? 'is-full' : ''}`}>
+                {selectedClass.isFull
+                  ? `Turma lotada — ${selectedClass.occupied ?? 0}/${selectedClass.capacity} vagas ocupadas.`
+                  : `${selectedClass.openSpots} de ${selectedClass.capacity} vaga${selectedClass.capacity === 1 ? '' : 's'} disponíveis.`}
+              </p>
+            )}
             <form onSubmit={handleEnroll}>
               <div className="form-group">
                 <label>Catequizando (membro) *</label>
@@ -1970,9 +2065,78 @@ const CatechesisPage: React.FC = () => {
                 />
                 Dispensar comprovação de Batismo (ex.: etapa de preparação para o próprio Batismo)
               </label>
+              {selectedClass.isFull && (
+                <label className="form-check">
+                  <input
+                    type="checkbox"
+                    checked={enrollForm.overrideCapacity}
+                    onChange={(e) => setEnrollForm({ ...enrollForm, overrideCapacity: e.target.checked })}
+                  />
+                  Matricular mesmo assim, acima do limite de vagas
+                </label>
+              )}
               <div className="modal-actions">
                 <button type="button" className="btn-cancel" onClick={() => setShowEnrollModal(false)}>Cancelar</button>
-                <button type="submit" className="btn-submit">Matricular</button>
+                <button type="submit" className="btn-submit" disabled={!!selectedClass.isFull && !enrollForm.overrideCapacity}>
+                  Matricular
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showEditClassModal && selectedClass && (
+        <div className="module-modal-overlay" onClick={() => setShowEditClassModal(false)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Editar {selectedClass.name}</h2>
+            <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0 0 0.8rem' }}>
+              Etapa e comunidade não mudam aqui (para trocar a etapa, use transferência/renovação).
+            </p>
+            <form onSubmit={handleUpdateClass}>
+              <div className="form-group">
+                <label>Nome da turma *</label>
+                <input type="text" required value={editClassForm.name} onChange={(e) => setEditClassForm({ ...editClassForm, name: e.target.value })} />
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Ano *</label>
+                  <input type="number" required value={editClassForm.year} onChange={(e) => setEditClassForm({ ...editClassForm, year: Number(e.target.value) })} />
+                </div>
+                <div className="form-group">
+                  <label>Vagas</label>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="Sem limite"
+                    value={editClassForm.capacity}
+                    onChange={(e) => setEditClassForm({ ...editClassForm, capacity: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Dia da semana</label>
+                  <select value={editClassForm.weekday} onChange={(e) => setEditClassForm({ ...editClassForm, weekday: e.target.value })}>
+                    <option value="">A definir</option>
+                    {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Horário</label>
+                  <input type="time" value={editClassForm.time} onChange={(e) => setEditClassForm({ ...editClassForm, time: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Sala/local</label>
+                <input type="text" value={editClassForm.room} onChange={(e) => setEditClassForm({ ...editClassForm, room: e.target.value })} />
+              </div>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 0.4rem' }}>
+                Deixe as vagas em branco para turma sem limite. O limite vale para a inscrição online e para a matrícula na secretaria.
+              </p>
+              <div className="modal-actions">
+                <button type="button" className="btn-cancel" onClick={() => setShowEditClassModal(false)}>Cancelar</button>
+                <button type="submit" className="btn-submit" disabled={savingClass}>{savingClass ? 'Salvando…' : 'Salvar'}</button>
               </div>
             </form>
           </div>

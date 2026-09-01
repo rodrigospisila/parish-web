@@ -101,6 +101,39 @@
   white-space: nowrap;
 }
 
+/* ===== Vagas / lotação ===== */
+.cate-seats {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--cate-primary) 12%, transparent);
+  color: var(--cate-primary);
+}
+.cate-seats.is-open {
+  background: color-mix(in srgb, var(--cate-muted, #64748b) 16%, transparent);
+  color: var(--cate-muted, #64748b);
+}
+.cate-seats.is-full {
+  background: color-mix(in srgb, #dc2626 14%, transparent);
+  color: #b91c1c;
+}
+.cate-seats-note {
+  margin: 0 0 0.8rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  background: color-mix(in srgb, var(--cate-primary) 8%, transparent);
+  color: var(--cate-ink, #1e293b);
+}
+.cate-seats-note.is-full {
+  background: color-mix(in srgb, #dc2626 10%, transparent);
+  color: #b91c1c;
+}
+
 /* ===== Detalhe da turma ===== */
 .cate-back {
   display: inline-flex;
