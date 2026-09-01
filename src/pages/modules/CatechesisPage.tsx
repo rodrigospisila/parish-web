@@ -12,7 +12,12 @@ interface Stage {
   description?: string | null;
   ordering: number;
   sacramentType?: string | null;
+  /** Cor do "tempo" (hex), exibida em cards e listas */
+  color?: string | null;
 }
+
+/** Paleta sugerida para as etapas (a planilha da paróquia usa cores por tempo) */
+const STAGE_COLORS = ['#eab308', '#3b82f6', '#10b981', '#8b5cf6', '#f97316', '#0ea5e9', '#dc2626', '#64748b'];
 
 interface CatechesisClass {
   id: string;
@@ -21,7 +26,7 @@ interface CatechesisClass {
   weekday?: number | null;
   time?: string | null;
   room?: string | null;
-  stage: { name: string; sacramentType?: string | null };
+  stage: { name: string; sacramentType?: string | null; color?: string | null };
   community: { name: string };
   _count: { enrollments: number; sessions: number };
   /** Limite de vagas (null = sem limite) */
@@ -331,7 +336,7 @@ const CatechesisPage: React.FC = () => {
   const [reportLoading, setReportLoading] = useState(false);
 
   const [showStageModal, setShowStageModal] = useState(false);
-  const [stageForm, setStageForm] = useState({ name: '', description: '', ordering: 0, sacramentType: '' });
+  const [stageForm, setStageForm] = useState({ name: '', description: '', ordering: 0, sacramentType: '', color: '' });
 
   const [showClassModal, setShowClassModal] = useState(false);
   const [classForm, setClassForm] = useState({
@@ -542,6 +547,18 @@ const CatechesisPage: React.FC = () => {
     fetchData();
   };
 
+  // Cor da etapa direto na tabela (um clique por bolinha — PATCH imediato)
+  const handleStageColor = async (stageId: string, color: string | null) => {
+    try {
+      await api.patch(`/catechesis/stages/${stageId}`, { color });
+      setStages((prev) => prev.map((s) => (s.id === stageId ? { ...s, color } : s)));
+      // recarrega as turmas para os cards/lista refletirem a cor nova
+      void fetchData();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao salvar a cor da etapa'));
+    }
+  };
+
   const handleCreateStage = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -550,10 +567,11 @@ const CatechesisPage: React.FC = () => {
         description: stageForm.description || undefined,
         ordering: Number(stageForm.ordering) || 0,
         sacramentType: stageForm.sacramentType || undefined,
+        color: stageForm.color || undefined,
       });
       notify.success('Etapa criada com sucesso!');
       setShowStageModal(false);
-      setStageForm({ name: '', description: '', ordering: 0, sacramentType: '' });
+      setStageForm({ name: '', description: '', ordering: 0, sacramentType: '', color: '' });
       fetchData();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao criar etapa'));
@@ -1521,6 +1539,7 @@ const CatechesisPage: React.FC = () => {
               <tr>
                 <th>Ordem</th>
                 <th>Etapa</th>
+                <th>Cor</th>
                 <th>Sacramento gerado</th>
                 <th>Descrição</th>
               </tr>
@@ -1529,7 +1548,32 @@ const CatechesisPage: React.FC = () => {
               {stages.map((stage) => (
                 <tr key={stage.id}>
                   <td>{stage.ordering}</td>
-                  <td><strong>{stage.name}</strong></td>
+                  <td>
+                    {stage.color && <span className="cate-stage-dot" style={{ background: stage.color }} />}
+                    <strong>{stage.name}</strong>
+                  </td>
+                  <td>
+                    <span className="cate-color-picker">
+                      {STAGE_COLORS.map((color) => (
+                        <button
+                          key={color}
+                          type="button"
+                          title={color}
+                          className={`cate-color-swatch${stage.color === color ? ' is-on' : ''}`}
+                          style={{ background: color }}
+                          onClick={() => void handleStageColor(stage.id, color)}
+                        />
+                      ))}
+                      <button
+                        type="button"
+                        title="Sem cor"
+                        className={`cate-color-swatch cate-color-swatch--none${!stage.color ? ' is-on' : ''}`}
+                        onClick={() => void handleStageColor(stage.id, null)}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  </td>
                   <td>{stage.sacramentType ? SACRAMENT_LABELS[stage.sacramentType] ?? stage.sacramentType : '—'}</td>
                   <td>{stage.description || '—'}</td>
                 </tr>
@@ -1583,11 +1627,18 @@ const CatechesisPage: React.FC = () => {
                     .slice()
                     .sort((a, b) => a.stage.name.localeCompare(b.stage.name, 'pt-BR') || a.name.localeCompare(b.name, 'pt-BR'))
                     .map((klass) => (
-                      <tr key={klass.id} onClick={() => openClassDetail(klass)}>
+                      <tr
+                        key={klass.id}
+                        style={klass.stage.color ? { boxShadow: `inset 3px 0 0 ${klass.stage.color}` } : undefined}
+                        onClick={() => openClassDetail(klass)}
+                      >
                         <td>
                           <strong>{klass.name}</strong> <span className="cate-list-year">{klass.year}</span>
                         </td>
-                        <td>{klass.stage.name}</td>
+                        <td>
+                          {klass.stage.color && <span className="cate-stage-dot" style={{ background: klass.stage.color }} />}
+                          {klass.stage.name}
+                        </td>
                         <td>{klass.community.name}</td>
                         <td>
                           {klass.weekday !== null && klass.weekday !== undefined ? WEEKDAYS[klass.weekday] : 'Dia a definir'}
@@ -1616,11 +1667,19 @@ const CatechesisPage: React.FC = () => {
           {classesView === 'cards' && (
           <div className="cate-grid">
             {classes.map((klass) => (
-              <div key={klass.id} className="cate-card" onClick={() => openClassDetail(klass)}>
+              <div
+                key={klass.id}
+                className="cate-card"
+                style={klass.stage.color ? { borderTop: `3px solid ${klass.stage.color}` } : undefined}
+                onClick={() => openClassDetail(klass)}
+              >
                 <div className="cate-card__head">
                   <div>
                     <h3 className="cate-card__title">{klass.name}</h3>
-                    <p className="cate-card__stage">{klass.stage.name}</p>
+                    <p className="cate-card__stage">
+                      {klass.stage.color && <span className="cate-stage-dot" style={{ background: klass.stage.color }} />}
+                      {klass.stage.name}
+                    </p>
                   </div>
                   <span className="cate-year">{klass.year}</span>
                 </div>
@@ -2101,6 +2160,29 @@ const CatechesisPage: React.FC = () => {
                     ))}
                   </select>
                 </div>
+              </div>
+              <div className="form-group">
+                <label>Cor do tempo (cards e listas)</label>
+                <span className="cate-color-picker">
+                  {STAGE_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      title={color}
+                      className={`cate-color-swatch${stageForm.color === color ? ' is-on' : ''}`}
+                      style={{ background: color }}
+                      onClick={() => setStageForm({ ...stageForm, color })}
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    title="Sem cor"
+                    className={`cate-color-swatch cate-color-swatch--none${!stageForm.color ? ' is-on' : ''}`}
+                    onClick={() => setStageForm({ ...stageForm, color: '' })}
+                  >
+                    ×
+                  </button>
+                </span>
               </div>
               <div className="form-group">
                 <label>Descrição</label>
