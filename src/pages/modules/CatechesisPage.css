@@ -134,6 +134,35 @@
   color: #b91c1c;
 }
 
+/* ===== Filtro de catequizandos ===== */
+.cate-filter {
+  display: inline-flex;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 2px;
+  background: #f8fafc;
+  gap: 2px;
+}
+.cate-filter__opt {
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--cate-muted, #64748b);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cate-filter__opt:hover {
+  color: var(--cate-ink, #1e293b);
+}
+.cate-filter__opt.is-on {
+  background: #fff;
+  color: var(--cate-primary);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12);
+}
+
 /* ===== Planejar temas ===== */
 .cate-topics__head {
   display: flex;

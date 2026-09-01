@@ -307,6 +307,11 @@ const ENROLLMENT_STATUS: Record<string, { label: string; color: string }> = {
   REJECTED: { label: 'Não aprovada', color: 'red' },
 };
 
+// Visão padrão da tabela de catequizandos: quem está NA turma hoje — ativos,
+// concluídos e inscrições aguardando aprovação (estas pedem ação da equipe).
+// Transferidos/não aprovados/desistentes só em "Todas".
+const CURRENT_ENROLLMENT_STATUSES = ['ACTIVE', 'COMPLETED', 'PENDING_APPROVAL'];
+
 const CatechesisPage: React.FC = () => {
   const { user } = useAuth();
   const isDiocesan = user?.role === 'DIOCESAN_ADMIN' || user?.role === 'SYSTEM_ADMIN';
@@ -335,6 +340,9 @@ const CatechesisPage: React.FC = () => {
     room: '',
     capacity: '',
   });
+
+  // Filtro da tabela de catequizandos (padrão: só quem está na turma)
+  const [studentsFilter, setStudentsFilter] = useState<'current' | 'all'>('current');
 
   // Editar turma (nome/dia/horário/sala/vagas — etapa e comunidade não mudam)
   const [showEditClassModal, setShowEditClassModal] = useState(false);
@@ -473,6 +481,7 @@ const CatechesisPage: React.FC = () => {
 
   const openClassDetail = async (klass: CatechesisClass) => {
     setSelectedClass(klass);
+    setStudentsFilter('current');
     setReportLoading(true);
     try {
       const [reportRes, sessionsRes] = await Promise.all([
@@ -1774,6 +1783,24 @@ const CatechesisPage: React.FC = () => {
                   <section>
                     <div className="cate-section__head">
                       <h3 className="cate-section__title">Catequizandos</h3>
+                      {report.students.length > 0 && (
+                        <div className="cate-filter" role="group" aria-label="Filtro de catequizandos">
+                          <button
+                            type="button"
+                            className={`cate-filter__opt${studentsFilter === 'current' ? ' is-on' : ''}`}
+                            onClick={() => setStudentsFilter('current')}
+                          >
+                            Na turma ({report.students.filter((s) => CURRENT_ENROLLMENT_STATUSES.includes(s.status)).length})
+                          </button>
+                          <button
+                            type="button"
+                            className={`cate-filter__opt${studentsFilter === 'all' ? ' is-on' : ''}`}
+                            onClick={() => setStudentsFilter('all')}
+                          >
+                            Todas ({report.students.length})
+                          </button>
+                        </div>
+                      )}
                       {report.students.some((s) => s.status === 'ACTIVE' || s.status === 'COMPLETED') && (
                         <button className="cate-btn" onClick={openBatchAssessment}>📝 Parecer em lote</button>
                       )}
@@ -1793,7 +1820,17 @@ const CatechesisPage: React.FC = () => {
                             </tr>
                           </thead>
                           <tbody>
-                            {report.students.map((student) => {
+                            {studentsFilter === 'current' &&
+                              report.students.every((s) => !CURRENT_ENROLLMENT_STATUSES.includes(s.status)) && (
+                                <tr>
+                                  <td colSpan={5} style={{ color: '#64748b', fontSize: '0.85rem' }}>
+                                    Ninguém ativo, concluído ou aguardando — as matrículas desta turma estão em “Todas”.
+                                  </td>
+                                </tr>
+                              )}
+                            {report.students
+                              .filter((s) => studentsFilter === 'all' || CURRENT_ENROLLMENT_STATUSES.includes(s.status))
+                              .map((student) => {
                               const st = ENROLLMENT_STATUS[student.status] ?? { label: student.status, color: 'gray' };
                               const badgeClass = STATUS_BADGE[student.status] ?? 'cate-badge--moved';
                               return (
