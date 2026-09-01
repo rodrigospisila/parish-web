@@ -134,6 +134,104 @@
   color: #b91c1c;
 }
 
+/* ===== Planejar temas ===== */
+.cate-topics__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin: 0 0 0.7rem;
+}
+.cate-topics__hint {
+  font-size: 0.88rem;
+  color: var(--cate-muted);
+  margin: 0;
+}
+.cate-topics__count {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--cate-primary);
+  background: color-mix(in srgb, var(--cate-primary) 12%, transparent);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  white-space: nowrap;
+}
+.cate-topics {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 420px;
+  overflow-y: auto;
+  /* respiro para a barra de rolagem não cobrir os campos */
+  padding: 2px 10px 2px 2px;
+  scrollbar-gutter: stable;
+}
+.cate-topics__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  cursor: text;
+}
+.cate-topics__row:focus-within {
+  border-color: var(--cate-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--cate-primary) 16%, transparent);
+}
+.cate-topics__row.is-next {
+  border-left: 3px solid var(--cate-primary);
+  background: color-mix(in srgb, var(--cate-primary) 4%, #fff);
+}
+.cate-topics__row input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.92rem;
+  padding: 6px 0;
+  min-width: 0;
+  color: var(--cate-ink);
+}
+.cate-topics__row input::placeholder {
+  color: #a4aebc;
+}
+.cate-topics__date {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 78px;
+  flex-shrink: 0;
+}
+.cate-topics__date strong {
+  font-size: 0.92rem;
+  color: var(--cate-ink);
+  font-variant-numeric: tabular-nums;
+}
+.cate-topics__date small {
+  font-size: 0.7rem;
+  color: var(--cate-muted);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.cate-topics__row.is-next .cate-topics__date small {
+  color: var(--cate-primary);
+  font-weight: 700;
+}
+.cate-topics__check {
+  color: #16a34a;
+  font-weight: 700;
+  font-size: 0.9rem;
+  opacity: 0;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease;
+}
+.cate-topics__row.is-filled .cate-topics__check {
+  opacity: 1;
+}
+
 /* ===== Detalhe da turma ===== */
 .cate-back {
   display: inline-flex;

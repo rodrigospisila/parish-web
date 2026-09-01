@@ -2689,29 +2689,44 @@ const CatechesisPage: React.FC = () => {
 
       {showTopicsModal && selectedClass && (
         <div className="module-modal-overlay" onClick={() => setShowTopicsModal(false)}>
-          <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 680 }}>
             <h2>Planejar temas · {selectedClass.name}</h2>
-            <p style={{ fontSize: '0.9rem', color: '#666' }}>
-              Defina o tema de cada encontro futuro de uma vez — as famílias veem na agenda da turma.
-            </p>
-            <div className="checklist" style={{ maxHeight: 380, overflowY: 'auto' }}>
+            <div className="cate-topics__head">
+              <p className="cate-topics__hint">
+                Defina o tema de cada encontro futuro — as famílias veem na agenda da turma.
+              </p>
+              <span className="cate-topics__count">
+                {Object.values(topicsDraft).filter((topic) => topic.trim()).length} de {Object.keys(topicsDraft).length} definidos
+              </span>
+            </div>
+            <div className="cate-topics">
               {sessions
                 .filter((session) => session.id in topicsDraft)
-                .map((session) => (
-                  <div key={session.id} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', padding: '0.25rem 0' }}>
-                    <span style={{ minWidth: 88, fontWeight: 600 }}>
-                      {new Date(session.date).toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit' })}
-                    </span>
-                    <input
-                      type="text"
-                      maxLength={120}
-                      placeholder="Tema do encontro"
-                      style={{ flex: 1 }}
-                      value={topicsDraft[session.id]}
-                      onChange={(e) => setTopicsDraft({ ...topicsDraft, [session.id]: e.target.value })}
-                    />
-                  </div>
-                ))}
+                .slice()
+                .sort((a, b) => a.date.localeCompare(b.date))
+                .map((session, index) => {
+                  const date = new Date(session.date);
+                  const filled = (topicsDraft[session.id] ?? '').trim().length > 0;
+                  return (
+                    <label key={session.id} className={`cate-topics__row${filled ? ' is-filled' : ''}${index === 0 ? ' is-next' : ''}`}>
+                      <span className="cate-topics__date">
+                        <strong>{date.toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit' })}</strong>
+                        <small>
+                          {date.toLocaleDateString('pt-BR', { timeZone: 'UTC', weekday: 'short' }).replace('.', '')}
+                          {index === 0 ? ' · próximo' : ''}
+                        </small>
+                      </span>
+                      <input
+                        type="text"
+                        maxLength={120}
+                        placeholder="Tema do encontro"
+                        value={topicsDraft[session.id]}
+                        onChange={(e) => setTopicsDraft({ ...topicsDraft, [session.id]: e.target.value })}
+                      />
+                      <span className="cate-topics__check" aria-hidden="true">✓</span>
+                    </label>
+                  );
+                })}
             </div>
             <div className="modal-actions">
               <button type="button" className="btn-cancel" onClick={() => setShowTopicsModal(false)}>Cancelar</button>
