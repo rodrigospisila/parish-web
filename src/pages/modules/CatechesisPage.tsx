@@ -122,8 +122,9 @@ interface RenewalPreview {
     /** Catecúmeno em preparação para o Batismo (sem certidão a cobrar) */
     unbaptized?: boolean;
     missingDocuments: string | null;
-    /** Já realocado: matrícula efetiva em outra turma (progresso da virada) */
-    alreadyEnrolledIn?: { classId: string; className: string; year: number; status: string } | null;
+    /** Já realocado: matrícula efetiva em outra turma (progresso da virada);
+     * de outra paróquia vem sem nome (LGPD) — só outsideParish */
+    alreadyEnrolledIn?: { classId?: string; className?: string; year?: number; status: string; outsideParish?: boolean } | null;
   }>;
 }
 
@@ -417,8 +418,19 @@ const CatechesisPage: React.FC = () => {
   const [renewalSelection, setRenewalSelection] = useState<Record<string, boolean>>({});
   /** enrollmentId → turma destino escolhida no rascunho */
   const [renewalDraft, setRenewalDraft] = useState<Record<string, string>>({});
-  /** Pilha de movimentos para o Desfazer (cada entrada = um lote movido) */
-  const [draftMoves, setDraftMoves] = useState<Array<{ enrollmentIds: string[]; targetClassId: string | null }>>([]);
+  /** Pilha de movimentos para o Desfazer (cada entrada = um lote movido;
+   * `from` guarda a coluna de onde um card voltou à origem) */
+  const [draftMoves, setDraftMoves] = useState<Array<{ enrollmentIds: string[]; targetClassId: string | null; from?: string | null }>>([]);
+  /** Gravados nesta sessão do board quando a prévia não recarregou (falha
+   * parcial): render trata como "já realocado" para não parecer pendente */
+  const [placedLocalIds, setPlacedLocalIds] = useState<Record<string, string>>({});
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  // Board aberto: o foco entra no overlay — sem isso, Tab continuava nos
+  // controles invisíveis atrás da tela cheia
+  const boardOpen = renewal !== null;
+  useEffect(() => {
+    if (boardOpen) boardRef.current?.focus();
+  }, [boardOpen]);
   /** Colunas onde a coordenação confirmou passar do limite (auditado no backend) */
   const [overrideColumns, setOverrideColumns] = useState<Record<string, boolean>>({});
   const [columnStatus, setColumnStatus] = useState<Record<string, 'saving' | 'ok' | 'error'>>({});
@@ -597,12 +609,14 @@ const CatechesisPage: React.FC = () => {
   // Refresh CIRÚRGICO: só a lista de turmas (ocupação/vagas), sem rebaixar a
   // tela inteira — o fetchData completo refazia GET /members (a comunidade
   // toda, 400+) a cada ação em série na turma
-  const refreshClassesOnly = useCallback(async () => {
+  const refreshClassesOnly = useCallback(async (): Promise<CatechesisClass[] | null> => {
     try {
       const res = await api.get('/catechesis/classes');
       setClasses(res.data);
+      return res.data as CatechesisClass[];
     } catch {
       // silencioso — a lista atual continua na tela
+      return null;
     }
   }, []);
 
@@ -834,16 +848,14 @@ const CatechesisPage: React.FC = () => {
    * ativos + aguardando). */
   const applyCompletionLocally = (enrollmentIds: string[]) => {
     const idSet = new Set(enrollmentIds);
-    let freed = 0;
+    // Contado a partir do estado ATUAL (fora do updater — o updater só roda no
+    // próximo render, e o setClasses abaixo precisa do número agora)
+    const freed = (report?.students ?? []).filter((s) => idSet.has(s.enrollmentId) && s.status === 'ACTIVE').length;
     setReport((current) => {
       if (!current) return current;
-      const students = current.students.map((s) => {
-        if (idSet.has(s.enrollmentId) && s.status === 'ACTIVE') {
-          freed++;
-          return { ...s, status: 'COMPLETED' };
-        }
-        return s;
-      });
+      const students = current.students.map((s) =>
+        idSet.has(s.enrollmentId) && s.status === 'ACTIVE' ? { ...s, status: 'COMPLETED' } : s,
+      );
       return {
         ...current,
         students,
@@ -889,7 +901,9 @@ const CatechesisPage: React.FC = () => {
   };
 
   const openBatchComplete = (reportArg?: ClassReport | null) => {
-    const source = reportArg ?? report;
+    // null EXPLÍCITO = o report da turma-alvo falhou ao carregar; cair no
+    // report do closure abriria o lote com a seleção da turma ANTERIOR
+    const source = reportArg !== undefined ? reportArg : report;
     if (!source) return;
     const selection: Record<string, boolean> = {};
     source.students
@@ -922,10 +936,12 @@ const CatechesisPage: React.FC = () => {
         date: batchCompleteForm.date || undefined,
         minister: batchCompleteForm.minister.trim() || undefined,
       });
-      const { completed, sacraments, skipped } = res.data as {
+      const { completed, sacraments, skipped, aborted, remaining } = res.data as {
         completed: number;
         sacraments: number;
         skipped: Array<{ enrollmentId: string; member: string | null; reason: string }>;
+        aborted?: boolean;
+        remaining?: string[];
       };
       notify.success(
         `${completed} conclusão(ões) registrada(s)${sacraments ? ` · ${sacraments} sacramento(s)` : ''}${skipped.length ? ` · ${skipped.length} pulada(s)` : ''}.`,
@@ -937,6 +953,14 @@ const CatechesisPage: React.FC = () => {
             .map((s) => `${s.member ?? s.enrollmentId}: ${s.reason}`)
             .join(' · ') + (skipped.length > 4 ? ` · +${skipped.length - 4}` : ''),
         );
+      }
+      if (aborted && remaining?.length) {
+        // Falha temporária no meio do lote: o modal fica aberto só com os
+        // restantes marcados — repetir é seguro (concluídos são pulados)
+        notify.error(`Falha temporária no meio do lote — ${remaining.length} restante(s) já marcados. Clique de novo para concluí-los.`);
+        setBatchCompleteSelection(Object.fromEntries(remaining.map((id) => [id, true])));
+        await refreshDetail();
+        return;
       }
       setShowBatchComplete(false);
       // Lote grande: recarrega o report (datas/certificados) mas sem o
@@ -1501,6 +1525,7 @@ const CatechesisPage: React.FC = () => {
       setDraftMoves([]);
       setOverrideColumns({});
       setColumnStatus({});
+      setPlacedLocalIds({});
       setRenewal(preview);
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao preparar a renovação'));
@@ -1557,19 +1582,36 @@ const CatechesisPage: React.FC = () => {
 
   /** Devolve um card do destino para a origem (rascunho). */
   const returnToOrigin = (enrollmentId: string) => {
-    setRenewalDraft((prev) => {
-      const next = { ...prev };
-      delete next[enrollmentId];
-      return next;
-    });
-    setDraftMoves((prev) => [...prev, { enrollmentIds: [enrollmentId], targetClassId: null }]);
+    // Durante o Confirmar o snapshot já foi tirado — retratação aqui gravaria
+    // a matrícula contra a ação do usuário
+    if (renewing) return;
+    const from = renewalDraft[enrollmentId] ?? null;
+    const next = { ...renewalDraft };
+    delete next[enrollmentId];
+    setRenewalDraft(next);
+    // Coluna esvaziada perde a exceção de capacidade concedida — a próxima
+    // leva pede confirmação de novo
+    if (from && !Object.values(next).includes(from)) {
+      setOverrideColumns((prev) => {
+        const cleaned = { ...prev };
+        delete cleaned[from];
+        return cleaned;
+      });
+    }
+    setDraftMoves((prev) => [...prev, { enrollmentIds: [enrollmentId], targetClassId: null, from }]);
   };
 
   const undoLastMove = () => {
     const last = draftMoves[draftMoves.length - 1];
     if (!last) return;
     if (last.targetClassId === null) {
-      // Desfazer um "voltar para origem" não sabe o destino anterior — ignora
+      // Desfazer um "voltar para origem": o card retorna à coluna de onde saiu
+      if (last.from) {
+        const id = last.enrollmentIds[0];
+        const from = last.from;
+        setRenewalDraft((prev) => ({ ...prev, [id]: from }));
+        setRenewalSelection((prev) => ({ ...prev, [id]: false }));
+      }
       setDraftMoves((prev) => prev.slice(0, -1));
       return;
     }
@@ -1610,6 +1652,10 @@ const CatechesisPage: React.FC = () => {
     let reactivatedTotal = 0;
     const skippedAll: Array<{ member: string; reason: string }> = [];
     const failedColumns: string[] = [];
+    // Cópia local do rascunho: o estado muda via setState durante o laço e a
+    // closure ficaria velha para a poda/estado pós-commit
+    const draftLocal: Record<string, string> = { ...renewalDraft };
+    const placedNow: Record<string, string> = {};
     for (const [targetClassId, enrollmentIds] of byTarget) {
       setColumnStatus((prev) => ({ ...prev, [targetClassId]: 'saving' }));
       try {
@@ -1622,10 +1668,21 @@ const CatechesisPage: React.FC = () => {
         reactivatedTotal += res.data.reactivated ?? 0;
         (res.data.skippedDetails ?? []).forEach((s: { member: string; reason: string }) => skippedAll.push(s));
         setColumnStatus((prev) => ({ ...prev, [targetClassId]: 'ok' }));
-        // Coluna gravada sai do rascunho
+        const targetName = renewal.targetClasses.find((t) => t.id === targetClassId)?.name ?? 'turma nova';
+        enrollmentIds.forEach((id) => {
+          delete draftLocal[id];
+          placedNow[id] = targetName;
+        });
+        // Coluna gravada sai do rascunho e perde a exceção de capacidade —
+        // a próxima leva acima do limite pede confirmação de novo
         setRenewalDraft((prev) => {
           const next = { ...prev };
           enrollmentIds.forEach((id) => delete next[id]);
+          return next;
+        });
+        setOverrideColumns((prev) => {
+          const next = { ...prev };
+          delete next[targetClassId];
           return next;
         });
       } catch (error) {
@@ -1654,17 +1711,32 @@ const CatechesisPage: React.FC = () => {
     try {
       const res = await api.get(`/catechesis/classes/${selectedClass.id}/renewal-preview`);
       const preview: RenewalPreview = res.data;
+      // Poda o rascunho contra a prévia nova: uma coluna que deixou de existir
+      // (turma encerrada) não pode segurar cards invisíveis e inconfirmáveis
+      const validTargets = new Set(preview.targetClasses.map((t) => t.id));
+      const validStudents = new Set(preview.students.map((s) => s.enrollmentId));
+      const orphanedIds = Object.entries(draftLocal)
+        .filter(([id, tgt]) => !validTargets.has(tgt) || !validStudents.has(id))
+        .map(([id]) => id);
+      setRenewalDraft(Object.fromEntries(Object.entries(draftLocal).filter(([id]) => !orphanedIds.includes(id))));
+      if (orphanedIds.length) {
+        notify.warning('Uma turma de destino deixou de estar disponível — os catequizandos voltaram à coluna de origem.');
+      }
       setRenewal(preview);
+      setPlacedLocalIds({});
       setRenewalSelection((prev) => {
         const selection: Record<string, boolean> = {};
         preview.students.forEach((s) => {
-          selection[s.enrollmentId] = prev[s.enrollmentId] === true && s.eligible && !s.alreadyEnrolledIn;
+          selection[s.enrollmentId] =
+            (prev[s.enrollmentId] === true || orphanedIds.includes(s.enrollmentId)) && s.eligible && !s.alreadyEnrolledIn;
         });
         return selection;
       });
     } catch {
-      // prévia indisponível: fecha o board com os dados gravados
+      // prévia indisponível: fecha o board se nada falhou; senão, marca os já
+      // gravados localmente para não voltarem à origem como se pendentes
       if (failedColumns.length === 0) setRenewal(null);
+      else setPlacedLocalIds((prev) => ({ ...prev, ...placedNow }));
     }
     void refreshDetail();
     setRenewing(false);
@@ -1696,14 +1768,31 @@ const CatechesisPage: React.FC = () => {
     if (communityId) loadYearEnd(communityId);
   };
 
+  /** Painel: resolve a turma na lista local, com refetch de fallback — a
+   * linha do painel vem fresca do backend, a lista `classes` pode estar
+   * velha (turma criada por outro coordenador) ou fora do escopo. */
+  const resolveYearEndClass = async (row: YearEndRow): Promise<CatechesisClass | null> => {
+    let klass = classes.find((k) => k.id === row.classId) ?? null;
+    if (!klass) {
+      const fresh = await refreshClassesOnly();
+      klass = fresh?.find((k) => k.id === row.classId) ?? null;
+    }
+    if (!klass) notify.error('Turma fora do seu escopo de turmas — recarregue a página ou confira a paróquia selecionada');
+    return klass;
+  };
+
   /** CTA do painel: abre a turma e já dispara a ação da vez. */
   const openFromYearEnd = async (row: YearEndRow, action: 'complete' | 'renew') => {
-    const klass = classes.find((k) => k.id === row.classId);
+    const klass = await resolveYearEndClass(row);
     if (!klass) return;
     setTab('classes');
     const freshReport = await openClassDetail(klass);
-    if (action === 'complete') openBatchComplete(freshReport);
-    else void openRenewal(klass);
+    if (action === 'complete') {
+      // report falhou? o modal NÃO abre com a seleção da turma anterior
+      if (freshReport) openBatchComplete(freshReport);
+    } else {
+      void openRenewal(klass);
+    }
   };
 
   if (loading) return <div className="module-page"><div className="loading">Carregando...</div></div>;
@@ -1902,8 +1991,8 @@ const CatechesisPage: React.FC = () => {
                             {done && (
                               <button
                                 className="btn-small"
-                                onClick={() => {
-                                  const klass = classes.find((k) => k.id === row.classId);
+                                onClick={async () => {
+                                  const klass = await resolveYearEndClass(row);
                                   if (klass) {
                                     setTab('classes');
                                     void openClassDetail(klass);
@@ -2463,16 +2552,8 @@ const CatechesisPage: React.FC = () => {
                             </tr>
                           </thead>
                           <tbody>
-                            {studentsFilter === 'current' &&
-                              report.students.every((s) => !CURRENT_ENROLLMENT_STATUSES.includes(s.status)) && (
-                                <tr>
-                                  <td colSpan={5} style={{ color: '#64748b', fontSize: '0.85rem' }}>
-                                    Ninguém ativo, concluído ou aguardando — as matrículas desta turma estão em “Todas”.
-                                  </td>
-                                </tr>
-                              )}
-                            {report.students
-                              .filter((s) =>
+                            {(() => {
+                              const visibleStudents = report.students.filter((s) =>
                                 studentsFilter === 'all'
                                   ? true
                                   : studentsFilter === 'active'
@@ -2480,8 +2561,21 @@ const CatechesisPage: React.FC = () => {
                                     : studentsFilter === 'completed'
                                       ? s.status === 'COMPLETED'
                                       : CURRENT_ENROLLMENT_STATUSES.includes(s.status),
-                              )
-                              .map((student) => {
+                              );
+                              if (visibleStudents.length === 0) {
+                                const emptyMessage =
+                                  studentsFilter === 'active'
+                                    ? 'Nenhum catequizando ativo — todos já concluíram ou saíram da turma.'
+                                    : studentsFilter === 'completed'
+                                      ? 'Ninguém concluído ainda nesta turma.'
+                                      : 'Ninguém ativo, concluído ou aguardando — as matrículas desta turma estão em “Todas”.';
+                                return (
+                                  <tr>
+                                    <td colSpan={5} style={{ color: '#64748b', fontSize: '0.85rem' }}>{emptyMessage}</td>
+                                  </tr>
+                                );
+                              }
+                              return visibleStudents.map((student) => {
                               const st = ENROLLMENT_STATUS[student.status] ?? { label: student.status, color: 'gray' };
                               const badgeClass = STATUS_BADGE[student.status] ?? 'cate-badge--moved';
                               return (
@@ -2647,7 +2741,8 @@ const CatechesisPage: React.FC = () => {
                                   </td>
                                 </tr>
                               );
-                            })}
+                              });
+                            })()}
                           </tbody>
                         </table>
                       </div>
@@ -3353,13 +3448,42 @@ const CatechesisPage: React.FC = () => {
       )}
 
       {renewal && selectedClass && renewal.nextStage && renewal.targetClasses.length > 0 && renewal.students.length > 0 && (() => {
-        const placedBefore = renewal.students.filter((s) => s.alreadyEnrolledIn).length;
+        const placedBefore = renewal.students.filter((s) => s.alreadyEnrolledIn || placedLocalIds[s.enrollmentId]).length;
         const draftCount = Object.keys(renewalDraft).length;
         const selectedCount = Object.entries(renewalSelection).filter(([id, on]) => on && !renewalDraft[id]).length;
         const originCards = renewal.students.filter((s) => !renewalDraft[s.enrollmentId]);
         const nextColor = renewal.nextStage!.color ?? undefined;
         return (
-          <div className="cate-board-overlay" role="dialog" aria-label="Distribuir concluídos">
+          <div
+            className="cate-board-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Distribuir concluídos"
+            ref={boardRef}
+            tabIndex={-1}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.stopPropagation();
+                if (!renewing) closeBoard();
+              } else if (e.key === 'Tab') {
+                // Trap simples: Tab circula dentro do overlay
+                const focusables = boardRef.current?.querySelectorAll<HTMLElement>(
+                  'button:not(:disabled), [href], input, select, textarea',
+                );
+                if (focusables && focusables.length) {
+                  const first = focusables[0];
+                  const last = focusables[focusables.length - 1];
+                  if (e.shiftKey && document.activeElement === first) {
+                    e.preventDefault();
+                    last.focus();
+                  } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault();
+                    first.focus();
+                  }
+                }
+              }
+            }}
+          >
             <div className="cate-board__top">
               <div>
                 <strong className="cate-board__title">
@@ -3401,7 +3525,8 @@ const CatechesisPage: React.FC = () => {
                       setRenewalSelection(() => {
                         const next: Record<string, boolean> = {};
                         renewal.students.forEach((s) => {
-                          next[s.enrollmentId] = s.eligible && !s.alreadyEnrolledIn && !renewalDraft[s.enrollmentId];
+                          next[s.enrollmentId] =
+                            s.eligible && !s.alreadyEnrolledIn && !renewalDraft[s.enrollmentId] && !placedLocalIds[s.enrollmentId];
                         });
                         return next;
                       })
@@ -3417,11 +3542,17 @@ const CatechesisPage: React.FC = () => {
                   {originCards.length === 0 && <p className="cate-board__emptycol">Todos distribuídos 🎉</p>}
                   {originCards.map((s) => {
                     const placed = s.alreadyEnrolledIn;
-                    if (placed) {
+                    const placedLocal = placedLocalIds[s.enrollmentId];
+                    if (placed || placedLocal) {
+                      const note = placed
+                        ? placed.outsideParish
+                          ? 'já em outra paróquia'
+                          : `já na ${placed.className}`
+                        : `já na ${placedLocal}`;
                       return (
                         <div key={s.enrollmentId} className="cate-board__card cate-board__card--placed" title="Já realocado — resolva por transferência se precisar mudar">
                           <span>{s.member.fullName}</span>
-                          <span className="cate-board__cardnote">já na {placed.className}</span>
+                          <span className="cate-board__cardnote">{note}</span>
                         </div>
                       );
                     }
@@ -3495,6 +3626,7 @@ const CatechesisPage: React.FC = () => {
                             type="button"
                             className="cate-chip__remove"
                             title="Voltar para a origem"
+                            disabled={renewing}
                             onClick={() => returnToOrigin(s.enrollmentId)}
                           >
                             ×
