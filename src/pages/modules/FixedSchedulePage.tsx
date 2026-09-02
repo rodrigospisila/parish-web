@@ -76,6 +76,9 @@ function nextOccurrence(dayOfWeek: number): string {
 const FixedSchedulePage: React.FC = () => {
   const { user } = useAuth();
   const canManage = MANAGE_ROLES.includes(user?.role ?? '');
+  // Coordenador de pastoral: vincula/desvincula a PRÓPRIA pastoral aos
+  // horários (o backend valida que ele coordena a pastoral em questão)
+  const isPastoralCoord = user?.role === 'PASTORAL_COORDINATOR';
 
   const [loading, setLoading] = useState(true);
   const [schedules, setSchedules] = useState<MassSchedule[]>([]);
@@ -105,6 +108,21 @@ const FixedSchedulePage: React.FC = () => {
   const [genTarget, setGenTarget] = useState<MassSchedule | null>(null);
   const [genDate, setGenDate] = useState('');
   const [generating, setGenerating] = useState(false);
+
+  // Vincular a própria pastoral (coordenador de pastoral)
+  const [myPastorals, setMyPastorals] = useState<CommunityPastoral[]>([]);
+  const [linkTarget, setLinkTarget] = useState<MassSchedule | null>(null);
+  const [linkPastoralId, setLinkPastoralId] = useState('');
+  const [linkRequired, setLinkRequired] = useState('0');
+  const [linking, setLinking] = useState(false);
+
+  useEffect(() => {
+    if (!isPastoralCoord) return;
+    api
+      .get('/pastorals/community/coordinated-by-me')
+      .then((res) => setMyPastorals(res.data ?? []))
+      .catch(() => setMyPastorals([]));
+  }, [isPastoralCoord]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -256,6 +274,48 @@ const FixedSchedulePage: React.FC = () => {
     }
   };
 
+  const openLink = (schedule: MassSchedule) => {
+    const linked = new Set((schedule.pastorals ?? []).map((p) => p.communityPastoral.id));
+    const available = myPastorals.filter((p) => !linked.has(p.id));
+    if (available.length === 0) {
+      notify.warning('Todas as pastorais que você coordena já estão vinculadas a este horário.');
+      return;
+    }
+    setLinkTarget(schedule);
+    setLinkPastoralId(available[0].id);
+    setLinkRequired('0');
+  };
+
+  const handleLink = async () => {
+    if (!linkTarget || !linkPastoralId) return;
+    setLinking(true);
+    try {
+      await api.post(`/mass-schedules/${linkTarget.id}/pastorals`, {
+        communityPastoralId: linkPastoralId,
+        requiredPeople: Math.max(0, Number(linkRequired) || 0),
+      });
+      notify.success('Pastoral vinculada — ela entra nas próximas escalas geradas deste horário.');
+      setLinkTarget(null);
+      fetchData();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao vincular a pastoral'));
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  const handleUnlink = async (schedule: MassSchedule, pastoral: MassPastoral) => {
+    const name = pastoral.communityPastoral.globalPastoral?.name || 'a pastoral';
+    if (!window.confirm(`Desvincular ${name} deste horário? Escalas já geradas não mudam.`)) return;
+    try {
+      await api.delete(`/mass-schedules/${schedule.id}/pastorals/${pastoral.communityPastoral.id}`);
+      notify.success('Pastoral desvinculada.');
+      fetchData();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao desvincular a pastoral'));
+    }
+  };
+
   const openGenerate = (schedule: MassSchedule) => {
     if (!schedule.pastorals || schedule.pastorals.length === 0) {
       notify.warning('Vincule ao menos uma pastoral a este horário (Editar) antes de gerar a escala.');
@@ -359,26 +419,48 @@ const FixedSchedulePage: React.FC = () => {
                             <span style={{ color: '#999' }}>—</span>
                           ) : (
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                              {pastorals.map((p) => (
-                                <span
-                                  key={p.id}
-                                  className="status-badge blue"
-                                  style={{ fontSize: '0.72rem' }}
-                                  title={
-                                    p.communityPastoral.communityId &&
+                              {pastorals.map((p) => {
+                                const mine =
+                                  isPastoralCoord && myPastorals.some((mp) => mp.id === p.communityPastoral.id);
+                                return (
+                                  <span
+                                    key={p.id}
+                                    className="status-badge blue"
+                                    style={{ fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                    title={
+                                      p.communityPastoral.communityId &&
+                                      p.communityPastoral.communityId !== schedule.community.id
+                                        ? `Ministério de ${p.communityPastoral.community?.name ?? 'outra comunidade'}`
+                                        : undefined
+                                    }
+                                  >
+                                    {p.communityPastoral.globalPastoral?.name || 'Pastoral'}
+                                    {p.communityPastoral.communityId &&
                                     p.communityPastoral.communityId !== schedule.community.id
-                                      ? `Ministério de ${p.communityPastoral.community?.name ?? 'outra comunidade'}`
-                                      : undefined
-                                  }
-                                >
-                                  {p.communityPastoral.globalPastoral?.name || 'Pastoral'}
-                                  {p.communityPastoral.communityId &&
-                                  p.communityPastoral.communityId !== schedule.community.id
-                                    ? ` (${p.communityPastoral.community?.name ?? 'outra'})`
-                                    : ''}
-                                  {p.requiredPeople ? ` · ${p.requiredPeople}` : ''}
-                                </span>
-                              ))}
+                                      ? ` (${p.communityPastoral.community?.name ?? 'outra'})`
+                                      : ''}
+                                    {p.requiredPeople ? ` · ${p.requiredPeople}` : ''}
+                                    {mine && (
+                                      <button
+                                        type="button"
+                                        title="Desvincular a minha pastoral deste horário"
+                                        style={{
+                                          border: 'none',
+                                          background: 'transparent',
+                                          color: 'inherit',
+                                          cursor: 'pointer',
+                                          fontWeight: 800,
+                                          padding: 0,
+                                          lineHeight: 1,
+                                        }}
+                                        onClick={() => void handleUnlink(schedule, p)}
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </span>
+                                );
+                              })}
                             </div>
                           )}
                         </td>
@@ -416,6 +498,16 @@ const FixedSchedulePage: React.FC = () => {
                           >
                             📋 Gerar escala
                           </button>
+                          {isPastoralCoord && myPastorals.length > 0 && (
+                            <button
+                              className="btn-secondary"
+                              style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                              onClick={() => openLink(schedule)}
+                              title="Vincular uma pastoral que você coordena a este horário"
+                            >
+                              ➕ Minha pastoral
+                            </button>
+                          )}
                           {canManage && (
                             <>
                               <button className="entity-icon-btn" onClick={() => openEdit(schedule)} title="Editar">✏️</button>
@@ -597,6 +689,52 @@ const FixedSchedulePage: React.FC = () => {
                 <button type="submit" className="btn-submit">{editing ? 'Salvar' : 'Criar'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de vincular a própria pastoral (coordenador de pastoral) */}
+      {linkTarget && (
+        <div className="module-modal-overlay" onClick={() => setLinkTarget(null)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <h2>Vincular minha pastoral</h2>
+            <p style={{ color: '#555', marginBottom: 12 }}>
+              {TYPE_META[linkTarget.type].label} ·{' '}
+              {linkTarget.isSpecial && linkTarget.specialDate
+                ? `Especial ${new Date(linkTarget.specialDate).toLocaleDateString('pt-BR')}`
+                : WEEKDAYS[linkTarget.dayOfWeek]}{' '}
+              às <strong>{linkTarget.time}</strong> · {linkTarget.community.name}
+            </p>
+            <div className="form-group">
+              <label>Pastoral *</label>
+              <select value={linkPastoralId} onChange={(e) => setLinkPastoralId(e.target.value)}>
+                {myPastorals
+                  .filter((p) => !(linkTarget.pastorals ?? []).some((lp) => lp.communityPastoral.id === p.id))
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {pastoralName(p)}
+                      {p.communityId && p.communityId !== linkTarget.community.id
+                        ? ` · ${p.community?.name ?? 'outra comunidade'}`
+                        : ''}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Vagas sugeridas (0 = sem número fixo)</label>
+              <input type="number" min={0} value={linkRequired} onChange={(e) => setLinkRequired(e.target.value)} />
+            </div>
+            <p style={{ fontSize: '0.85rem', color: '#666' }}>
+              A pastoral vinculada é copiada para as escalas geradas deste horário. Você vincula e
+              desvincula apenas as pastorais que <strong>coordena</strong> — as demais seguem com a
+              coordenação da comunidade.
+            </p>
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" onClick={() => setLinkTarget(null)}>Cancelar</button>
+              <button type="button" className="btn-submit" disabled={linking || !linkPastoralId} onClick={() => void handleLink()}>
+                {linking ? 'Vinculando…' : 'Vincular'}
+              </button>
+            </div>
           </div>
         </div>
       )}
