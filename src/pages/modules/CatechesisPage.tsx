@@ -462,6 +462,8 @@ const CatechesisPage: React.FC = () => {
   const [rolloverCatechists, setRolloverCatechists] = useState<Array<{ memberId: string; fullName: string; role: string }> | null>(null);
   const [rolloverKeep, setRolloverKeep] = useState<Record<string, boolean>>({});
   const [savingRollover, setSavingRollover] = useState(false);
+  // Só a resposta do ÚLTIMO openRollover vale (modal trocado/cancelado no meio)
+  const rolloverSeq = useRef(0);
 
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [enrollForm, setEnrollForm] = useState({ memberId: '', waiveBaptism: false, overrideCapacity: false, unbaptized: false });
@@ -584,6 +586,10 @@ const CatechesisPage: React.FC = () => {
   const openClassDetail = async (klass: CatechesisClass): Promise<ClassReport | null> => {
     setSelectedClass(klass);
     setStudentsFilter('current');
+    // Limpa o report da turma ANTERIOR já — handlers que leem `report` durante
+    // o carregamento não podem operar com a equipe/lista de outra turma
+    setReport(null);
+    setSessions([]);
     setReportLoading(true);
     try {
       const [reportRes, sessionsRes] = await Promise.all([
@@ -1666,6 +1672,20 @@ const CatechesisPage: React.FC = () => {
       notify.error('Distribua ao menos um catequizando');
       return;
     }
+    // Rascunho em colunas OCULTAS pelo filtro de ano também será gravado —
+    // confirmação explícita, o sufixo do contador é fácil de não ver
+    if (boardYearFilter !== 'all') {
+      const hiddenNow = Object.values(renewalDraft).filter((tgt) => {
+        const target = renewal.targetClasses.find((t) => t.id === tgt);
+        return target && target.year !== boardYearFilter;
+      }).length;
+      if (
+        hiddenNow > 0 &&
+        !window.confirm(`${hiddenNow} catequizando(s) estão em colunas de outro ano (ocultas pelo filtro) e serão gravados juntos. Continuar?`)
+      ) {
+        return;
+      }
+    }
     setRenewing(true);
     let renewedTotal = 0;
     let reactivatedTotal = 0;
@@ -1709,6 +1729,14 @@ const CatechesisPage: React.FC = () => {
         failedColumns.push(targetClassId);
         notify.error(getErrorMessage(error, 'Erro ao renovar para uma das turmas'));
       }
+    }
+    // Coluna que falhou está oculta pelo filtro de ano? Mostra todos — o
+    // badge de erro e o rascunho remanescente precisam ficar visíveis
+    if (
+      boardYearFilter !== 'all' &&
+      failedColumns.some((id) => renewal.targetClasses.find((t) => t.id === id)?.year !== boardYearFilter)
+    ) {
+      setBoardYearFilter('all');
     }
     setDraftMoves([]);
     const placed = renewedTotal + reactivatedTotal;
@@ -1814,22 +1842,33 @@ const CatechesisPage: React.FC = () => {
       room: klass.room ?? '',
       capacity: klass.capacity == null ? '' : String(klass.capacity),
     });
-    // Catequistas atuais: reusa o report se é a turma aberta; senão busca
-    if (selectedClass?.id === klass.id && report) {
+    // Catequistas atuais: reusa o report se é a turma aberta E já carregou —
+    // durante o loading o `report` ainda seria o da turma anterior
+    if (selectedClass?.id === klass.id && report && !reportLoading) {
       setRolloverCatechists(report.catechists);
       setRolloverKeep(Object.fromEntries(report.catechists.map((c) => [c.memberId, true])));
       return;
     }
     setRolloverCatechists(null);
+    const seq = ++rolloverSeq.current;
     try {
       const res = await api.get(`/catechesis/classes/${klass.id}/report`);
+      if (seq !== rolloverSeq.current) return;
       const cats: Array<{ memberId: string; fullName: string; role: string }> = res.data?.catechists ?? [];
       setRolloverCatechists(cats);
       setRolloverKeep(Object.fromEntries(cats.map((c) => [c.memberId, true])));
-    } catch {
-      setRolloverCatechists([]);
-      setRolloverKeep({});
+    } catch (error) {
+      if (seq !== rolloverSeq.current) return;
+      // Falha não pode se disfarçar de "turma sem catequistas" (liberaria o
+      // submit criando a sucessora sem equipe) — fecha e avisa
+      notify.error(getErrorMessage(error, 'Erro ao carregar a equipe da turma'));
+      setRolloverSource(null);
     }
+  };
+
+  const closeRollover = () => {
+    rolloverSeq.current++;
+    setRolloverSource(null);
   };
 
   const handleRollover = async (e: React.FormEvent) => {
@@ -1851,7 +1890,7 @@ const CatechesisPage: React.FC = () => {
       if (res.data.skippedCatechists?.length) {
         notify.warning(`Fora da pastoral da Catequese (não copiados): ${res.data.skippedCatechists.join(', ')}`);
       }
-      setRolloverSource(null);
+      closeRollover();
       void refreshClassesOnly();
       if (tab === 'encerramento' && yearEndCommunityId) loadYearEnd(yearEndCommunityId);
     } catch (error) {
@@ -2003,6 +2042,9 @@ const CatechesisPage: React.FC = () => {
                 value={yearEndCommunityId}
                 onChange={(e) => {
                   setYearEndCommunityId(e.target.value);
+                  // Comunidade nova pode não ter o ano filtrado — sem o reset,
+                  // a tabela ficava vazia sem chips para voltar
+                  setYearEndYearFilter('all');
                   if (e.target.value) loadYearEnd(e.target.value);
                 }}
               >
@@ -2018,7 +2060,10 @@ const CatechesisPage: React.FC = () => {
           )}
           {!yearEndLoading && yearEndRows && yearEndRows.length > 0 && (() => {
             const yearEndYears = [...new Set(yearEndRows.map((r) => r.year))].sort((a, b) => b - a);
-            const visibleRows = yearEndYearFilter === 'all' ? yearEndRows : yearEndRows.filter((r) => r.year === yearEndYearFilter);
+            // Filtro apontando para ano que não existe aqui (reload/troca) → todos
+            const effectiveYearFilter =
+              yearEndYearFilter !== 'all' && !yearEndYears.includes(yearEndYearFilter) ? 'all' : yearEndYearFilter;
+            const visibleRows = effectiveYearFilter === 'all' ? yearEndRows : yearEndRows.filter((r) => r.year === effectiveYearFilter);
             return (
             <>
               <p style={{ fontSize: '0.88rem', color: '#64748b', margin: '0 0 0.8rem' }}>
@@ -2030,7 +2075,7 @@ const CatechesisPage: React.FC = () => {
                 <div className="cate-filter" role="group" aria-label="Filtro por ano do encerramento" style={{ marginBottom: '0.8rem' }}>
                   <button
                     type="button"
-                    className={`cate-filter__opt${yearEndYearFilter === 'all' ? ' is-on' : ''}`}
+                    className={`cate-filter__opt${effectiveYearFilter === 'all' ? ' is-on' : ''}`}
                     onClick={() => setYearEndYearFilter('all')}
                   >
                     Todos os anos
@@ -2039,7 +2084,7 @@ const CatechesisPage: React.FC = () => {
                     <button
                       key={year}
                       type="button"
-                      className={`cate-filter__opt${yearEndYearFilter === year ? ' is-on' : ''}`}
+                      className={`cate-filter__opt${effectiveYearFilter === year ? ' is-on' : ''}`}
                       onClick={() => setYearEndYearFilter(year)}
                     >
                       {year}
@@ -2062,6 +2107,13 @@ const CatechesisPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
+                    {visibleRows.length === 0 && (
+                      <tr>
+                        <td colSpan={8} style={{ color: '#64748b', fontSize: '0.85rem' }}>
+                          Nenhuma turma {effectiveYearFilter !== 'all' ? `de ${effectiveYearFilter} ` : ''}nesta comunidade — use “Todos os anos”.
+                        </td>
+                      </tr>
+                    )}
                     {visibleRows.map((row) => {
                       const done = row.active === 0 && row.toRelocate === 0;
                       return (
@@ -3843,7 +3895,7 @@ const CatechesisPage: React.FC = () => {
       })()}
 
       {rolloverSource && (
-        <div className="module-modal-overlay" onClick={() => setRolloverSource(null)}>
+        <div className="module-modal-overlay" onClick={closeRollover}>
           <div className="module-modal" onClick={(e) => e.stopPropagation()}>
             <h2>📆 Criar turma de {rolloverForm.year || rolloverSource.year + 1}</h2>
             <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0 0 0.8rem' }}>
@@ -3925,7 +3977,7 @@ const CatechesisPage: React.FC = () => {
                 </p>
               </div>
               <div className="modal-actions">
-                <button type="button" className="btn-cancel" onClick={() => setRolloverSource(null)}>Cancelar</button>
+                <button type="button" className="btn-cancel" onClick={closeRollover}>Cancelar</button>
                 <button type="submit" className="btn-submit" disabled={savingRollover || rolloverCatechists === null}>
                   {savingRollover ? 'Criando…' : 'Criar turma do ano novo'}
                 </button>
