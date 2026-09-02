@@ -137,6 +137,8 @@ interface YearEndRow {
   completed: number;
   relocated: number;
   toRelocate: number;
+  /** A sucessora (mesma etapa, ano seguinte) já foi criada? */
+  hasNextYearClass?: boolean;
 }
 
 interface Community {
@@ -447,6 +449,19 @@ const CatechesisPage: React.FC = () => {
   const [yearEndLoading, setYearEndLoading] = useState(false);
   const [yearEndCommunityId, setYearEndCommunityId] = useState('');
   const yearEndSeq = useRef(0);
+
+  // Filtros por ano: lista de turmas, painel de encerramento e destino do board
+  const [classesYearFilter, setClassesYearFilter] = useState<'all' | number>('all');
+  const [yearEndYearFilter, setYearEndYearFilter] = useState<'all' | number>('all');
+  const [boardYearFilter, setBoardYearFilter] = useState<'all' | number>('all');
+
+  // Virada de ano da turma: criar a sucessora (mesma etapa, ano seguinte)
+  const [rolloverSource, setRolloverSource] = useState<CatechesisClass | null>(null);
+  const [rolloverForm, setRolloverForm] = useState({ year: '', name: '', weekday: '', time: '', room: '', capacity: '' });
+  // null = carregando os catequistas atuais
+  const [rolloverCatechists, setRolloverCatechists] = useState<Array<{ memberId: string; fullName: string; role: string }> | null>(null);
+  const [rolloverKeep, setRolloverKeep] = useState<Record<string, boolean>>({});
+  const [savingRollover, setSavingRollover] = useState(false);
 
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [enrollForm, setEnrollForm] = useState({ memberId: '', waiveBaptism: false, overrideCapacity: false, unbaptized: false });
@@ -1526,6 +1541,10 @@ const CatechesisPage: React.FC = () => {
       setOverrideColumns({});
       setColumnStatus({});
       setPlacedLocalIds({});
+      // Destino padrão: o ANO SEGUINTE ao da turma de origem, se já existir
+      // (turmas de 2026 distribuem para 2027); senão, todos os anos
+      const targetYears = new Set(preview.targetClasses.map((t) => t.year));
+      setBoardYearFilter(targetYears.has(klass.year + 1) ? klass.year + 1 : 'all');
       setRenewal(preview);
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao preparar a renovação'));
@@ -1724,6 +1743,8 @@ const CatechesisPage: React.FC = () => {
       }
       setRenewal(preview);
       setPlacedLocalIds({});
+      // Ano filtrado sumiu da prévia (última turma dele encerrada)? Mostra todos
+      setBoardYearFilter((prev) => (prev !== 'all' && !preview.targetClasses.some((t) => t.year === prev) ? 'all' : prev));
       setRenewalSelection((prev) => {
         const selection: Record<string, boolean> = {};
         preview.students.forEach((s) => {
@@ -1781,6 +1802,65 @@ const CatechesisPage: React.FC = () => {
     return klass;
   };
 
+  /** Virada de ano: modal para criar a sucessora da turma (mesma etapa, ano
+   * seguinte), herdando dados e catequistas — mantidos ou desmarcados. */
+  const openRollover = async (klass: CatechesisClass) => {
+    setRolloverSource(klass);
+    setRolloverForm({
+      year: String(klass.year + 1),
+      name: klass.name,
+      weekday: klass.weekday === null || klass.weekday === undefined ? '' : String(klass.weekday),
+      time: klass.time ?? '',
+      room: klass.room ?? '',
+      capacity: klass.capacity == null ? '' : String(klass.capacity),
+    });
+    // Catequistas atuais: reusa o report se é a turma aberta; senão busca
+    if (selectedClass?.id === klass.id && report) {
+      setRolloverCatechists(report.catechists);
+      setRolloverKeep(Object.fromEntries(report.catechists.map((c) => [c.memberId, true])));
+      return;
+    }
+    setRolloverCatechists(null);
+    try {
+      const res = await api.get(`/catechesis/classes/${klass.id}/report`);
+      const cats: Array<{ memberId: string; fullName: string; role: string }> = res.data?.catechists ?? [];
+      setRolloverCatechists(cats);
+      setRolloverKeep(Object.fromEntries(cats.map((c) => [c.memberId, true])));
+    } catch {
+      setRolloverCatechists([]);
+      setRolloverKeep({});
+    }
+  };
+
+  const handleRollover = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rolloverSource || rolloverCatechists === null) return;
+    setSavingRollover(true);
+    try {
+      const keepIds = rolloverCatechists.filter((c) => rolloverKeep[c.memberId]).map((c) => c.memberId);
+      const res = await api.post(`/catechesis/classes/${rolloverSource.id}/rollover`, {
+        year: Number(rolloverForm.year),
+        name: rolloverForm.name,
+        weekday: rolloverForm.weekday === '' ? null : Number(rolloverForm.weekday),
+        time: rolloverForm.time || null,
+        room: rolloverForm.room || null,
+        capacity: rolloverForm.capacity === '' ? null : Number(rolloverForm.capacity),
+        catechistMemberIds: keepIds,
+      });
+      notify.success(`Turma "${res.data.name}" de ${res.data.year} criada com ${res.data.catechists} catequista(s)!`);
+      if (res.data.skippedCatechists?.length) {
+        notify.warning(`Fora da pastoral da Catequese (não copiados): ${res.data.skippedCatechists.join(', ')}`);
+      }
+      setRolloverSource(null);
+      void refreshClassesOnly();
+      if (tab === 'encerramento' && yearEndCommunityId) loadYearEnd(yearEndCommunityId);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao criar a turma do ano seguinte'));
+    } finally {
+      setSavingRollover(false);
+    }
+  };
+
   /** CTA do painel: abre a turma e já dispara a ação da vez. */
   const openFromYearEnd = async (row: YearEndRow, action: 'complete' | 'renew') => {
     const klass = await resolveYearEndClass(row);
@@ -1794,6 +1874,10 @@ const CatechesisPage: React.FC = () => {
       void openRenewal(klass);
     }
   };
+
+  // Filtro por ano da lista de turmas (na virada convivem 2026 e 2027)
+  const classYears = [...new Set(classes.map((k) => k.year))].sort((a, b) => b - a);
+  const classesForView = classesYearFilter === 'all' ? classes : classes.filter((k) => k.year === classesYearFilter);
 
   if (loading) return <div className="module-page"><div className="loading">Carregando...</div></div>;
 
@@ -1932,18 +2016,44 @@ const CatechesisPage: React.FC = () => {
           {!yearEndLoading && yearEndRows && yearEndRows.length === 0 && (
             <div className="cate-empty">Nenhuma turma ativa nesta comunidade.</div>
           )}
-          {!yearEndLoading && yearEndRows && yearEndRows.length > 0 && (
+          {!yearEndLoading && yearEndRows && yearEndRows.length > 0 && (() => {
+            const yearEndYears = [...new Set(yearEndRows.map((r) => r.year))].sort((a, b) => b - a);
+            const visibleRows = yearEndYearFilter === 'all' ? yearEndRows : yearEndRows.filter((r) => r.year === yearEndYearFilter);
+            return (
             <>
               <p style={{ fontSize: '0.88rem', color: '#64748b', margin: '0 0 0.8rem' }}>
-                A virada do ano em dois passos por turma: <strong>concluir</strong> os ativos e{' '}
-                <strong>distribuir</strong> os concluídos nas turmas da próxima etapa.
+                A virada do ano em três passos por turma: <strong>criar a turma do ano seguinte</strong> (mantendo ou
+                trocando os catequistas), <strong>concluir</strong> os ativos e <strong>distribuir</strong> os concluídos
+                nas turmas novas da próxima etapa.
               </p>
+              {yearEndYears.length > 1 && (
+                <div className="cate-filter" role="group" aria-label="Filtro por ano do encerramento" style={{ marginBottom: '0.8rem' }}>
+                  <button
+                    type="button"
+                    className={`cate-filter__opt${yearEndYearFilter === 'all' ? ' is-on' : ''}`}
+                    onClick={() => setYearEndYearFilter('all')}
+                  >
+                    Todos os anos
+                  </button>
+                  {yearEndYears.map((year) => (
+                    <button
+                      key={year}
+                      type="button"
+                      className={`cate-filter__opt${yearEndYearFilter === year ? ' is-on' : ''}`}
+                      onClick={() => setYearEndYearFilter(year)}
+                    >
+                      {year}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="table-container">
                 <table className="data-table">
                   <thead>
                     <tr>
                       <th>Turma</th>
                       <th>Etapa</th>
+                      <th>Ano seguinte</th>
                       <th style={{ textAlign: 'right' }}>A concluir</th>
                       <th style={{ textAlign: 'right' }}>Concluídos</th>
                       <th style={{ textAlign: 'right' }}>Distribuídos</th>
@@ -1952,7 +2062,7 @@ const CatechesisPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {yearEndRows.map((row) => {
+                    {visibleRows.map((row) => {
                       const done = row.active === 0 && row.toRelocate === 0;
                       return (
                         <tr key={row.classId}>
@@ -1962,6 +2072,22 @@ const CatechesisPage: React.FC = () => {
                           <td>
                             {row.stage.color && <span className="cate-stage-dot" style={{ background: row.stage.color }} />}
                             {row.stage.name}
+                          </td>
+                          <td>
+                            {row.hasNextYearClass ? (
+                              <span className="status-badge green">✓ {row.year + 1}</span>
+                            ) : (
+                              <button
+                                className="btn-small"
+                                title={`Criar a turma de ${row.year + 1} desta etapa, mantendo ou ajustando os catequistas`}
+                                onClick={async () => {
+                                  const klass = await resolveYearEndClass(row);
+                                  if (klass) void openRollover(klass);
+                                }}
+                              >
+                                📆 Criar {row.year + 1}
+                              </button>
+                            )}
                           </td>
                           <td style={{ textAlign: 'right' }}>{row.active > 0 ? <strong>{row.active}</strong> : '—'}</td>
                           <td style={{ textAlign: 'right' }}>{row.completed || '—'}</td>
@@ -2010,7 +2136,8 @@ const CatechesisPage: React.FC = () => {
                 </table>
               </div>
             </>
-          )}
+            );
+          })()}
         </>
       )}
 
@@ -2161,9 +2288,30 @@ const CatechesisPage: React.FC = () => {
                   ☰ Lista
                 </button>
               </div>
+              {classYears.length > 1 && (
+                <div className="cate-filter" role="group" aria-label="Filtro por ano">
+                  <button
+                    type="button"
+                    className={`cate-filter__opt${classesYearFilter === 'all' ? ' is-on' : ''}`}
+                    onClick={() => setClassesYearFilter('all')}
+                  >
+                    Todos os anos
+                  </button>
+                  {classYears.map((year) => (
+                    <button
+                      key={year}
+                      type="button"
+                      className={`cate-filter__opt${classesYearFilter === year ? ' is-on' : ''}`}
+                      onClick={() => setClassesYearFilter(year)}
+                    >
+                      {year} ({classes.filter((k) => k.year === year).length})
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
-          {classesView === 'list' && classes.length > 0 && (
+          {classesView === 'list' && classesForView.length > 0 && (
             <div className="cate-table-wrap">
               <table className="cate-table cate-table--click">
                 <thead>
@@ -2180,7 +2328,7 @@ const CatechesisPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {classes
+                  {classesForView
                     .slice()
                     .sort((a, b) => a.stage.name.localeCompare(b.stage.name, 'pt-BR') || a.name.localeCompare(b.name, 'pt-BR'))
                     .map((klass) => (
@@ -2223,7 +2371,7 @@ const CatechesisPage: React.FC = () => {
           )}
           {classesView === 'cards' && (
           <div className="cate-grid">
-            {classes.map((klass) => (
+            {classesForView.map((klass) => (
               <div
                 key={klass.id}
                 className="cate-card"
@@ -2270,6 +2418,9 @@ const CatechesisPage: React.FC = () => {
           </div>
           )}
           {classes.length === 0 && <div className="cate-empty">Nenhuma turma cadastrada — crie a primeira em “+ Nova Turma”.</div>}
+          {classes.length > 0 && classesForView.length === 0 && (
+            <div className="cate-empty">Nenhuma turma de {classesYearFilter} — use “📆 Turma de {Number(classesYearFilter) }” numa turma do ano anterior para criar a virada.</div>
+          )}
         </div>
       )}
 
@@ -2341,6 +2492,9 @@ const CatechesisPage: React.FC = () => {
               </button>
               <button className="cate-btn" onClick={openEditClass}>
                 ✏️ Editar turma
+              </button>
+              <button className="cate-btn" title="Criar a turma do ano seguinte, mantendo ou ajustando os catequistas" onClick={() => void openRollover(selectedClass)}>
+                📆 Turma de {selectedClass.year + 1}
               </button>
               {selectedClass.capacity != null && (
                 <span className={`cate-seats ${selectedClass.isFull ? 'is-full' : ''}`}>
@@ -3435,7 +3589,9 @@ const CatechesisPage: React.FC = () => {
             ) : renewal.targetClasses.length === 0 ? (
               <p>
                 Próxima etapa: <strong>{renewal.nextStage.name}</strong>. Nenhuma turma ativa dessa
-                etapa nesta comunidade — crie a turma do próximo ano antes de renovar.
+                etapa nesta comunidade — na aba <strong>“Encerramento do ano”</strong>, use{' '}
+                <strong>📆 Criar</strong> na turma dessa etapa para gerar a versão do ano novo
+                (mantendo ou trocando os catequistas) e depois volte aqui para distribuir.
               </p>
             ) : (
               <p>Nenhum catequizando concluído nesta turma para renovar.</p>
@@ -3453,6 +3609,10 @@ const CatechesisPage: React.FC = () => {
         const selectedCount = Object.entries(renewalSelection).filter(([id, on]) => on && !renewalDraft[id]).length;
         const originCards = renewal.students.filter((s) => !renewalDraft[s.enrollmentId]);
         const nextColor = renewal.nextStage!.color ?? undefined;
+        // Filtro de ano de destino: na virada, 2026 conclui e 2027 recebe
+        const targetYears = [...new Set(renewal.targetClasses.map((t) => t.year))].sort((a, b) => b - a);
+        const visibleTargets = boardYearFilter === 'all' ? renewal.targetClasses : renewal.targetClasses.filter((t) => t.year === boardYearFilter);
+        const hiddenDraftCount = Object.values(renewalDraft).filter((tgt) => !visibleTargets.some((t) => t.id === tgt)).length;
         return (
           <div
             className="cate-board-overlay"
@@ -3492,8 +3652,30 @@ const CatechesisPage: React.FC = () => {
                 <span className="cate-board__count">
                   {placedBefore > 0 ? `${placedBefore} já realocado(s) · ` : ''}
                   {draftCount} em rascunho — nada é gravado até confirmar
+                  {hiddenDraftCount > 0 ? ` · ${hiddenDraftCount} em coluna(s) de outro ano (oculta)` : ''}
                 </span>
               </div>
+              {targetYears.length > 1 && (
+                <div className="cate-filter" role="group" aria-label="Ano das turmas de destino">
+                  {targetYears.map((year) => (
+                    <button
+                      key={year}
+                      type="button"
+                      className={`cate-filter__opt${boardYearFilter === year ? ' is-on' : ''}`}
+                      onClick={() => setBoardYearFilter(year)}
+                    >
+                      Destino {year}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className={`cate-filter__opt${boardYearFilter === 'all' ? ' is-on' : ''}`}
+                    onClick={() => setBoardYearFilter('all')}
+                  >
+                    Todos
+                  </button>
+                </div>
+              )}
               <div className="cate-board__topbtns">
                 <button type="button" className="cate-btn" disabled={!draftMoves.length || renewing} onClick={undoLastMove}>
                   ⌫ Desfazer
@@ -3574,7 +3756,15 @@ const CatechesisPage: React.FC = () => {
                   })}
                 </div>
               </div>
-              {renewal.targetClasses.map((t) => {
+              {visibleTargets.length === 0 && (
+                <div className="cate-board__col">
+                  <p className="cate-board__emptycol">
+                    Nenhuma turma de destino {boardYearFilter !== 'all' ? `de ${boardYearFilter}` : ''} — crie as turmas do
+                    ano novo na aba “Encerramento do ano” (📆 Criar) e reabra a distribuição.
+                  </p>
+                </div>
+              )}
+              {visibleTargets.map((t) => {
                 const draftN = draftCountFor(t.id);
                 const free = t.capacity == null ? null : t.capacity - t.occupied - draftN;
                 const fullNow = free !== null && free <= 0;
@@ -3651,6 +3841,99 @@ const CatechesisPage: React.FC = () => {
           </div>
         );
       })()}
+
+      {rolloverSource && (
+        <div className="module-modal-overlay" onClick={() => setRolloverSource(null)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>📆 Criar turma de {rolloverForm.year || rolloverSource.year + 1}</h2>
+            <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0 0 0.8rem' }}>
+              A partir da <strong>{rolloverSource.name} ({rolloverSource.year})</strong> — mesma etapa
+              ({rolloverSource.stage.name}) e comunidade. Dia, horário, sala, vagas e catequistas vêm
+              preenchidos; ajuste o que mudar no ano novo.
+            </p>
+            <form onSubmit={handleRollover}>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Nome da turma *</label>
+                  <input type="text" required value={rolloverForm.name} onChange={(e) => setRolloverForm({ ...rolloverForm, name: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Ano *</label>
+                  <input
+                    type="number"
+                    required
+                    min={rolloverSource.year + 1}
+                    value={rolloverForm.year}
+                    onChange={(e) => setRolloverForm({ ...rolloverForm, year: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Dia da semana</label>
+                  <select value={rolloverForm.weekday} onChange={(e) => setRolloverForm({ ...rolloverForm, weekday: e.target.value })}>
+                    <option value="">A definir</option>
+                    {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Horário</label>
+                  <input type="time" value={rolloverForm.time} onChange={(e) => setRolloverForm({ ...rolloverForm, time: e.target.value })} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Sala/local</label>
+                  <input type="text" value={rolloverForm.room} onChange={(e) => setRolloverForm({ ...rolloverForm, room: e.target.value })} />
+                </div>
+                <div className="form-group">
+                  <label>Vagas</label>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="Sem limite"
+                    value={rolloverForm.capacity}
+                    onChange={(e) => setRolloverForm({ ...rolloverForm, capacity: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="form-group">
+                <label>Catequistas que continuam no ano novo</label>
+                {rolloverCatechists === null ? (
+                  <p style={{ color: '#64748b', fontSize: '0.9rem' }}>Carregando a equipe atual...</p>
+                ) : rolloverCatechists.length === 0 ? (
+                  <p style={{ color: '#64748b', fontSize: '0.9rem' }}>
+                    Esta turma não tem catequistas vinculados — adicione na turma nova com “+ Catequista”.
+                  </p>
+                ) : (
+                  <div className="checklist" style={{ maxHeight: 160, overflowY: 'auto' }}>
+                    {rolloverCatechists.map((c) => (
+                      <label key={c.memberId}>
+                        <input
+                          type="checkbox"
+                          checked={!!rolloverKeep[c.memberId]}
+                          onChange={(e) => setRolloverKeep({ ...rolloverKeep, [c.memberId]: e.target.checked })}
+                        />
+                        {c.fullName} <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>({c.role})</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '0.35rem 0 0' }}>
+                  Para <strong>adicionar</strong> catequistas novos, abra a turma criada e use “+ Catequista”
+                  (a regra da pastoral da Catequese continua valendo).
+                </p>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-cancel" onClick={() => setRolloverSource(null)}>Cancelar</button>
+                <button type="submit" className="btn-submit" disabled={savingRollover || rolloverCatechists === null}>
+                  {savingRollover ? 'Criando…' : 'Criar turma do ano novo'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showBatchComplete && selectedClass && report && (
         <div className="module-modal-overlay" onClick={() => setShowBatchComplete(false)}>
