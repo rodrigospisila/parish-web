@@ -40,7 +40,22 @@ interface CatechesisClass {
   isFull?: boolean;
   /** Matrículas concluídas — 0 efetivos + N concluídos = turma "Concluída" */
   completedCount?: number;
+  /** Inscrições online: chave geral + janela opcional */
+  enrollmentOpen?: boolean;
+  enrollmentOpensAt?: string | null;
+  enrollmentClosesAt?: string | null;
+  /** Turma cheia: fila de espera ou bloqueio */
+  fullBehavior?: 'WAITLIST' | 'BLOCK';
 }
+
+/** Inscrições online desta turma estão abertas agora? (espelha o backend) */
+const enrollmentWindowOpen = (klass: CatechesisClass): boolean => {
+  if (klass.enrollmentOpen === false) return false;
+  const now = Date.now();
+  if (klass.enrollmentOpensAt && now < new Date(klass.enrollmentOpensAt).getTime()) return false;
+  if (klass.enrollmentClosesAt && now > new Date(klass.enrollmentClosesAt).getTime()) return false;
+  return true;
+};
 
 interface ClassReport {
   catechists: Array<{ memberId: string; fullName: string; role: string }>;
@@ -49,6 +64,8 @@ interface ClassReport {
   dropouts: number;
   completed: number;
   pending: number;
+  /** Fila de espera (turma cheia) — aceite abre +1 vaga */
+  waitlisted?: number;
   students: Array<{
     enrollmentId: string;
     member: { id: string; fullName: string };
@@ -336,6 +353,7 @@ const STATUS_BADGE: Record<string, string> = {
   ACTIVE: 'cate-badge--active',
   COMPLETED: 'cate-badge--done',
   PENDING_APPROVAL: 'cate-badge--waiting',
+  WAITLISTED: 'cate-badge--waiting',
   DROPPED_OUT: 'cate-badge--out',
   REJECTED: 'cate-badge--out',
   TRANSFERRED: 'cate-badge--moved',
@@ -367,13 +385,14 @@ const ENROLLMENT_STATUS: Record<string, { label: string; color: string }> = {
   DROPPED_OUT: { label: 'Desistente', color: 'red' },
   TRANSFERRED: { label: 'Transferido', color: 'gray' },
   PENDING_APPROVAL: { label: 'Aguardando aprovação', color: 'yellow' },
+  WAITLISTED: { label: 'Fila de espera', color: 'yellow' },
   REJECTED: { label: 'Não aprovada', color: 'red' },
 };
 
 // Visão padrão da tabela de catequizandos: quem está NA turma hoje — ativos,
 // concluídos e inscrições aguardando aprovação (estas pedem ação da equipe).
 // Transferidos/não aprovados/desistentes só em "Todas".
-const CURRENT_ENROLLMENT_STATUSES = ['ACTIVE', 'COMPLETED', 'PENDING_APPROVAL'];
+const CURRENT_ENROLLMENT_STATUSES = ['ACTIVE', 'COMPLETED', 'PENDING_APPROVAL', 'WAITLISTED'];
 
 const CatechesisPage: React.FC = () => {
   const { user } = useAuth();
@@ -433,6 +452,10 @@ const CatechesisPage: React.FC = () => {
     time: '',
     room: '',
     capacity: '',
+    enrollmentOpen: true,
+    enrollmentOpensAt: '',
+    enrollmentClosesAt: '',
+    fullBehavior: 'WAITLIST' as 'WAITLIST' | 'BLOCK',
   });
 
   // Board de distribuição (renovação multi-destino): rascunho 100% no cliente,
@@ -739,6 +762,10 @@ const CatechesisPage: React.FC = () => {
       time: selectedClass.time ?? '',
       room: selectedClass.room ?? '',
       capacity: selectedClass.capacity == null ? '' : String(selectedClass.capacity),
+      enrollmentOpen: selectedClass.enrollmentOpen !== false,
+      enrollmentOpensAt: selectedClass.enrollmentOpensAt ? selectedClass.enrollmentOpensAt.slice(0, 10) : '',
+      enrollmentClosesAt: selectedClass.enrollmentClosesAt ? selectedClass.enrollmentClosesAt.slice(0, 10) : '',
+      fullBehavior: selectedClass.fullBehavior === 'BLOCK' ? 'BLOCK' : 'WAITLIST',
     });
     setShowEditClassModal(true);
   };
@@ -755,6 +782,10 @@ const CatechesisPage: React.FC = () => {
         time: editClassForm.time || null,
         room: editClassForm.room || null,
         capacity: editClassForm.capacity === '' ? null : Number(editClassForm.capacity),
+        enrollmentOpen: editClassForm.enrollmentOpen,
+        enrollmentOpensAt: editClassForm.enrollmentOpensAt || null,
+        enrollmentClosesAt: editClassForm.enrollmentClosesAt || null,
+        fullBehavior: editClassForm.fullBehavior,
       });
       notify.success('Turma atualizada!');
       if (data?.capacityWarning) notify.warning(data.capacityWarning);
@@ -2544,6 +2575,11 @@ const CatechesisPage: React.FC = () => {
                               ✓ Concluída
                             </span>
                           )}
+                          {!enrollmentWindowOpen(klass) && (
+                            <span className="cate-badge cate-badge--out" style={{ marginLeft: 6 }} title="A turma não aparece na inscrição do app — reabra em Editar turma">
+                              inscrições fechadas
+                            </span>
+                          )}
                         </td>
                         <td>
                           {klass.stage.color && <span className="cate-stage-dot" style={{ background: klass.stage.color }} />}
@@ -2595,6 +2631,9 @@ const CatechesisPage: React.FC = () => {
                     {klass.year}
                     {(klass.occupied ?? klass._count.enrollments) === 0 && (klass.completedCount ?? 0) > 0 && (
                       <span className="cate-badge cate-badge--done" style={{ display: 'block', marginTop: 4 }}>✓ Concluída</span>
+                    )}
+                    {!enrollmentWindowOpen(klass) && (
+                      <span className="cate-badge cate-badge--out" style={{ display: 'block', marginTop: 4 }}>inscrições fechadas</span>
                     )}
                   </span>
                 </div>
@@ -2789,6 +2828,12 @@ const CatechesisPage: React.FC = () => {
                     <div className="cate-stat">
                       <div className="cate-stat__value cate-stat__value--warn">{report.pending}</div>
                       <div className="cate-stat__label">Aguardando</div>
+                    </div>
+                  )}
+                  {(report.waitlisted ?? 0) > 0 && (
+                    <div className="cate-stat">
+                      <div className="cate-stat__value cate-stat__value--warn">{report.waitlisted}</div>
+                      <div className="cate-stat__label">Fila de espera</div>
                     </div>
                   )}
                   <div className="cate-stat">
@@ -3023,9 +3068,26 @@ const CatechesisPage: React.FC = () => {
                                   </td>
                                   <td>
                                     <div className="cate-row-actions">
-                                      {student.status === 'PENDING_APPROVAL' && (
+                                      {(student.status === 'PENDING_APPROVAL' || student.status === 'WAITLISTED') && (
                                         <>
-                                          <button className="cate-mini cate-mini--ok" onClick={() => handleApprove(student.enrollmentId)}>✓ Aprovar</button>
+                                          <button
+                                            className="cate-mini cate-mini--ok"
+                                            onClick={() => {
+                                              // Aceite da fila é consciente: entra mesmo com a turma
+                                              // cheia (+1 vaga acima do limite, auditado)
+                                              if (
+                                                student.status === 'WAITLISTED' &&
+                                                !window.confirm(
+                                                  `Aceitar ${student.member.fullName} da fila de espera? Se a turma estiver cheia, entra mesmo assim (+1 vaga acima do limite).`,
+                                                )
+                                              ) {
+                                                return;
+                                              }
+                                              void handleApprove(student.enrollmentId);
+                                            }}
+                                          >
+                                            {student.status === 'WAITLISTED' ? '✓ Aceitar da fila' : '✓ Aprovar'}
+                                          </button>
                                           <button className="cate-mini cate-mini--danger" onClick={() => handleReject(student.enrollmentId)}>Recusar</button>
                                           <button
                                             className="cate-mini"
@@ -3363,9 +3425,50 @@ const CatechesisPage: React.FC = () => {
                   onChange={(room) => setEditClassForm({ ...editClassForm, room })}
                 />
               </div>
-              <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 0.4rem' }}>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 0.8rem' }}>
                 Deixe as vagas em branco para turma sem limite. O limite vale para a inscrição online e para a matrícula na secretaria.
               </p>
+
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: '0.7rem 0.9rem', marginBottom: '0.6rem' }}>
+                <strong style={{ fontSize: '0.85rem' }}>Inscrições online</strong>
+                <label className="form-check" style={{ marginTop: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={editClassForm.enrollmentOpen}
+                    onChange={(e) => setEditClassForm({ ...editClassForm, enrollmentOpen: e.target.checked })}
+                  />
+                  Inscrições abertas (desligue no fim do ano — a turma some da inscrição do app)
+                </label>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Abrem em (opcional)</label>
+                    <input
+                      type="date"
+                      value={editClassForm.enrollmentOpensAt}
+                      onChange={(e) => setEditClassForm({ ...editClassForm, enrollmentOpensAt: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Encerram em (opcional)</label>
+                    <input
+                      type="date"
+                      value={editClassForm.enrollmentClosesAt}
+                      onChange={(e) => setEditClassForm({ ...editClassForm, enrollmentClosesAt: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Quando a turma estiver cheia</label>
+                  <select
+                    value={editClassForm.fullBehavior}
+                    onChange={(e) => setEditClassForm({ ...editClassForm, fullBehavior: e.target.value as 'WAITLIST' | 'BLOCK' })}
+                  >
+                    <option value="WAITLIST">Aceitar em fila de espera (a coordenação decide, abrindo +1 vaga)</option>
+                    <option value="BLOCK">Bloquear — avisar que a turma não aceita mais inscrições no ano</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="modal-actions">
                 <button type="button" className="btn-cancel" onClick={() => setShowEditClassModal(false)}>Cancelar</button>
                 <button type="submit" className="btn-submit" disabled={savingClass}>{savingClass ? 'Salvando…' : 'Salvar'}</button>
