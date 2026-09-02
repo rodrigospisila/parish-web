@@ -57,6 +57,22 @@ const enrollmentWindowOpen = (klass: CatechesisClass): boolean => {
   return true;
 };
 
+/** Badge do estado das inscrições na lista/cards — nada em turma concluída
+ * (ruído histórico) e "abrem em DD/MM" quando a janela é futura. */
+const enrollmentBadge = (klass: CatechesisClass): { label: string; title: string } | null => {
+  const concluded = (klass.occupied ?? klass._count.enrollments) === 0 && (klass.completedCount ?? 0) > 0;
+  if (concluded || enrollmentWindowOpen(klass)) return null;
+  if (klass.enrollmentOpen !== false && klass.enrollmentOpensAt && Date.now() < new Date(klass.enrollmentOpensAt).getTime()) {
+    const opens = new Date(klass.enrollmentOpensAt).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      timeZone: 'America/Sao_Paulo',
+    });
+    return { label: `inscrições abrem ${opens}`, title: 'A turma aparece na inscrição do app a partir dessa data' };
+  }
+  return { label: 'inscrições fechadas', title: 'A turma não aparece na inscrição do app — reabra em Editar turma' };
+};
+
 interface ClassReport {
   catechists: Array<{ memberId: string; fullName: string; role: string }>;
   total: number;
@@ -72,6 +88,8 @@ interface ClassReport {
     status: string;
     pendingDocuments?: string | null;
     rejectionReason?: string | null;
+    /** Fila de espera: posição por ordem de entrada (1 = próximo) */
+    waitlistPosition?: number | null;
     /** Catecumenato: ainda não batizado — 1 ano de catequese antes do Batismo */
     unbaptized?: boolean;
     baptismSince?: string | null;
@@ -2575,11 +2593,14 @@ const CatechesisPage: React.FC = () => {
                               ✓ Concluída
                             </span>
                           )}
-                          {!enrollmentWindowOpen(klass) && (
-                            <span className="cate-badge cate-badge--out" style={{ marginLeft: 6 }} title="A turma não aparece na inscrição do app — reabra em Editar turma">
-                              inscrições fechadas
-                            </span>
-                          )}
+                          {(() => {
+                            const badge = enrollmentBadge(klass);
+                            return badge ? (
+                              <span className="cate-badge cate-badge--out" style={{ marginLeft: 6 }} title={badge.title}>
+                                {badge.label}
+                              </span>
+                            ) : null;
+                          })()}
                         </td>
                         <td>
                           {klass.stage.color && <span className="cate-stage-dot" style={{ background: klass.stage.color }} />}
@@ -2632,9 +2653,14 @@ const CatechesisPage: React.FC = () => {
                     {(klass.occupied ?? klass._count.enrollments) === 0 && (klass.completedCount ?? 0) > 0 && (
                       <span className="cate-badge cate-badge--done" style={{ display: 'block', marginTop: 4 }}>✓ Concluída</span>
                     )}
-                    {!enrollmentWindowOpen(klass) && (
-                      <span className="cate-badge cate-badge--out" style={{ display: 'block', marginTop: 4 }}>inscrições fechadas</span>
-                    )}
+                    {(() => {
+                      const badge = enrollmentBadge(klass);
+                      return badge ? (
+                        <span className="cate-badge cate-badge--out" style={{ display: 'block', marginTop: 4 }} title={badge.title}>
+                          {badge.label}
+                        </span>
+                      ) : null;
+                    })()}
                   </span>
                 </div>
                 <div className="cate-card__meta">
@@ -3005,7 +3031,10 @@ const CatechesisPage: React.FC = () => {
                                     )}
                                   </td>
                                   <td>
-                                    <span className={`cate-badge ${badgeClass}`}>{st.label}</span>
+                                    <span className={`cate-badge ${badgeClass}`}>
+                                      {st.label}
+                                      {student.status === 'WAITLISTED' && student.waitlistPosition ? ` · nº ${student.waitlistPosition}` : ''}
+                                    </span>
                                     {student.status === 'REJECTED' && student.rejectionReason && (
                                       <div style={{ fontSize: '0.74rem', color: '#b91c1c', marginTop: 2 }}>
                                         {student.rejectionReason}
@@ -3078,7 +3107,7 @@ const CatechesisPage: React.FC = () => {
                                               if (
                                                 student.status === 'WAITLISTED' &&
                                                 !window.confirm(
-                                                  `Aceitar ${student.member.fullName} da fila de espera? Se a turma estiver cheia, entra mesmo assim (+1 vaga acima do limite).`,
+                                                  `Aceitar ${student.member.fullName} da fila de espera${student.waitlistPosition ? ` (posição nº ${student.waitlistPosition})` : ''}? Se a turma estiver cheia, entra mesmo assim (+1 vaga acima do limite).`,
                                                 )
                                               ) {
                                                 return;
