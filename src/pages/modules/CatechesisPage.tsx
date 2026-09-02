@@ -101,6 +101,8 @@ interface EnrollmentDocument {
   /** Conferência automática (IA) — apoio, a decisão é da equipe */
   autoCheckStatus?: 'MATCH' | 'MISMATCH' | 'UNREADABLE' | 'SKIPPED' | null;
   autoCheckNotes?: string | null;
+  /** O binário ainda está armazenado? (aceitos ficam; recusados/antigos não) */
+  hasFile?: boolean;
   reviewNotes?: string | null;
   reviewedAt?: string | null;
   createdAt: string;
@@ -3452,11 +3454,11 @@ const CatechesisPage: React.FC = () => {
               </button>
             </h2>
             <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0 0 0.8rem' }}>
-              Conferir dá baixa na pendência e <strong>apaga o arquivo</strong> (retenção mínima) — fica
-              só o registro de quem conferiu e quando. A <strong>conferência automática 🤖</strong> envia o
-              arquivo para leitura por IA de provedor externo (Anthropic) e compara nome e nascimento com o
-              cadastro; nada fica armazenado após a conferência e a decisão final é <strong>sempre da equipe</strong> —
-              trate o resultado como sugestão.
+              Documento <strong>aceito fica armazenado</strong> no prontuário da matrícula (e some junto dela);
+              documento <strong>recusado é apagado</strong> na hora. A <strong>conferência automática 🤖</strong> envia
+              o arquivo para leitura por IA de provedor externo (Anthropic — que não o retém) e compara nome e
+              nascimento com o cadastro; a decisão final é <strong>sempre da equipe</strong> — trate o resultado
+              como sugestão.
             </p>
             <input
               ref={docFileInputRef}
@@ -3566,6 +3568,9 @@ const CatechesisPage: React.FC = () => {
                   </div>
                 )}
                 <div style={{ marginTop: '0.45rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  {!doc.declaration && doc.hasFile && doc.status !== 'SUBMITTED' && (
+                    <button className="cate-mini" onClick={() => openDocumentFile(doc.id)}>👁 Ver arquivo</button>
+                  )}
                   {doc.status === 'SUBMITTED' && (
                     <>
                       {!doc.declaration && (
