@@ -698,3 +698,149 @@
 .cate-chat__bubble p { margin: 0.15rem 0; font-size: 0.9rem; white-space: pre-wrap; }
 .cate-chat__author { font-size: 0.7rem; font-weight: 700; color: #475569; }
 .cate-chat__time { font-size: 0.68rem; color: #94a3b8; }
+
+/* ===== Board de distribuição (renovação multi-destino) =====
+   Tela cheia: 3-4 colunas de até 30 cards não cabem no modal de 560px.
+   Rascunho no cliente; commit por coluna no Confirmar. */
+.cate-board-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #f5f7fa;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 1.2rem;
+  overflow: hidden;
+}
+.cate-board__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.7rem;
+  margin-bottom: 0.8rem;
+}
+.cate-board__title { font-size: 1.02rem; color: #0f172a; display: block; }
+.cate-board__count { font-size: 0.8rem; color: #64748b; }
+.cate-board__topbtns { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.cate-board__cols {
+  display: flex;
+  gap: 0.8rem;
+  align-items: flex-start;
+  overflow-x: auto;
+  flex: 1;
+  padding-bottom: 0.6rem;
+  scroll-snap-type: x proximity;
+}
+.cate-board__col {
+  flex: 0 0 260px;
+  max-width: 300px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+  scroll-snap-align: start;
+}
+.cate-board__col--dest { border-top: 3px solid #94a3b8; }
+.cate-board__colhead {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-size: 0.88rem;
+  color: #0f172a;
+}
+.cate-board__year { font-size: 0.75rem; color: #94a3b8; }
+.cate-board__sub { margin: 0.15rem 0 0.4rem; font-size: 0.74rem; color: #64748b; }
+.cate-board__links { display: flex; gap: 0.7rem; margin: 0.2rem 0 0.45rem; font-size: 0.78rem; }
+.cate-board__meter {
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+  display: flex;
+}
+.cate-board__meter-used { display: block; height: 100%; background: #94a3b8; }
+.cate-board__meter-draft {
+  display: block;
+  height: 100%;
+  background: repeating-linear-gradient(45deg, currentColor 0 4px, transparent 4px 8px);
+}
+.cate-board__meterlabel { margin: 0.25rem 0 0.5rem; font-size: 0.72rem; color: #64748b; }
+.cate-board__meterlabel strong { color: #0f172a; }
+.cate-board__cards {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1;
+  min-height: 40px;
+}
+.cate-board__card {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.4rem 0.55rem;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #1e293b;
+  cursor: pointer;
+}
+.cate-board__card:hover { border-color: #94a3b8; }
+.cate-board__card:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+.cate-board__card.is-selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1.5px #2563eb;
+  background: #f4f8ff;
+}
+.cate-board__card--placed {
+  cursor: default;
+  color: #94a3b8;
+  background: #f8fafc;
+}
+.cate-board__card--draft { cursor: default; }
+.cate-board__cardnote { margin-left: auto; font-size: 0.7rem; font-weight: 600; color: #94a3b8; }
+.cate-board__checkmark { margin-left: auto; color: #2563eb; font-weight: 700; }
+.cate-board__tag {
+  font-size: 0.66rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.05rem 0.4rem;
+}
+.cate-board__tag--dove { background: #eaf0fe; color: #2563eb; }
+.cate-board__tag--warn { background: #fdf3e3; color: #b45309; }
+.cate-board__move {
+  margin-top: 0.5rem;
+  width: 100%;
+  border: 1.5px dashed #94a3b8;
+  border-radius: 8px;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 0.4rem 0.3rem;
+  cursor: pointer;
+}
+.cate-board__move:hover:not(:disabled) { background: rgba(37, 99, 235, 0.06); }
+.cate-board__move:disabled { opacity: 0.45; cursor: not-allowed; }
+.cate-board__status { font-size: 0.7rem; font-weight: 700; color: #64748b; }
+.cate-board__status--ok { color: #15803d; }
+.cate-board__status--err { color: #b91c1c; }
+.cate-board__emptycol { font-size: 0.8rem; color: #94a3b8; text-align: center; margin: 0.6rem 0; }
+@media (max-width: 720px) {
+  .cate-board__col { flex: 0 0 85vw; max-width: 85vw; }
+  .cate-board__cols { scroll-snap-type: x mandatory; }
+}

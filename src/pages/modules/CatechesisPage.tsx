@@ -26,6 +26,7 @@ interface CatechesisClass {
   weekday?: number | null;
   time?: string | null;
   room?: string | null;
+  status?: string;
   stage: { name: string; sacramentType?: string | null; color?: string | null };
   community: { name: string };
   _count: { enrollments: number; sessions: number };
@@ -95,17 +96,46 @@ interface EnrollmentDocument {
   createdAt: string;
 }
 
+interface RenewalTargetClass {
+  id: string;
+  name: string;
+  year: number;
+  weekday?: number | null;
+  time?: string | null;
+  room?: string | null;
+  capacity: number | null;
+  /** Vagas reais: ativos + aguardando aprovação (mesmo número que a matrícula confere) */
+  occupied: number;
+  openSpots: number | null;
+  isFull: boolean;
+}
+
 interface RenewalPreview {
   classId: string;
-  stage: { id: string; name: string };
-  nextStage: { id: string; name: string; sacramentType?: string | null } | null;
-  targetClasses: Array<{ id: string; name: string; year: number; weekday?: number | null; time?: string | null; capacity: number | null }>;
+  stage: { id: string; name: string; color?: string | null };
+  nextStage: { id: string; name: string; sacramentType?: string | null; color?: string | null } | null;
+  targetClasses: RenewalTargetClass[];
   students: Array<{
     enrollmentId: string;
     member: { id: string; fullName: string };
     eligible: boolean;
+    /** Catecúmeno em preparação para o Batismo (sem certidão a cobrar) */
+    unbaptized?: boolean;
     missingDocuments: string | null;
+    /** Já realocado: matrícula efetiva em outra turma (progresso da virada) */
+    alreadyEnrolledIn?: { classId: string; className: string; year: number; status: string } | null;
   }>;
+}
+
+interface YearEndRow {
+  classId: string;
+  name: string;
+  year: number;
+  stage: { id: string; name: string; color?: string | null; ordering: number; sacramentType?: string | null };
+  active: number;
+  completed: number;
+  relocated: number;
+  toRelocate: number;
 }
 
 interface Community {
@@ -324,7 +354,7 @@ const CURRENT_ENROLLMENT_STATUSES = ['ACTIVE', 'COMPLETED', 'PENDING_APPROVAL'];
 const CatechesisPage: React.FC = () => {
   const { user } = useAuth();
   const isDiocesan = user?.role === 'DIOCESAN_ADMIN' || user?.role === 'SYSTEM_ADMIN';
-  const [tab, setTab] = useState<'classes' | 'stages' | 'diocese' | 'panorama'>('classes');
+  const [tab, setTab] = useState<'classes' | 'stages' | 'diocese' | 'panorama' | 'encerramento'>('classes');
   const [loading, setLoading] = useState(true);
   const [stages, setStages] = useState<Stage[]>([]);
   const [classes, setClasses] = useState<CatechesisClass[]>([]);
@@ -351,7 +381,7 @@ const CatechesisPage: React.FC = () => {
   });
 
   // Filtro da tabela de catequizandos (padrão: só quem está na turma)
-  const [studentsFilter, setStudentsFilter] = useState<'current' | 'all'>('current');
+  const [studentsFilter, setStudentsFilter] = useState<'current' | 'active' | 'completed' | 'all'>('current');
 
   // Turmas em cards ou lista (preferência lembrada neste navegador)
   const [classesView, setClassesView] = useState<'cards' | 'list'>(() => {
@@ -381,10 +411,30 @@ const CatechesisPage: React.FC = () => {
     capacity: '',
   });
 
+  // Board de distribuição (renovação multi-destino): rascunho 100% no cliente,
+  // commit por coluna via POST /renew existente — nada é gravado até Confirmar
   const [renewal, setRenewal] = useState<RenewalPreview | null>(null);
-  const [renewalTarget, setRenewalTarget] = useState('');
   const [renewalSelection, setRenewalSelection] = useState<Record<string, boolean>>({});
+  /** enrollmentId → turma destino escolhida no rascunho */
+  const [renewalDraft, setRenewalDraft] = useState<Record<string, string>>({});
+  /** Pilha de movimentos para o Desfazer (cada entrada = um lote movido) */
+  const [draftMoves, setDraftMoves] = useState<Array<{ enrollmentIds: string[]; targetClassId: string | null }>>([]);
+  /** Colunas onde a coordenação confirmou passar do limite (auditado no backend) */
+  const [overrideColumns, setOverrideColumns] = useState<Record<string, boolean>>({});
+  const [columnStatus, setColumnStatus] = useState<Record<string, 'saving' | 'ok' | 'error'>>({});
   const [renewing, setRenewing] = useState(false);
+
+  // Conclusão em lote: uma data e um ministro para a turma toda
+  const [showBatchComplete, setShowBatchComplete] = useState(false);
+  const [batchCompleteSelection, setBatchCompleteSelection] = useState<Record<string, boolean>>({});
+  const [batchCompleteForm, setBatchCompleteForm] = useState({ date: '', minister: '' });
+  const [savingBatchComplete, setSavingBatchComplete] = useState(false);
+
+  // Painel "Encerramento do ano" (concluir → distribuir, por comunidade)
+  const [yearEndRows, setYearEndRows] = useState<YearEndRow[] | null>(null);
+  const [yearEndLoading, setYearEndLoading] = useState(false);
+  const [yearEndCommunityId, setYearEndCommunityId] = useState('');
+  const yearEndSeq = useRef(0);
 
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [enrollForm, setEnrollForm] = useState({ memberId: '', waiveBaptism: false, overrideCapacity: false, unbaptized: false });
@@ -504,7 +554,7 @@ const CatechesisPage: React.FC = () => {
     setSelectedClass((prev) => (prev ? classes.find((klass) => klass.id === prev.id) ?? prev : prev));
   }, [classes]);
 
-  const openClassDetail = async (klass: CatechesisClass) => {
+  const openClassDetail = async (klass: CatechesisClass): Promise<ClassReport | null> => {
     setSelectedClass(klass);
     setStudentsFilter('current');
     setReportLoading(true);
@@ -515,10 +565,12 @@ const CatechesisPage: React.FC = () => {
       ]);
       setReport(reportRes.data);
       setSessions(sessionsRes.data ?? []);
+      return reportRes.data as ClassReport;
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao carregar o relatório da turma'));
       setReport(null);
       setSessions([]);
+      return null;
     } finally {
       setReportLoading(false);
     }
@@ -542,9 +594,21 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
+  // Refresh CIRÚRGICO: só a lista de turmas (ocupação/vagas), sem rebaixar a
+  // tela inteira — o fetchData completo refazia GET /members (a comunidade
+  // toda, 400+) a cada ação em série na turma
+  const refreshClassesOnly = useCallback(async () => {
+    try {
+      const res = await api.get('/catechesis/classes');
+      setClasses(res.data);
+    } catch {
+      // silencioso — a lista atual continua na tela
+    }
+  }, []);
+
   const refreshDetail = async () => {
     if (selectedClass) await openClassDetail(selectedClass);
-    fetchData();
+    void refreshClassesOnly();
   };
 
   // Cor da etapa direto na tabela (um clique por bolinha — PATCH imediato)
@@ -553,7 +617,7 @@ const CatechesisPage: React.FC = () => {
       await api.patch(`/catechesis/stages/${stageId}`, { color });
       setStages((prev) => prev.map((s) => (s.id === stageId ? { ...s, color } : s)));
       // recarrega as turmas para os cards/lista refletirem a cor nova
-      void fetchData();
+      void refreshClassesOnly();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao salvar a cor da etapa'));
     }
@@ -744,8 +808,18 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
-  const handleTransfer = async (enrollmentId: string, targetClassId: string) => {
+  const handleTransfer = async (enrollmentId: string, targetClassId: string, fullName: string) => {
     if (!targetClassId) return;
+    const target = classes.find((c) => c.id === targetClassId);
+    // O select executava no primeiro clique, sem volta — confirmação nomeando
+    // aluno e turma evita a transferência acidental
+    if (
+      !window.confirm(
+        `Transferir ${fullName} para a ${target ? `${target.name} (${target.year})` : 'turma escolhida'}? A matrícula atual fica como "Transferido" (o histórico é preservado).`,
+      )
+    ) {
+      return;
+    }
     try {
       await api.patch(`/catechesis/enrollments/${enrollmentId}/transfer`, { targetClassId });
       notify.success('Matrícula transferida!');
@@ -755,13 +829,123 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
-  const handleComplete = async (enrollmentId: string) => {
+  /** Concluídos aplicados na tela SEM refetch: status/contadores do report e a
+   * ocupação da turma na lista (concluído libera vaga — occupied conta só
+   * ativos + aguardando). */
+  const applyCompletionLocally = (enrollmentIds: string[]) => {
+    const idSet = new Set(enrollmentIds);
+    let freed = 0;
+    setReport((current) => {
+      if (!current) return current;
+      const students = current.students.map((s) => {
+        if (idSet.has(s.enrollmentId) && s.status === 'ACTIVE') {
+          freed++;
+          return { ...s, status: 'COMPLETED' };
+        }
+        return s;
+      });
+      return {
+        ...current,
+        students,
+        active: students.filter((s) => s.status === 'ACTIVE').length,
+        completed: students.filter((s) => s.status === 'COMPLETED').length,
+      };
+    });
+    if (selectedClass) {
+      const classId = selectedClass.id;
+      setClasses((prev) =>
+        prev.map((klass) => {
+          if (klass.id !== classId || klass.occupied === undefined) return klass;
+          const occupied = Math.max(0, klass.occupied - freed);
+          return {
+            ...klass,
+            occupied,
+            openSpots: klass.capacity == null ? null : Math.max(0, klass.capacity - occupied),
+            isFull: klass.capacity != null && occupied >= klass.capacity,
+            _count: { ...klass._count, enrollments: Math.max(0, klass._count.enrollments - freed) },
+          };
+        }),
+      );
+    }
+  };
+
+  const handleComplete = async (enrollmentId: string, fullName: string) => {
+    const generatesSacrament = selectedClass?.stage.sacramentType
+      ? SACRAMENT_LABELS[selectedClass.stage.sacramentType] ?? selectedClass.stage.sacramentType
+      : null;
+    // Um clique criava sacramento permanente sem confirmação (e não há
+    // exclusão no módulo) — confirmar explicitando o efeito
+    const message = generatesSacrament
+      ? `Concluir a etapa para ${fullName}? O sacramento ${generatesSacrament} será registrado na ficha (data de hoje — para outra data, use "Concluir turma").`
+      : `Concluir a etapa para ${fullName}?`;
+    if (!window.confirm(message)) return;
     try {
       await api.patch(`/catechesis/enrollments/${enrollmentId}/complete`, {});
       notify.success('Etapa concluída — sacramento registrado quando aplicável!');
-      refreshDetail();
+      applyCompletionLocally([enrollmentId]);
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao concluir matrícula'));
+    }
+  };
+
+  const openBatchComplete = (reportArg?: ClassReport | null) => {
+    const source = reportArg ?? report;
+    if (!source) return;
+    const selection: Record<string, boolean> = {};
+    source.students
+      .filter((student) => student.status === 'ACTIVE')
+      .forEach((student) => {
+        selection[student.enrollmentId] = true;
+      });
+    setBatchCompleteSelection(selection);
+    // Data de hoje (dia civil local) como padrão — editável para lançamentos retroativos
+    const now = new Date();
+    const todayIso = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())).toISOString().slice(0, 10);
+    setBatchCompleteForm({ date: todayIso, minister: '' });
+    setShowBatchComplete(true);
+  };
+
+  const handleBatchComplete = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedClass) return;
+    const enrollmentIds = Object.entries(batchCompleteSelection)
+      .filter(([, checked]) => checked)
+      .map(([id]) => id);
+    if (!enrollmentIds.length) {
+      notify.error('Selecione ao menos um catequizando');
+      return;
+    }
+    setSavingBatchComplete(true);
+    try {
+      const res = await api.post(`/catechesis/classes/${selectedClass.id}/complete-batch`, {
+        enrollmentIds,
+        date: batchCompleteForm.date || undefined,
+        minister: batchCompleteForm.minister.trim() || undefined,
+      });
+      const { completed, sacraments, skipped } = res.data as {
+        completed: number;
+        sacraments: number;
+        skipped: Array<{ enrollmentId: string; member: string | null; reason: string }>;
+      };
+      notify.success(
+        `${completed} conclusão(ões) registrada(s)${sacraments ? ` · ${sacraments} sacramento(s)` : ''}${skipped.length ? ` · ${skipped.length} pulada(s)` : ''}.`,
+      );
+      if (skipped.length) {
+        notify.warning(
+          skipped
+            .slice(0, 4)
+            .map((s) => `${s.member ?? s.enrollmentId}: ${s.reason}`)
+            .join(' · ') + (skipped.length > 4 ? ` · +${skipped.length - 4}` : ''),
+        );
+      }
+      setShowBatchComplete(false);
+      // Lote grande: recarrega o report (datas/certificados) mas sem o
+      // fetchData completo — a ocupação vem do refreshClassesOnly
+      await refreshDetail();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao concluir a turma'));
+    } finally {
+      setSavingBatchComplete(false);
     }
   };
 
@@ -1301,50 +1485,225 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
-  const openRenewal = async () => {
-    if (!selectedClass) return;
+  const openRenewal = async (classArg?: CatechesisClass) => {
+    const klass = classArg ?? selectedClass;
+    if (!klass) return;
     try {
-      const res = await api.get(`/catechesis/classes/${selectedClass.id}/renewal-preview`);
+      const res = await api.get(`/catechesis/classes/${klass.id}/renewal-preview`);
       const preview: RenewalPreview = res.data;
       const selection: Record<string, boolean> = {};
       preview.students.forEach((s) => {
-        selection[s.enrollmentId] = s.eligible;
+        // Já realocados ficam fora da pré-seleção (o board mostra onde estão)
+        selection[s.enrollmentId] = s.eligible && !s.alreadyEnrolledIn;
       });
       setRenewalSelection(selection);
-      setRenewalTarget(preview.targetClasses[0]?.id ?? '');
+      setRenewalDraft({});
+      setDraftMoves([]);
+      setOverrideColumns({});
+      setColumnStatus({});
       setRenewal(preview);
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao preparar a renovação'));
     }
   };
 
-  const handleRenew = async () => {
-    if (!selectedClass || !renewal) return;
-    const enrollmentIds = Object.entries(renewalSelection)
-      .filter(([, checked]) => checked)
+  const closeBoard = () => {
+    if (Object.keys(renewalDraft).length > 0 && !window.confirm('Descartar a distribuição em rascunho?')) return;
+    setRenewal(null);
+  };
+
+  /** Quantos cards o rascunho já coloca em cada coluna destino. */
+  const draftCountFor = (targetClassId: string) =>
+    Object.values(renewalDraft).filter((id) => id === targetClassId).length;
+
+  /** Move os selecionados (ainda na origem) para a coluna — só rascunho, nada gravado. */
+  const moveSelectedTo = (target: RenewalTargetClass) => {
+    const moving = Object.entries(renewalSelection)
+      .filter(([id, checked]) => checked && !renewalDraft[id])
       .map(([id]) => id);
-    if (!renewalTarget) {
-      notify.error('Escolha a turma de destino');
+    if (!moving.length) {
+      notify.error('Selecione catequizandos na coluna de origem');
       return;
     }
-    if (enrollmentIds.length === 0) {
-      notify.error('Selecione ao menos um catequizando');
+    if (target.capacity != null) {
+      const free = target.capacity - target.occupied - draftCountFor(target.id);
+      if (moving.length > free && !overrideColumns[target.id]) {
+        // Recusa explícita por padrão; a exceção é consciente e auditada
+        const projected = target.occupied + draftCountFor(target.id) + moving.length;
+        const proceed = window.confirm(
+          `A ${target.name} ficará com ${projected}/${target.capacity} (acima do limite). Mover mesmo assim? A exceção fica registrada em auditoria.`,
+        );
+        if (!proceed) return;
+        setOverrideColumns((prev) => ({ ...prev, [target.id]: true }));
+      }
+    }
+    setRenewalDraft((prev) => {
+      const next = { ...prev };
+      moving.forEach((id) => {
+        next[id] = target.id;
+      });
+      return next;
+    });
+    setRenewalSelection((prev) => {
+      const next = { ...prev };
+      moving.forEach((id) => {
+        next[id] = false;
+      });
+      return next;
+    });
+    setDraftMoves((prev) => [...prev, { enrollmentIds: moving, targetClassId: target.id }]);
+    setColumnStatus({});
+  };
+
+  /** Devolve um card do destino para a origem (rascunho). */
+  const returnToOrigin = (enrollmentId: string) => {
+    setRenewalDraft((prev) => {
+      const next = { ...prev };
+      delete next[enrollmentId];
+      return next;
+    });
+    setDraftMoves((prev) => [...prev, { enrollmentIds: [enrollmentId], targetClassId: null }]);
+  };
+
+  const undoLastMove = () => {
+    const last = draftMoves[draftMoves.length - 1];
+    if (!last) return;
+    if (last.targetClassId === null) {
+      // Desfazer um "voltar para origem" não sabe o destino anterior — ignora
+      setDraftMoves((prev) => prev.slice(0, -1));
+      return;
+    }
+    setRenewalDraft((prev) => {
+      const next = { ...prev };
+      last.enrollmentIds.forEach((id) => {
+        if (next[id] === last.targetClassId) delete next[id];
+      });
+      return next;
+    });
+    setRenewalSelection((prev) => {
+      const next = { ...prev };
+      last.enrollmentIds.forEach((id) => {
+        next[id] = true;
+      });
+      return next;
+    });
+    setDraftMoves((prev) => prev.slice(0, -1));
+  };
+
+  /** Confirmar: um POST /renew por coluna, sequencial. Falha de uma coluna
+   * mantém os cards dela em rascunho (as demais já valeram — o renew é
+   * idempotente: já-renovados são pulados no retry). */
+  const handleConfirmBoard = async () => {
+    if (!selectedClass || !renewal) return;
+    const byTarget = new Map<string, string[]>();
+    Object.entries(renewalDraft).forEach(([enrollmentId, targetClassId]) => {
+      const list = byTarget.get(targetClassId) ?? [];
+      list.push(enrollmentId);
+      byTarget.set(targetClassId, list);
+    });
+    if (byTarget.size === 0) {
+      notify.error('Distribua ao menos um catequizando');
       return;
     }
     setRenewing(true);
-    try {
-      const res = await api.post(`/catechesis/classes/${selectedClass.id}/renew`, {
-        targetClassId: renewalTarget,
-        enrollmentIds,
-      });
-      notify.success(`Renovação concluída: ${res.data.renewed + res.data.reactivated} matrícula(s) na nova turma!`);
-      setRenewal(null);
-      refreshDetail();
-    } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao renovar a turma'));
-    } finally {
-      setRenewing(false);
+    let renewedTotal = 0;
+    let reactivatedTotal = 0;
+    const skippedAll: Array<{ member: string; reason: string }> = [];
+    const failedColumns: string[] = [];
+    for (const [targetClassId, enrollmentIds] of byTarget) {
+      setColumnStatus((prev) => ({ ...prev, [targetClassId]: 'saving' }));
+      try {
+        const res = await api.post(`/catechesis/classes/${selectedClass.id}/renew`, {
+          targetClassId,
+          enrollmentIds,
+          ...(overrideColumns[targetClassId] ? { overrideCapacity: true } : {}),
+        });
+        renewedTotal += res.data.renewed ?? 0;
+        reactivatedTotal += res.data.reactivated ?? 0;
+        (res.data.skippedDetails ?? []).forEach((s: { member: string; reason: string }) => skippedAll.push(s));
+        setColumnStatus((prev) => ({ ...prev, [targetClassId]: 'ok' }));
+        // Coluna gravada sai do rascunho
+        setRenewalDraft((prev) => {
+          const next = { ...prev };
+          enrollmentIds.forEach((id) => delete next[id]);
+          return next;
+        });
+      } catch (error) {
+        setColumnStatus((prev) => ({ ...prev, [targetClassId]: 'error' }));
+        failedColumns.push(targetClassId);
+        notify.error(getErrorMessage(error, 'Erro ao renovar para uma das turmas'));
+      }
     }
+    setDraftMoves([]);
+    const placed = renewedTotal + reactivatedTotal;
+    if (placed > 0) {
+      notify.success(
+        `${placed} matrícula(s) em ${byTarget.size - failedColumns.length} turma(s)${skippedAll.length ? ` · ${skippedAll.length} pulada(s)` : ''}!`,
+      );
+    }
+    if (skippedAll.length) {
+      notify.warning(
+        skippedAll
+          .slice(0, 4)
+          .map((s) => `${s.member}: ${s.reason}`)
+          .join(' · ') + (skippedAll.length > 4 ? ` · +${skippedAll.length - 4}` : ''),
+      );
+    }
+    // Recarrega a PRÉVIA (progresso/vagas atualizados) em vez de fechar — o
+    // coordenador emenda a próxima leva; falha de coluna mantém o rascunho dela
+    try {
+      const res = await api.get(`/catechesis/classes/${selectedClass.id}/renewal-preview`);
+      const preview: RenewalPreview = res.data;
+      setRenewal(preview);
+      setRenewalSelection((prev) => {
+        const selection: Record<string, boolean> = {};
+        preview.students.forEach((s) => {
+          selection[s.enrollmentId] = prev[s.enrollmentId] === true && s.eligible && !s.alreadyEnrolledIn;
+        });
+        return selection;
+      });
+    } catch {
+      // prévia indisponível: fecha o board com os dados gravados
+      if (failedColumns.length === 0) setRenewal(null);
+    }
+    void refreshDetail();
+    setRenewing(false);
+  };
+
+  // ===== Painel "Encerramento do ano" =====
+  const loadYearEnd = async (communityId?: string) => {
+    const seq = ++yearEndSeq.current;
+    setYearEndLoading(true);
+    try {
+      const res = await api.get('/catechesis/year-end-overview', {
+        params: communityId ? { communityId } : undefined,
+      });
+      if (seq !== yearEndSeq.current) return;
+      setYearEndRows(res.data ?? []);
+    } catch (error) {
+      if (seq !== yearEndSeq.current) return;
+      notify.error(getErrorMessage(error, 'Erro ao carregar o encerramento'));
+      setYearEndRows(null);
+    } finally {
+      if (seq === yearEndSeq.current) setYearEndLoading(false);
+    }
+  };
+
+  const openYearEndTab = () => {
+    setTab('encerramento');
+    const communityId = yearEndCommunityId || user?.communityId || communities[0]?.id || '';
+    if (!yearEndCommunityId && communityId) setYearEndCommunityId(communityId);
+    if (communityId) loadYearEnd(communityId);
+  };
+
+  /** CTA do painel: abre a turma e já dispara a ação da vez. */
+  const openFromYearEnd = async (row: YearEndRow, action: 'complete' | 'renew') => {
+    const klass = classes.find((k) => k.id === row.classId);
+    if (!klass) return;
+    setTab('classes');
+    const freshReport = await openClassDetail(klass);
+    if (action === 'complete') openBatchComplete(freshReport);
+    else void openRenewal(klass);
   };
 
   if (loading) return <div className="module-page"><div className="loading">Carregando...</div></div>;
@@ -1372,6 +1731,11 @@ const CatechesisPage: React.FC = () => {
         {isCoordinator && (
           <button className={`tab-btn ${tab === 'panorama' ? 'active' : ''}`} onClick={openPanoramaTab}>
             Panorama
+          </button>
+        )}
+        {isCoordinator && (
+          <button className={`tab-btn ${tab === 'encerramento' ? 'active' : ''}`} onClick={openYearEndTab}>
+            Encerramento do ano
           </button>
         )}
         {isDiocesan && (
@@ -1453,6 +1817,110 @@ const CatechesisPage: React.FC = () => {
                 </tbody>
               </table>
             </div>
+          )}
+        </>
+      )}
+
+      {tab === 'encerramento' && (
+        <>
+          {communities.length > 1 && (
+            <div className="inline-form" style={{ marginBottom: '1rem' }}>
+              <select
+                className="filter-select"
+                value={yearEndCommunityId}
+                onChange={(e) => {
+                  setYearEndCommunityId(e.target.value);
+                  if (e.target.value) loadYearEnd(e.target.value);
+                }}
+              >
+                {communities.map((community) => (
+                  <option key={community.id} value={community.id}>{community.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {yearEndLoading && <div className="loading">Carregando o encerramento...</div>}
+          {!yearEndLoading && yearEndRows && yearEndRows.length === 0 && (
+            <div className="cate-empty">Nenhuma turma ativa nesta comunidade.</div>
+          )}
+          {!yearEndLoading && yearEndRows && yearEndRows.length > 0 && (
+            <>
+              <p style={{ fontSize: '0.88rem', color: '#64748b', margin: '0 0 0.8rem' }}>
+                A virada do ano em dois passos por turma: <strong>concluir</strong> os ativos e{' '}
+                <strong>distribuir</strong> os concluídos nas turmas da próxima etapa.
+              </p>
+              <div className="table-container">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Turma</th>
+                      <th>Etapa</th>
+                      <th style={{ textAlign: 'right' }}>A concluir</th>
+                      <th style={{ textAlign: 'right' }}>Concluídos</th>
+                      <th style={{ textAlign: 'right' }}>Distribuídos</th>
+                      <th>Situação</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {yearEndRows.map((row) => {
+                      const done = row.active === 0 && row.toRelocate === 0;
+                      return (
+                        <tr key={row.classId}>
+                          <td>
+                            <strong>{row.name}</strong> <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{row.year}</span>
+                          </td>
+                          <td>
+                            {row.stage.color && <span className="cate-stage-dot" style={{ background: row.stage.color }} />}
+                            {row.stage.name}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>{row.active > 0 ? <strong>{row.active}</strong> : '—'}</td>
+                          <td style={{ textAlign: 'right' }}>{row.completed || '—'}</td>
+                          <td style={{ textAlign: 'right' }}>
+                            {row.completed > 0 ? `${row.relocated}/${row.completed}` : '—'}
+                          </td>
+                          <td>
+                            {done ? (
+                              <span className="status-badge green">Encerrada ✓</span>
+                            ) : row.active > 0 ? (
+                              <span className="status-badge yellow">Concluir {row.active}</span>
+                            ) : (
+                              <span className="status-badge yellow">Distribuir {row.toRelocate}</span>
+                            )}
+                          </td>
+                          <td className="actions-cell">
+                            {row.active > 0 && (
+                              <button className="btn-small success" onClick={() => void openFromYearEnd(row, 'complete')}>
+                                🎓 Concluir turma
+                              </button>
+                            )}
+                            {row.toRelocate > 0 && (
+                              <button className="btn-small" onClick={() => void openFromYearEnd(row, 'renew')}>
+                                ↦ Distribuir
+                              </button>
+                            )}
+                            {done && (
+                              <button
+                                className="btn-small"
+                                onClick={() => {
+                                  const klass = classes.find((k) => k.id === row.classId);
+                                  if (klass) {
+                                    setTab('classes');
+                                    void openClassDetail(klass);
+                                  }
+                                }}
+                              >
+                                Abrir
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </>
       )}
@@ -1810,8 +2278,11 @@ const CatechesisPage: React.FC = () => {
               <button className="cate-btn" onClick={() => void openSentNotices()}>
                 ✉ Avisos enviados
               </button>
+              {report && report.active > 0 && (
+                <button className="cate-btn" onClick={() => openBatchComplete()}>🎓 Concluir turma</button>
+              )}
               {report && report.completed > 0 && (
-                <button className="cate-btn" onClick={openRenewal}>↻ Renovar turma</button>
+                <button className="cate-btn" onClick={() => void openRenewal()}>↻ Renovar / distribuir</button>
               )}
               <button
                 className="cate-btn"
@@ -1936,6 +2407,11 @@ const CatechesisPage: React.FC = () => {
                   <section>
                     <div className="cate-section__head">
                       <h3 className="cate-section__title">Catequizandos</h3>
+                      {report.active + report.completed > 0 && (
+                        <span className="cate-section__hint">
+                          Conclusão: <strong>{report.completed}/{report.active + report.completed}</strong>
+                        </span>
+                      )}
                       {report.students.length > 0 && (
                         <div className="cate-filter" role="group" aria-label="Filtro de catequizandos">
                           <button
@@ -1944,6 +2420,20 @@ const CatechesisPage: React.FC = () => {
                             onClick={() => setStudentsFilter('current')}
                           >
                             Na turma ({report.students.filter((s) => CURRENT_ENROLLMENT_STATUSES.includes(s.status)).length})
+                          </button>
+                          <button
+                            type="button"
+                            className={`cate-filter__opt${studentsFilter === 'active' ? ' is-on' : ''}`}
+                            onClick={() => setStudentsFilter('active')}
+                          >
+                            Ativos ({report.active})
+                          </button>
+                          <button
+                            type="button"
+                            className={`cate-filter__opt${studentsFilter === 'completed' ? ' is-on' : ''}`}
+                            onClick={() => setStudentsFilter('completed')}
+                          >
+                            Concluídos ({report.completed})
                           </button>
                           <button
                             type="button"
@@ -1982,7 +2472,15 @@ const CatechesisPage: React.FC = () => {
                                 </tr>
                               )}
                             {report.students
-                              .filter((s) => studentsFilter === 'all' || CURRENT_ENROLLMENT_STATUSES.includes(s.status))
+                              .filter((s) =>
+                                studentsFilter === 'all'
+                                  ? true
+                                  : studentsFilter === 'active'
+                                    ? s.status === 'ACTIVE'
+                                    : studentsFilter === 'completed'
+                                      ? s.status === 'COMPLETED'
+                                      : CURRENT_ENROLLMENT_STATUSES.includes(s.status),
+                              )
                               .map((student) => {
                               const st = ENROLLMENT_STATUS[student.status] ?? { label: student.status, color: 'gray' };
                               const badgeClass = STATUS_BADGE[student.status] ?? 'cate-badge--moved';
@@ -2107,15 +2605,40 @@ const CatechesisPage: React.FC = () => {
                                           >
                                             📄 Declaração
                                           </button>
-                                          <button className="cate-mini cate-mini--ok" onClick={() => handleComplete(student.enrollmentId)}>Concluir</button>
+                                          <button
+                                            className="cate-mini cate-mini--ok"
+                                            onClick={() => handleComplete(student.enrollmentId, student.member.fullName)}
+                                          >
+                                            Concluir
+                                          </button>
                                           <select
                                             className="cate-select"
-                                            defaultValue=""
-                                            onChange={(e) => handleTransfer(student.enrollmentId, e.target.value)}
+                                            // Controlado em "": o valor não fica preso após erro e a
+                                            // mesma opção pode ser escolhida de novo
+                                            value=""
+                                            onChange={(e) => handleTransfer(student.enrollmentId, e.target.value, student.member.fullName)}
                                           >
                                             <option value="" disabled>Transferir…</option>
-                                            {classes.filter((c) => c.id !== selectedClass.id).map((c) => (
-                                              <option key={c.id} value={c.id}>{c.name} · {c.year}</option>
+                                            {Object.entries(
+                                              classes
+                                                .filter((c) => c.id !== selectedClass.id && (c.status === undefined || c.status === 'ACTIVE'))
+                                                .reduce<Record<string, CatechesisClass[]>>((acc, c) => {
+                                                  (acc[c.stage.name] = acc[c.stage.name] ?? []).push(c);
+                                                  return acc;
+                                                }, {}),
+                                            ).map(([stageName, group]) => (
+                                              <optgroup key={stageName} label={stageName}>
+                                                {group.map((c) => (
+                                                  <option key={c.id} value={c.id} disabled={!!c.isFull}>
+                                                    {c.name} · {c.year}
+                                                    {c.capacity != null
+                                                      ? c.isFull
+                                                        ? ' — lotada'
+                                                        : ` — ${c.openSpots} vaga${c.openSpots === 1 ? '' : 's'}`
+                                                      : ''}
+                                                  </option>
+                                                ))}
+                                              </optgroup>
                                             ))}
                                           </select>
                                         </>
@@ -2805,7 +3328,7 @@ const CatechesisPage: React.FC = () => {
         </div>
       )}
 
-      {renewal && selectedClass && (
+      {renewal && selectedClass && (!renewal.nextStage || renewal.targetClasses.length === 0 || renewal.students.length === 0) && (
         <div className="module-modal-overlay" onClick={() => setRenewal(null)}>
           <div className="module-modal" onClick={(e) => e.stopPropagation()}>
             <h2>Renovar turma · {selectedClass.name}</h2>
@@ -2819,46 +3342,265 @@ const CatechesisPage: React.FC = () => {
                 Próxima etapa: <strong>{renewal.nextStage.name}</strong>. Nenhuma turma ativa dessa
                 etapa nesta comunidade — crie a turma do próximo ano antes de renovar.
               </p>
-            ) : renewal.students.length === 0 ? (
-              <p>Nenhum catequizando concluído nesta turma para renovar.</p>
             ) : (
-              <>
-                <div className="form-group">
-                  <label>Turma de destino ({renewal.nextStage.name}) *</label>
-                  <select value={renewalTarget} onChange={(e) => setRenewalTarget(e.target.value)}>
-                    {renewal.targetClasses.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} · {c.year}
-                        {c.capacity !== null ? ` (${c.capacity} vagas)` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="checklist">
-                  {renewal.students.map((s) => (
-                    <label key={s.enrollmentId}>
-                      <input
-                        type="checkbox"
-                        checked={!!renewalSelection[s.enrollmentId]}
-                        onChange={(e) =>
-                          setRenewalSelection({ ...renewalSelection, [s.enrollmentId]: e.target.checked })
-                        }
-                      />
-                      {s.member.fullName}
-                      {s.missingDocuments ? ` — 📄 falta: ${s.missingDocuments}` : ''}
-                    </label>
-                  ))}
-                </div>
-              </>
+              <p>Nenhum catequizando concluído nesta turma para renovar.</p>
             )}
             <div className="modal-actions">
               <button type="button" className="btn-cancel" onClick={() => setRenewal(null)}>Fechar</button>
-              {renewal.nextStage && renewal.targetClasses.length > 0 && renewal.students.length > 0 && (
-                <button type="button" className="btn-submit" disabled={renewing} onClick={handleRenew}>
-                  {renewing ? 'Renovando...' : 'Renovar selecionados'}
-                </button>
-              )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {renewal && selectedClass && renewal.nextStage && renewal.targetClasses.length > 0 && renewal.students.length > 0 && (() => {
+        const placedBefore = renewal.students.filter((s) => s.alreadyEnrolledIn).length;
+        const draftCount = Object.keys(renewalDraft).length;
+        const selectedCount = Object.entries(renewalSelection).filter(([id, on]) => on && !renewalDraft[id]).length;
+        const originCards = renewal.students.filter((s) => !renewalDraft[s.enrollmentId]);
+        const nextColor = renewal.nextStage!.color ?? undefined;
+        return (
+          <div className="cate-board-overlay" role="dialog" aria-label="Distribuir concluídos">
+            <div className="cate-board__top">
+              <div>
+                <strong className="cate-board__title">
+                  Distribuir concluídos · {selectedClass.name} → {renewal.nextStage!.name}
+                </strong>
+                <span className="cate-board__count">
+                  {placedBefore > 0 ? `${placedBefore} já realocado(s) · ` : ''}
+                  {draftCount} em rascunho — nada é gravado até confirmar
+                </span>
+              </div>
+              <div className="cate-board__topbtns">
+                <button type="button" className="cate-btn" disabled={!draftMoves.length || renewing} onClick={undoLastMove}>
+                  ⌫ Desfazer
+                </button>
+                <button type="button" className="cate-btn" disabled={renewing} onClick={closeBoard}>
+                  Fechar
+                </button>
+                <button
+                  type="button"
+                  className="cate-btn cate-btn--primary"
+                  disabled={renewing || draftCount === 0}
+                  onClick={() => void handleConfirmBoard()}
+                >
+                  {renewing ? 'Gravando…' : `Confirmar distribuição (${draftCount})`}
+                </button>
+              </div>
+            </div>
+            <div className="cate-board__cols">
+              <div className="cate-board__col">
+                <div className="cate-board__colhead">
+                  {renewal.stage.color && <span className="cate-stage-dot" style={{ background: renewal.stage.color }} />}
+                  <strong>Concluídos · {selectedClass.name}</strong>
+                </div>
+                <div className="cate-board__links">
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() =>
+                      setRenewalSelection(() => {
+                        const next: Record<string, boolean> = {};
+                        renewal.students.forEach((s) => {
+                          next[s.enrollmentId] = s.eligible && !s.alreadyEnrolledIn && !renewalDraft[s.enrollmentId];
+                        });
+                        return next;
+                      })
+                    }
+                  >
+                    Selecionar elegíveis
+                  </button>
+                  <button type="button" className="link-button" onClick={() => setRenewalSelection({})}>
+                    Limpar
+                  </button>
+                </div>
+                <div className="cate-board__cards">
+                  {originCards.length === 0 && <p className="cate-board__emptycol">Todos distribuídos 🎉</p>}
+                  {originCards.map((s) => {
+                    const placed = s.alreadyEnrolledIn;
+                    if (placed) {
+                      return (
+                        <div key={s.enrollmentId} className="cate-board__card cate-board__card--placed" title="Já realocado — resolva por transferência se precisar mudar">
+                          <span>{s.member.fullName}</span>
+                          <span className="cate-board__cardnote">já na {placed.className}</span>
+                        </div>
+                      );
+                    }
+                    const on = !!renewalSelection[s.enrollmentId];
+                    return (
+                      <button
+                        key={s.enrollmentId}
+                        type="button"
+                        className={`cate-board__card${on ? ' is-selected' : ''}`}
+                        aria-pressed={on}
+                        onClick={() => setRenewalSelection((prev) => ({ ...prev, [s.enrollmentId]: !on }))}
+                      >
+                        <span>{s.member.fullName}</span>
+                        {s.unbaptized && <span className="cate-board__tag cate-board__tag--dove">🕊</span>}
+                        {s.missingDocuments && <span className="cate-board__tag cate-board__tag--warn">📄 {s.missingDocuments}</span>}
+                        {on && <span className="cate-board__checkmark">✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {renewal.targetClasses.map((t) => {
+                const draftN = draftCountFor(t.id);
+                const free = t.capacity == null ? null : t.capacity - t.occupied - draftN;
+                const fullNow = free !== null && free <= 0;
+                const status = columnStatus[t.id];
+                const cards = renewal.students.filter((s) => renewalDraft[s.enrollmentId] === t.id);
+                return (
+                  <div
+                    key={t.id}
+                    className="cate-board__col cate-board__col--dest"
+                    style={nextColor ? { borderTopColor: nextColor } : undefined}
+                  >
+                    <div className="cate-board__colhead">
+                      <strong>{t.name}</strong>
+                      <span className="cate-board__year">{t.year}</span>
+                      {fullNow && <span className="cate-seats is-full">lotada</span>}
+                      {status === 'saving' && <span className="cate-board__status">gravando…</span>}
+                      {status === 'ok' && <span className="cate-board__status cate-board__status--ok">✓ gravada</span>}
+                      {status === 'error' && <span className="cate-board__status cate-board__status--err">⚠ falhou — ajuste e confirme de novo</span>}
+                    </div>
+                    <p className="cate-board__sub">
+                      {t.weekday !== null && t.weekday !== undefined ? WEEKDAYS[t.weekday] : 'Dia a definir'}
+                      {t.time ? ` às ${t.time}` : ''}
+                      {t.room ? ` · ${t.room}` : ''}
+                    </p>
+                    {t.capacity != null ? (
+                      <>
+                        <div className="cate-board__meter" title="Ocupadas = matrículas ativas + inscrições aguardando aprovação (elas seguram vaga até a análise)">
+                          <span className="cate-board__meter-used" style={{ width: `${Math.min(100, (t.occupied / t.capacity) * 100)}%` }} />
+                          <span
+                            className="cate-board__meter-draft"
+                            style={{ width: `${Math.min(100, (draftN / t.capacity) * 100)}%`, color: nextColor ?? 'currentColor' }}
+                          />
+                        </div>
+                        <p className="cate-board__meterlabel">
+                          {t.occupied}/{t.capacity} ocupadas
+                          {draftN > 0 && <strong> · +{draftN} nesta distribuição</strong>}
+                          {` · ${Math.max(0, free ?? 0)} livre${(free ?? 0) === 1 ? '' : 's'}`}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="cate-board__meterlabel">Sem limite de vagas{draftN > 0 ? ` · +${draftN} nesta distribuição` : ''}</p>
+                    )}
+                    <div className="cate-board__cards">
+                      {cards.map((s) => (
+                        <div key={s.enrollmentId} className="cate-board__card cate-board__card--draft">
+                          <span>{s.member.fullName}</span>
+                          {s.unbaptized && <span className="cate-board__tag cate-board__tag--dove">🕊</span>}
+                          <button
+                            type="button"
+                            className="cate-chip__remove"
+                            title="Voltar para a origem"
+                            onClick={() => returnToOrigin(s.enrollmentId)}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      className="cate-board__move"
+                      style={nextColor ? { borderColor: nextColor, color: nextColor } : undefined}
+                      disabled={renewing || selectedCount === 0}
+                      onClick={() => moveSelectedTo(t)}
+                    >
+                      Mover {selectedCount || ''} para cá
+                      {free !== null && selectedCount > free ? ` (cabem ${Math.max(0, free)})` : ''}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      {showBatchComplete && selectedClass && report && (
+        <div className="module-modal-overlay" onClick={() => setShowBatchComplete(false)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 640 }}>
+            <h2>🎓 Concluir turma · {selectedClass.name}</h2>
+            <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0 0 0.8rem' }}>
+              A mesma data e ministro valem para todos os selecionados.
+              {selectedClass.stage.sacramentType && (
+                <>
+                  {' '}Esta etapa <strong>registra o sacramento
+                  ({SACRAMENT_LABELS[selectedClass.stage.sacramentType] ?? selectedClass.stage.sacramentType})</strong> na
+                  ficha de cada um.
+                </>
+              )}{' '}
+              Uma pendência no meio do lote não derruba as demais — o resultado sai por catequizando.
+            </p>
+            <form onSubmit={handleBatchComplete}>
+              <div className="cate-board__links" style={{ marginBottom: '0.4rem' }}>
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() => {
+                    const next: Record<string, boolean> = {};
+                    report.students.filter((s) => s.status === 'ACTIVE').forEach((s) => {
+                      next[s.enrollmentId] = true;
+                    });
+                    setBatchCompleteSelection(next);
+                  }}
+                >
+                  Marcar todos
+                </button>
+                <button type="button" className="link-button" onClick={() => setBatchCompleteSelection({})}>
+                  Limpar
+                </button>
+              </div>
+              <div className="checklist" style={{ maxHeight: 220, overflowY: 'auto', marginBottom: '0.8rem' }}>
+                {report.students
+                  .filter((student) => student.status === 'ACTIVE')
+                  .map((student) => (
+                    <label key={student.enrollmentId}>
+                      <input
+                        type="checkbox"
+                        checked={!!batchCompleteSelection[student.enrollmentId]}
+                        onChange={(e) =>
+                          setBatchCompleteSelection({ ...batchCompleteSelection, [student.enrollmentId]: e.target.checked })
+                        }
+                      />
+                      {student.member.fullName}
+                      {student.unbaptized ? ' 🕊' : ''}
+                    </label>
+                  ))}
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Data da conclusão *</label>
+                  <input
+                    type="date"
+                    required
+                    value={batchCompleteForm.date}
+                    onChange={(e) => setBatchCompleteForm({ ...batchCompleteForm, date: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Ministro {selectedClass.stage.sacramentType ? '(sai no registro do sacramento)' : '(opcional)'}</label>
+                  <input
+                    type="text"
+                    maxLength={120}
+                    placeholder="Ex.: Pe. João"
+                    value={batchCompleteForm.minister}
+                    onChange={(e) => setBatchCompleteForm({ ...batchCompleteForm, minister: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-cancel" onClick={() => setShowBatchComplete(false)}>Cancelar</button>
+                <button type="submit" className="btn-submit" disabled={savingBatchComplete}>
+                  {savingBatchComplete
+                    ? 'Concluindo…'
+                    : `Concluir ${Object.values(batchCompleteSelection).filter(Boolean).length} catequizando(s)`}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
