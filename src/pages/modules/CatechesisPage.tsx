@@ -520,8 +520,10 @@ const CatechesisPage: React.FC = () => {
   const [reviewingDoc, setReviewingDoc] = useState<string | null>(null);
   // Requisitos de documentos da turma (no modal da matrícula e na configuração)
   const [docReqs, setDocReqs] = useState<DocRequirement[] | null>(null);
+  const [docReqsError, setDocReqsError] = useState(false);
   const [showDocReqModal, setShowDocReqModal] = useState(false);
   const [docReqItems, setDocReqItems] = useState<DocRequirement[]>([]);
+  const [loadingDocReq, setLoadingDocReq] = useState(false);
   const [savingDocReq, setSavingDocReq] = useState(false);
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const docFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1063,17 +1065,26 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
+  const refreshDocReqs = (classId: string) => {
+    setDocReqsError(false);
+    api
+      .get(`/catechesis/classes/${classId}/doc-requirements`)
+      .then((res) => setDocReqs(res.data ?? []))
+      .catch(() => {
+        // Sem os requisitos, as ações de balcão somem — avisa em vez de fingir
+        // que a turma não pede nada
+        setDocReqs(null);
+        setDocReqsError(true);
+      });
+  };
+
   const openDocuments = async (enrollmentId: string, fullName: string) => {
     setDocList(null);
     setDocReqs(null);
+    setDocReqsError(false);
     setDocTarget({ enrollmentId, fullName });
     void refreshDocList(enrollmentId);
-    if (selectedClass) {
-      api
-        .get(`/catechesis/classes/${selectedClass.id}/doc-requirements`)
-        .then((res) => setDocReqs(res.data ?? []))
-        .catch(() => setDocReqs([]));
-    }
+    if (selectedClass) refreshDocReqs(selectedClass.id);
   };
 
   /** Balcão: a secretaria registra a declaração em nome da família. */
@@ -1137,6 +1148,7 @@ const CatechesisPage: React.FC = () => {
   const openDocReqModal = async () => {
     if (!selectedClass) return;
     setDocReqItems([]);
+    setLoadingDocReq(true);
     setShowDocReqModal(true);
     try {
       const res = await api.get(`/catechesis/classes/${selectedClass.id}/doc-requirements`);
@@ -1151,6 +1163,8 @@ const CatechesisPage: React.FC = () => {
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao carregar os documentos da turma'));
       setShowDocReqModal(false);
+    } finally {
+      setLoadingDocReq(false);
     }
   };
 
@@ -3427,16 +3441,22 @@ const CatechesisPage: React.FC = () => {
               <button
                 type="button"
                 className="cate-mini"
+                aria-label="Atualizar documentos"
                 title="Atualizar (a conferência automática roda em segundos)"
-                onClick={() => void refreshDocList(docTarget.enrollmentId)}
+                onClick={() => {
+                  void refreshDocList(docTarget.enrollmentId);
+                  if (selectedClass) refreshDocReqs(selectedClass.id);
+                }}
               >
-                ↻
+                <span aria-hidden="true">↻</span>
               </button>
             </h2>
             <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0 0 0.8rem' }}>
               Conferir dá baixa na pendência e <strong>apaga o arquivo</strong> (retenção mínima) — fica
-              só o registro de quem conferiu e quando. A <strong>conferência automática 🤖</strong> lê o
-              arquivo e compara nome e nascimento com o cadastro; a decisão final é sempre da equipe.
+              só o registro de quem conferiu e quando. A <strong>conferência automática 🤖</strong> envia o
+              arquivo para leitura por IA de provedor externo (Anthropic) e compara nome e nascimento com o
+              cadastro; nada fica armazenado após a conferência e a decisão final é <strong>sempre da equipe</strong> —
+              trate o resultado como sugestão.
             </p>
             <input
               ref={docFileInputRef}
@@ -3446,23 +3466,33 @@ const CatechesisPage: React.FC = () => {
               onChange={(e) => void handleDocFileChosen(e)}
             />
 
-            {docReqs && docReqs.length > 0 && (
+            {docReqsError && (
+              <p style={{ color: '#b45309', fontSize: '0.85rem' }}>
+                Não foi possível carregar o que a turma pede —{' '}
+                <button type="button" className="link-button" onClick={() => selectedClass && refreshDocReqs(selectedClass.id)}>
+                  tentar de novo
+                </button>
+              </p>
+            )}
+            {docReqs && docReqs.length > 0 && docList !== null && (
               <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: '0.6rem 0.8rem', marginBottom: '0.8rem', background: '#f8fafc' }}>
                 <strong style={{ fontSize: '0.82rem', color: '#475569' }}>O que a turma pede{docReqs[0]?.isDefault ? ' (padrão)' : ''}:</strong>
                 {docReqs.map((req) => {
                   const docs = (docList ?? []).filter((d) => d.kind.toLowerCase() === req.kind.toLowerCase());
                   const verified = docs.find((d) => d.status === 'VERIFIED');
                   const submitted = docs.find((d) => d.status === 'SUBMITTED');
-                  const state = verified
-                    ? verified.declaration === 'NOT_HAVE'
-                      ? { label: 'não tem (aceito)', cls: 'cate-badge--done' }
-                      : verified.declaration === 'OTHER_DENOMINATION'
-                        ? { label: 'outra denominação (aceito)', cls: 'cate-badge--done' }
-                        : { label: '✓ conferido', cls: 'cate-badge--done' }
-                    : submitted
-                      ? submitted.declaration
-                        ? { label: 'declaração aguarda aceite', cls: 'cate-badge--waiting' }
-                        : { label: 'aguarda conferência', cls: 'cate-badge--waiting' }
+                  // SUBMITTED tem precedência: reenvio novo não pode ficar
+                  // escondido atrás de um "✓ conferido" antigo
+                  const state = submitted
+                    ? submitted.declaration
+                      ? { label: 'declaração aguarda aceite', cls: 'cate-badge--waiting' }
+                      : { label: 'aguarda conferência', cls: 'cate-badge--waiting' }
+                    : verified
+                      ? verified.declaration === 'NOT_HAVE'
+                        ? { label: 'não tem (aceito)', cls: 'cate-badge--done' }
+                        : verified.declaration === 'OTHER_DENOMINATION'
+                          ? { label: 'outra denominação (aceito)', cls: 'cate-badge--done' }
+                          : { label: '✓ conferido', cls: 'cate-badge--done' }
                       : docs.some((d) => d.status === 'REJECTED')
                         ? { label: 'recusado — pedir de novo', cls: 'cate-badge--out' }
                         : { label: 'faltando', cls: 'cate-badge--out' };
@@ -3479,12 +3509,12 @@ const CatechesisPage: React.FC = () => {
                             📤 Enviar arquivo
                           </button>
                           {req.allowNotHave && (
-                            <button className="cate-mini" onClick={() => void handleDeclare(req.kind, 'NOT_HAVE')}>
+                            <button className="cate-mini" disabled={uploadingDoc} onClick={() => void handleDeclare(req.kind, 'NOT_HAVE')}>
                               Não tem
                             </button>
                           )}
                           {req.allowOtherDenomination && (
-                            <button className="cate-mini" onClick={() => void handleDeclare(req.kind, 'OTHER_DENOMINATION')}>
+                            <button className="cate-mini" disabled={uploadingDoc} onClick={() => void handleDeclare(req.kind, 'OTHER_DENOMINATION')}>
                               Outra denominação…
                             </button>
                           )}
@@ -3634,10 +3664,11 @@ const CatechesisPage: React.FC = () => {
                     <button
                       type="button"
                       className="cate-chip__remove"
+                      aria-label={`Remover ${item.kind || 'documento'}`}
                       title="Remover documento"
                       onClick={() => setDocReqItems(docReqItems.filter((_, i) => i !== index))}
                     >
-                      🗑
+                      <span aria-hidden="true">🗑</span>
                     </button>
                   </div>
                 ))}
@@ -3657,8 +3688,8 @@ const CatechesisPage: React.FC = () => {
               </p>
               <div className="modal-actions">
                 <button type="button" className="btn-cancel" onClick={() => setShowDocReqModal(false)}>Cancelar</button>
-                <button type="submit" className="btn-submit" disabled={savingDocReq}>
-                  {savingDocReq ? 'Salvando…' : 'Salvar documentos'}
+                <button type="submit" className="btn-submit" disabled={savingDocReq || loadingDocReq || docReqItems.length === 0}>
+                  {loadingDocReq ? 'Carregando…' : savingDocReq ? 'Salvando…' : 'Salvar documentos'}
                 </button>
               </div>
             </form>
