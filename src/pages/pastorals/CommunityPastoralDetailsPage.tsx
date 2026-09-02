@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import api from '../../services/api';
 import axios from 'axios';
 import { formatDate, formatDateTime } from '../../utils/dateFormat';
+import RoomSelect from '../../components/RoomSelect';
 import { notify, confirm as confirmDialog } from '../../services/notification.service';
 import './PastoralsPage.css';
 
@@ -1556,12 +1557,10 @@ const CommunityPastoralDetailsPage: React.FC = () => {
             </div>
             <div className="form-group">
               <label>Local</label>
-              <input
-                type="text"
+              <RoomSelect
+                communityId={pastoral?.community.id}
                 value={meetingFormData.location}
-                onChange={(event) =>
-                  setMeetingFormData({ ...meetingFormData, location: event.target.value })
-                }
+                onChange={(location) => setMeetingFormData({ ...meetingFormData, location })}
                 placeholder="Ex: Salão paroquial"
               />
             </div>
@@ -1627,12 +1626,10 @@ const CommunityPastoralDetailsPage: React.FC = () => {
             </div>
             <div className="form-group">
               <label>Local</label>
-              <input
-                type="text"
+              <RoomSelect
+                communityId={pastoral?.community.id}
                 value={activityFormData.location}
-                onChange={(event) =>
-                  setActivityFormData({ ...activityFormData, location: event.target.value })
-                }
+                onChange={(location) => setActivityFormData({ ...activityFormData, location })}
                 placeholder="Ex: Hospital Regional"
               />
             </div>

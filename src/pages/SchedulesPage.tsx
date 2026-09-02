@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import TitleIcon from '../components/TitleIcon';
+import RoomSelect from '../components/RoomSelect';
 import { notify, confirm } from '../services/notification.service';
 import { useAuth } from '../contexts/AuthContext';
 import './SchedulesPage.css';
@@ -4280,10 +4281,10 @@ const SchedulesPage: React.FC = () => {
               </div>
               <div className="form-group">
                 <label>Local</label>
-                <input
-                  type="text"
+                <RoomSelect
+                  communityId={standaloneForm.communityId || undefined}
                   value={standaloneForm.location}
-                  onChange={(event) => setStandaloneForm({ ...standaloneForm, location: event.target.value })}
+                  onChange={(location) => setStandaloneForm({ ...standaloneForm, location })}
                 />
               </div>
               <div className="form-group">

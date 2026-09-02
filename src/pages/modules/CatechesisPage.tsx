@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import TitleIcon from '../../components/TitleIcon';
+import RoomSelect from '../../components/RoomSelect';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
 import { useAuth } from '../../contexts/AuthContext';
@@ -28,6 +29,7 @@ interface CatechesisClass {
   room?: string | null;
   status?: string;
   stage: { name: string; sacramentType?: string | null; color?: string | null };
+  communityId?: string;
   community: { name: string };
   _count: { enrollments: number; sessions: number };
   /** Limite de vagas (null = sem limite) */
@@ -3081,7 +3083,11 @@ const CatechesisPage: React.FC = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Sala/local</label>
-                  <input type="text" value={classForm.room} onChange={(e) => setClassForm({ ...classForm, room: e.target.value })} />
+                  <RoomSelect
+                    communityId={classForm.communityId || undefined}
+                    value={classForm.room}
+                    onChange={(room) => setClassForm({ ...classForm, room })}
+                  />
                 </div>
                 <div className="form-group">
                   <label>Vagas (inscrição online)</label>
@@ -3204,7 +3210,11 @@ const CatechesisPage: React.FC = () => {
               </div>
               <div className="form-group">
                 <label>Sala/local</label>
-                <input type="text" value={editClassForm.room} onChange={(e) => setEditClassForm({ ...editClassForm, room: e.target.value })} />
+                <RoomSelect
+                  communityId={selectedClass.communityId}
+                  value={editClassForm.room}
+                  onChange={(room) => setEditClassForm({ ...editClassForm, room })}
+                />
               </div>
               <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 0.4rem' }}>
                 Deixe as vagas em branco para turma sem limite. O limite vale para a inscrição online e para a matrícula na secretaria.
@@ -3951,7 +3961,11 @@ const CatechesisPage: React.FC = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Sala/local</label>
-                  <input type="text" value={rolloverForm.room} onChange={(e) => setRolloverForm({ ...rolloverForm, room: e.target.value })} />
+                  <RoomSelect
+                    communityId={rolloverSource.communityId}
+                    value={rolloverForm.room}
+                    onChange={(room) => setRolloverForm({ ...rolloverForm, room })}
+                  />
                 </div>
                 <div className="form-group">
                   <label>Vagas</label>

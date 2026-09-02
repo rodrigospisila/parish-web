@@ -4,6 +4,7 @@ import { eventStatuses, eventTypes } from '../constants/eventOptions';
 import { notify } from '../services/notification.service';
 import { applyDuration, generateRecurrenceDates, getEventDuration } from '../utils/recurrenceHelper';
 import RecurrenceForm from './RecurrenceForm';
+import RoomSelect from './RoomSelect';
 import { useAuth } from '../contexts/AuthContext';
 import './CreateEventModal.css';
 
@@ -528,10 +529,10 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 <div className="form-row">
                   <div className="form-group">
                     <label>Local</label>
-                    <input
-                      type="text"
+                    <RoomSelect
+                      communityId={formData.communityId || currentUser?.communityId || undefined}
                       value={formData.location}
-                      onChange={(event) => setFormData({ ...formData, location: event.target.value })}
+                      onChange={(location) => setFormData({ ...formData, location })}
                       placeholder="Local do evento"
                     />
                   </div>
