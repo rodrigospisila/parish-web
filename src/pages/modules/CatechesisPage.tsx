@@ -36,6 +36,8 @@ interface CatechesisClass {
   occupied?: number;
   openSpots?: number | null;
   isFull?: boolean;
+  /** Matrículas concluídas — 0 efetivos + N concluídos = turma "Concluída" */
+  completedCount?: number;
 }
 
 interface ClassReport {
@@ -2391,6 +2393,11 @@ const CatechesisPage: React.FC = () => {
                       >
                         <td>
                           <strong>{klass.name}</strong> <span className="cate-list-year">{klass.year}</span>
+                          {(klass.occupied ?? klass._count.enrollments) === 0 && (klass.completedCount ?? 0) > 0 && (
+                            <span className="cate-badge cate-badge--done" style={{ marginLeft: 6 }} title={`${klass.completedCount} concluído(s) — pronta para distribuir`}>
+                              ✓ Concluída
+                            </span>
+                          )}
                         </td>
                         <td>
                           {klass.stage.color && <span className="cate-stage-dot" style={{ background: klass.stage.color }} />}
@@ -2438,7 +2445,12 @@ const CatechesisPage: React.FC = () => {
                       {klass.stage.name}
                     </p>
                   </div>
-                  <span className="cate-year">{klass.year}</span>
+                  <span className="cate-year">
+                    {klass.year}
+                    {(klass.occupied ?? klass._count.enrollments) === 0 && (klass.completedCount ?? 0) > 0 && (
+                      <span className="cate-badge cate-badge--done" style={{ display: 'block', marginTop: 4 }}>✓ Concluída</span>
+                    )}
+                  </span>
                 </div>
                 <div className="cate-card__meta">
                   <span>
@@ -2453,6 +2465,9 @@ const CatechesisPage: React.FC = () => {
                 <div className="cate-card__foot">
                   <div className="cate-card__stats">
                     <span><strong>{klass._count.enrollments}</strong> ativos</span>
+                    {(klass.completedCount ?? 0) > 0 && (
+                      <span><strong>{klass.completedCount}</strong> concluídos</span>
+                    )}
                     <span><strong>{klass._count.sessions}</strong> encontros</span>
                     {klass.capacity != null ? (
                       <span className={`cate-seats ${klass.isFull ? 'is-full' : ''}`}>
@@ -3950,7 +3965,14 @@ const CatechesisPage: React.FC = () => {
                 </div>
               </div>
               <div className="form-group">
-                <label>Catequistas que continuam no ano novo</label>
+                <div className="cate-team-pick__head">
+                  <label style={{ margin: 0 }}>Equipe no ano novo</label>
+                  {rolloverCatechists && rolloverCatechists.length > 0 && (
+                    <span className="cate-team-pick__count">
+                      {rolloverCatechists.filter((c) => rolloverKeep[c.memberId]).length} de {rolloverCatechists.length} continuam
+                    </span>
+                  )}
+                </div>
                 {rolloverCatechists === null ? (
                   <p style={{ color: '#64748b', fontSize: '0.9rem' }}>Carregando a equipe atual...</p>
                 ) : rolloverCatechists.length === 0 ? (
@@ -3958,22 +3980,31 @@ const CatechesisPage: React.FC = () => {
                     Esta turma não tem catequistas vinculados — adicione na turma nova com “+ Catequista”.
                   </p>
                 ) : (
-                  <div className="checklist" style={{ maxHeight: 160, overflowY: 'auto' }}>
-                    {rolloverCatechists.map((c) => (
-                      <label key={c.memberId}>
-                        <input
-                          type="checkbox"
-                          checked={!!rolloverKeep[c.memberId]}
-                          onChange={(e) => setRolloverKeep({ ...rolloverKeep, [c.memberId]: e.target.checked })}
-                        />
-                        {c.fullName} <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>({c.role})</span>
-                      </label>
-                    ))}
+                  <div className="cate-team-pick">
+                    {rolloverCatechists.map((c) => {
+                      const on = !!rolloverKeep[c.memberId];
+                      return (
+                        <button
+                          type="button"
+                          key={c.memberId}
+                          className={`cate-team-pick__row${on ? ' is-on' : ''}`}
+                          aria-pressed={on}
+                          onClick={() => setRolloverKeep({ ...rolloverKeep, [c.memberId]: !on })}
+                        >
+                          <span className="cate-chip__avatar">{initials(c.fullName)}</span>
+                          <span className="cate-team-pick__name">
+                            {c.fullName}
+                            <small>{c.role}</small>
+                          </span>
+                          <span className={`cate-team-pick__mark${on ? '' : ' is-off'}`}>{on ? '✓ continua' : 'sai'}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
-                <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '0.35rem 0 0' }}>
-                  Para <strong>adicionar</strong> catequistas novos, abra a turma criada e use “+ Catequista”
-                  (a regra da pastoral da Catequese continua valendo).
+                <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '0.4rem 0 0' }}>
+                  Toque no catequista para alternar. Para <strong>adicionar</strong> gente nova, abra a turma criada e
+                  use “+ Catequista” (a regra da pastoral da Catequese continua valendo).
                 </p>
               </div>
               <div className="modal-actions">

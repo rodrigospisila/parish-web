@@ -840,6 +840,50 @@
 .cate-board__status--ok { color: #15803d; }
 .cate-board__status--err { color: #b91c1c; }
 .cate-board__emptycol { font-size: 0.8rem; color: #94a3b8; text-align: center; margin: 0.6rem 0; }
+
+/* Seletor de equipe da virada de ano (modal 📆): linhas clicáveis no lugar do
+   checklist — o checkbox dentro de .form-group herdava width:100% e quebrava */
+.cate-team-pick__head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.4rem; }
+.cate-team-pick__count { font-size: 0.78rem; font-weight: 700; color: #2563eb; }
+.cate-team-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 190px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.cate-team-pick__row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.45rem 0.6rem;
+  font: inherit;
+  cursor: pointer;
+}
+.cate-team-pick__row:hover { border-color: #94a3b8; }
+.cate-team-pick__row:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+.cate-team-pick__row.is-on { border-color: #2563eb; box-shadow: 0 0 0 1.5px #2563eb; background: #f4f8ff; }
+.cate-team-pick__row:not(.is-on) { opacity: 0.72; }
+.cate-team-pick__row:not(.is-on) .cate-team-pick__name { text-decoration: line-through; text-decoration-color: #cbd5e1; }
+.cate-team-pick__name { display: flex; flex-direction: column; font-weight: 600; font-size: 0.88rem; color: #1e293b; line-height: 1.25; }
+.cate-team-pick__name small { font-weight: 500; font-size: 0.72rem; color: #94a3b8; }
+.cate-team-pick__mark {
+  margin-left: auto;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #15803d;
+  background: #e8f6ee;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  white-space: nowrap;
+}
+.cate-team-pick__mark.is-off { color: #64748b; background: #eef1f6; }
 @media (max-width: 720px) {
   .cate-board__col { flex: 0 0 85vw; max-width: 85vw; }
   .cate-board__cols { scroll-snap-type: x mandatory; }
