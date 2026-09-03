@@ -173,6 +173,9 @@
 /* ===== Turmas em lista ===== */
 .cate-viewbar {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
   justify-content: flex-end;
   margin: 0 0 0.7rem;
 }

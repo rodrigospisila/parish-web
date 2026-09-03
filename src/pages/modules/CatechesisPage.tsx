@@ -553,6 +553,8 @@ const CatechesisPage: React.FC = () => {
 
   // Filtros por ano: lista de turmas, painel de encerramento e destino do board
   const [classesYearFilter, setClassesYearFilter] = useState<'all' | number>('all');
+  // Filtro por etapa (chave = nome da etapa; as turmas não carregam o stageId)
+  const [classesStageFilter, setClassesStageFilter] = useState<'all' | string>('all');
   // Só turmas com pendência acionável (o Início conta, aqui mostra ONDE)
   const [classesAttentionOnly, setClassesAttentionOnly] = useState(false);
   const [yearEndYearFilter, setYearEndYearFilter] = useState<'all' | number>('all');
@@ -2541,10 +2543,17 @@ const CatechesisPage: React.FC = () => {
 
   // Filtro por ano da lista de turmas (na virada convivem 2026 e 2027)
   const classYears = [...new Set(classes.map((k) => k.year))].sort((a, b) => b - a);
+  // Etapas presentes nas turmas, na ordem do cadastro (ordering) quando conhecida
+  const stageOrdering = new Map(stages.map((s, index) => [s.name, index]));
+  const classStages = [...new Set(classes.map((k) => k.stage.name))].sort(
+    (a, b) => (stageOrdering.get(a) ?? 99) - (stageOrdering.get(b) ?? 99) || a.localeCompare(b, 'pt-BR'),
+  );
+  const stageColorByName = new Map(classes.map((k) => [k.stage.name, k.stage.color ?? null]));
   const classesWithAttention = classes.filter((k) => classAttention(k) > 0);
   const classesForView = classes.filter(
     (k) =>
       (classesYearFilter === 'all' || k.year === classesYearFilter) &&
+      (classesStageFilter === 'all' || k.stage.name === classesStageFilter) &&
       (!classesAttentionOnly || classAttention(k) > 0),
   );
 
@@ -2980,6 +2989,30 @@ const CatechesisPage: React.FC = () => {
                   >
                     ⚠ Pendências ({classesWithAttention.length})
                   </button>
+                </div>
+              )}
+              {classStages.length > 1 && (
+                <div className="cate-filter" role="group" aria-label="Filtro por etapa">
+                  <button
+                    type="button"
+                    className={`cate-filter__opt${classesStageFilter === 'all' ? ' is-on' : ''}`}
+                    onClick={() => setClassesStageFilter('all')}
+                  >
+                    Todas as etapas
+                  </button>
+                  {classStages.map((stageName) => (
+                    <button
+                      key={stageName}
+                      type="button"
+                      className={`cate-filter__opt${classesStageFilter === stageName ? ' is-on' : ''}`}
+                      onClick={() => setClassesStageFilter(stageName)}
+                    >
+                      {stageColorByName.get(stageName) && (
+                        <span className="cate-stage-dot" style={{ background: stageColorByName.get(stageName)! }} />
+                      )}
+                      {stageName} ({classes.filter((k) => k.stage.name === stageName).length})
+                    </button>
+                  ))}
                 </div>
               )}
               {classYears.length > 1 && (
