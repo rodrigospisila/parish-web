@@ -1045,8 +1045,9 @@
 .cate-gridtable__total { font-variant-numeric: tabular-nums; }
 .cate-cellwrap { display: inline-flex; align-items: center; gap: 2px; }
 .cate-cell {
-  width: 30px;
+  min-width: 30px;
   height: 26px;
+  padding: 0 3px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1062,6 +1063,8 @@
 }
 .cate-cell:hover { border-color: var(--cate-primary, #2563eb); }
 .cate-cell:disabled { cursor: wait; opacity: 0.6; }
+/* Alteração em rascunho (ainda não salva): anel azul na célula */
+.cate-cell.is-dirty { box-shadow: 0 0 0 1.5px var(--cate-primary, #2563eb); }
 .cate-cell.is-p { background: #f0fdf4; color: #16a34a; }
 .cate-cell.is-p.is-late { text-decoration: underline dotted; }
 .cate-cell.is-f { background: #fef2f2; color: #dc2626; }
