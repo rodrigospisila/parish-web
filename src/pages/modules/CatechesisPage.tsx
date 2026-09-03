@@ -658,6 +658,22 @@ const CatechesisPage: React.FC = () => {
     }
   });
   const [sessionsFilter, setSessionsFilter] = useState<'all' | 'open' | 'done'>('all');
+  // Quantos cards cabem numa linha do grid (medido do layout real; 6 é chute
+  // inicial até a primeira medição) — recolhido renderiza SÓ a 1ª linha
+  const sessionsGridRef = useRef<HTMLDivElement | null>(null);
+  const [sessionsPerRow, setSessionsPerRow] = useState(6);
+  useEffect(() => {
+    const el = sessionsGridRef.current;
+    if (!el) return;
+    const measure = () => {
+      const cols = getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length;
+      if (cols > 0) setSessionsPerRow(cols);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [selectedClass?.id, sessions.length]);
   const toggleSessionsCollapsed = () => {
     setSessionsCollapsed((current) => {
       const next = !current;
@@ -3384,10 +3400,13 @@ const CatechesisPage: React.FC = () => {
                           </div>
                         );
                       }
+                      const shownSessions = sessionsCollapsed
+                        ? visibleSessions.slice(0, sessionsPerRow)
+                        : visibleSessions;
                       return (
                       <>
-                      <div className={`cate-sessions${sessionsCollapsed ? ' is-collapsed' : ''}`}>
-                        {visibleSessions.map((session) => {
+                      <div className="cate-sessions" ref={sessionsGridRef}>
+                        {shownSessions.map((session) => {
                           const d = new Date(session.date);
                           const fmt = (opts: Intl.DateTimeFormatOptions) =>
                             d.toLocaleDateString('pt-BR', { timeZone: 'UTC', ...opts });
@@ -3443,7 +3462,7 @@ const CatechesisPage: React.FC = () => {
                           );
                         })}
                       </div>
-                      {visibleSessions.length > 6 && (
+                      {visibleSessions.length > sessionsPerRow && (
                         <button
                           type="button"
                           className="cate-sessions__expand"

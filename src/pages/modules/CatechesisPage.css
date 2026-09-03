@@ -566,17 +566,6 @@
   box-shadow: var(--cate-shadow);
   margin-bottom: 1.1rem;
 }
-/* Recolhido: a 1ª linha do grid fica com altura normal e as demais colapsam a
-   zero (row-gap zerado + overflow escondido) — os cards ocultos seguem no DOM */
-.cate-sessions.is-collapsed {
-  grid-template-rows: auto;
-  grid-auto-rows: 0;
-  row-gap: 0;
-  overflow: hidden;
-  /* respiro para a sombra/elevação do hover da 1ª linha não ser cortada */
-  padding: 3px;
-  margin: -3px;
-}
 .cate-sessions__expand {
   display: flex;
   align-items: center;
