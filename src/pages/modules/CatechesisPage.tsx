@@ -3331,26 +3331,13 @@ const CatechesisPage: React.FC = () => {
                 </div>
 
                 <div className="cate-body">
-                  <section>
+                  <section className="cate-sessioncard">
                     <div className="cate-section__head">
-                      <button
-                        type="button"
-                        className="cate-collapse"
-                        aria-expanded={!sessionsCollapsed}
-                        onClick={toggleSessionsCollapsed}
-                      >
-                        <span className={`cate-collapse__chev${sessionsCollapsed ? '' : ' is-open'}`}>▸</span>
-                        <span className="cate-section__title" role="heading" aria-level={3}>Encontros</span>
-                      </button>
-                      {sessionsCollapsed && sessions.length > 0 && (
-                        <span className="cate-collapse__summary">
-                          {sessions.length} no ano · {sessions.filter((s) => s.marked === 0).length} sem chamada
-                        </span>
-                      )}
+                      <h3 className="cate-section__title">Encontros</h3>
                       <button className="cate-btn" onClick={() => void openAttendanceGrid()}>
                         🗒 Folha de presença
                       </button>
-                      {!sessionsCollapsed && sessions.length > 0 && (
+                      {sessions.length > 0 && (
                         <div className="cate-filter" role="group" aria-label="Filtro de encontros">
                           <button
                             type="button"
@@ -3375,11 +3362,9 @@ const CatechesisPage: React.FC = () => {
                           </button>
                         </div>
                       )}
-                      {!sessionsCollapsed && (
-                        <span className="cate-section__hint">Clique num encontro para abrir/editar a chamada</span>
-                      )}
+                      <span className="cate-section__hint">Clique num encontro para abrir/editar a chamada</span>
                     </div>
-                    {sessionsCollapsed ? null : sessions.length === 0 ? (
+                    {sessions.length === 0 ? (
                       <div className="cate-empty">
                         Nenhum encontro ainda — use “+ Encontro (chamada)” ou gere a agenda do ano.
                       </div>
@@ -3400,7 +3385,8 @@ const CatechesisPage: React.FC = () => {
                         );
                       }
                       return (
-                      <div className="cate-sessions">
+                      <>
+                      <div className={`cate-sessions${sessionsCollapsed ? ' is-collapsed' : ''}`}>
                         {visibleSessions.map((session) => {
                           const d = new Date(session.date);
                           const fmt = (opts: Intl.DateTimeFormatOptions) =>
@@ -3457,6 +3443,17 @@ const CatechesisPage: React.FC = () => {
                           );
                         })}
                       </div>
+                      {visibleSessions.length > 6 && (
+                        <button
+                          type="button"
+                          className="cate-sessions__expand"
+                          aria-expanded={!sessionsCollapsed}
+                          onClick={toggleSessionsCollapsed}
+                        >
+                          {sessionsCollapsed ? `⌄ Ver todos os ${visibleSessions.length} encontros ⌄` : '⌃ Recolher ⌃'}
+                        </button>
+                      )}
+                      </>
                       );
                     })()}
                   </section>

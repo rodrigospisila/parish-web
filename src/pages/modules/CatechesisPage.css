@@ -557,24 +557,44 @@
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: 0.6rem;
 }
-/* Seção Encontros recolhível (a grade de 35 cards não engole a página) */
-.cate-collapse {
-  display: inline-flex;
+/* Seção Encontros: card "flutuante" recolhível — recolhido mostra só a 1ª linha */
+.cate-sessioncard {
+  background: var(--cate-surface);
+  border: 1px solid var(--cate-line);
+  border-radius: 12px;
+  padding: 0.85rem 1rem 0.5rem;
+  box-shadow: var(--cate-shadow);
+  margin-bottom: 1.1rem;
+}
+/* Recolhido: a 1ª linha do grid fica com altura normal e as demais colapsam a
+   zero (row-gap zerado + overflow escondido) — os cards ocultos seguem no DOM */
+.cate-sessions.is-collapsed {
+  grid-template-rows: auto;
+  grid-auto-rows: 0;
+  row-gap: 0;
+  overflow: hidden;
+  /* respiro para a sombra/elevação do hover da 1ª linha não ser cortada */
+  padding: 3px;
+  margin: -3px;
+}
+.cate-sessions__expand {
+  display: flex;
   align-items: center;
-  gap: 0.35rem;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  margin-top: 0.6rem;
+  padding: 0.32rem;
   border: none;
+  border-top: 1px dashed var(--cate-line);
   background: transparent;
-  padding: 0;
   font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--cate-muted);
   cursor: pointer;
 }
-.cate-collapse__chev {
-  font-size: 0.8rem;
-  color: var(--cate-muted);
-  transition: transform 0.15s ease;
-}
-.cate-collapse__chev.is-open { transform: rotate(90deg); }
-.cate-collapse__summary { font-size: 0.78rem; color: var(--cate-muted); }
+.cate-sessions__expand:hover { color: var(--cate-primary); }
 .cate-session {
   display: flex;
   align-items: center;
