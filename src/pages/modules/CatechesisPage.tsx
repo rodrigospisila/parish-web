@@ -1827,13 +1827,23 @@ const CatechesisPage: React.FC = () => {
     moving.forEach((id) => {
       prevMap[id] = renewalDraft[id] ?? null;
     });
-    setRenewalDraft((prev) => {
-      const next = { ...prev };
-      moving.forEach((id) => {
-        next[id] = target.id;
-      });
-      return next;
+    const nextDraft = { ...renewalDraft };
+    moving.forEach((id) => {
+      nextDraft[id] = target.id;
     });
+    setRenewalDraft(nextDraft);
+    // Re-arrasto que esvazia a coluna de onde os cards saíram também derruba a
+    // exceção de capacidade dela — a próxima leva pede confirmação de novo
+    const emptied = [...new Set(Object.values(prevMap))].filter(
+      (col): col is string => !!col && col !== target.id && !Object.values(nextDraft).includes(col),
+    );
+    if (emptied.length) {
+      setOverrideColumns((prev) => {
+        const cleaned = { ...prev };
+        emptied.forEach((col) => delete cleaned[col]);
+        return cleaned;
+      });
+    }
     setRenewalSelection((prev) => {
       const next = { ...prev };
       moving.forEach((id) => {
