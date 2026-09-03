@@ -46,7 +46,14 @@ interface CatechesisClass {
   enrollmentClosesAt?: string | null;
   /** Turma cheia: fila de espera ou bloqueio */
   fullBehavior?: 'WAITLIST' | 'BLOCK';
+  /** Pendências acionáveis: inscrições aguardando/fila e docs para conferir */
+  pendingApprovalCount?: number;
+  docsToReviewCount?: number;
 }
+
+/** Total de pendências acionáveis da turma (badge/filtro da lista). */
+const classAttention = (klass: CatechesisClass): number =>
+  (klass.pendingApprovalCount ?? 0) + (klass.docsToReviewCount ?? 0);
 
 /** Inscrições online desta turma estão abertas agora? (espelha o backend) */
 const enrollmentWindowOpen = (klass: CatechesisClass): boolean => {
@@ -514,6 +521,8 @@ const CatechesisPage: React.FC = () => {
 
   // Filtros por ano: lista de turmas, painel de encerramento e destino do board
   const [classesYearFilter, setClassesYearFilter] = useState<'all' | number>('all');
+  // Só turmas com pendência acionável (o Início conta, aqui mostra ONDE)
+  const [classesAttentionOnly, setClassesAttentionOnly] = useState(false);
   const [yearEndYearFilter, setYearEndYearFilter] = useState<'all' | number>('all');
   const [boardYearFilter, setBoardYearFilter] = useState<'all' | number>('all');
 
@@ -2113,7 +2122,12 @@ const CatechesisPage: React.FC = () => {
 
   // Filtro por ano da lista de turmas (na virada convivem 2026 e 2027)
   const classYears = [...new Set(classes.map((k) => k.year))].sort((a, b) => b - a);
-  const classesForView = classesYearFilter === 'all' ? classes : classes.filter((k) => k.year === classesYearFilter);
+  const classesWithAttention = classes.filter((k) => classAttention(k) > 0);
+  const classesForView = classes.filter(
+    (k) =>
+      (classesYearFilter === 'all' || k.year === classesYearFilter) &&
+      (!classesAttentionOnly || classAttention(k) > 0),
+  );
 
   if (loading) return <div className="module-page"><div className="loading">Carregando...</div></div>;
 
@@ -2537,6 +2551,18 @@ const CatechesisPage: React.FC = () => {
                   ☰ Lista
                 </button>
               </div>
+              {classesWithAttention.length > 0 && (
+                <div className="cate-filter" role="group" aria-label="Filtro de pendências">
+                  <button
+                    type="button"
+                    className={`cate-filter__opt${classesAttentionOnly ? ' is-on' : ''}`}
+                    title="Só as turmas com inscrições aguardando ou documentos para conferir"
+                    onClick={() => setClassesAttentionOnly((v) => !v)}
+                  >
+                    ⚠ Pendências ({classesWithAttention.length})
+                  </button>
+                </div>
+              )}
               {classYears.length > 1 && (
                 <div className="cate-filter" role="group" aria-label="Filtro por ano">
                   <button
@@ -2601,6 +2627,20 @@ const CatechesisPage: React.FC = () => {
                               </span>
                             ) : null;
                           })()}
+                          {classAttention(klass) > 0 && (
+                            <span
+                              className="cate-badge cate-badge--waiting"
+                              style={{ marginLeft: 6 }}
+                              title="Abra a turma para resolver"
+                            >
+                              ⚠ {[
+                                klass.pendingApprovalCount ? `${klass.pendingApprovalCount} aprovação(ões)` : null,
+                                klass.docsToReviewCount ? `${klass.docsToReviewCount} doc(s)` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </span>
+                          )}
                         </td>
                         <td>
                           {klass.stage.color && <span className="cate-stage-dot" style={{ background: klass.stage.color }} />}
@@ -2673,6 +2713,18 @@ const CatechesisPage: React.FC = () => {
                     {klass.time ? ` às ${klass.time}` : ''}
                   </span>
                 </div>
+                {classAttention(klass) > 0 && (
+                  <div style={{ marginTop: 6 }}>
+                    <span className="cate-badge cate-badge--waiting" title="Abra a turma para resolver">
+                      ⚠ {[
+                        klass.pendingApprovalCount ? `${klass.pendingApprovalCount} inscrição(ões) aguardando` : null,
+                        klass.docsToReviewCount ? `${klass.docsToReviewCount} doc(s) p/ conferir` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  </div>
+                )}
                 <div className="cate-card__foot">
                   <div className="cate-card__stats">
                     <span><strong>{klass._count.enrollments}</strong> ativos</span>
@@ -2697,7 +2749,11 @@ const CatechesisPage: React.FC = () => {
           )}
           {classes.length === 0 && <div className="cate-empty">Nenhuma turma cadastrada — crie a primeira em “+ Nova Turma”.</div>}
           {classes.length > 0 && classesForView.length === 0 && (
-            <div className="cate-empty">Nenhuma turma de {classesYearFilter} — use “📆 Turma de {Number(classesYearFilter) }” numa turma do ano anterior para criar a virada.</div>
+            <div className="cate-empty">
+              {classesAttentionOnly
+                ? 'Nenhuma turma com pendências neste filtro — desmarque “⚠ Pendências” ou troque o ano.'
+                : `Nenhuma turma de ${classesYearFilter} — use “📆 Turma de ${Number(classesYearFilter)}” numa turma do ano anterior para criar a virada.`}
+            </div>
           )}
         </div>
       )}
