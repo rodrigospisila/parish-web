@@ -903,6 +903,109 @@
 .cate-chat__send:disabled { opacity: 0.45; cursor: not-allowed; }
 .cate-chat__hint { margin: 0.4rem 0 0; font-size: 0.7rem; color: #94a3b8; text-align: center; }
 
+/* ===== Folha de presença (grade alunos × encontros) ===== */
+.cate-gridwrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--cate-surface, #fff);
+  border: 1px solid var(--cate-line, #e2e8f0);
+  border-radius: 12px;
+}
+.cate-gridtable {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.8rem;
+  min-width: max-content;
+}
+.cate-gridtable th,
+.cate-gridtable td {
+  padding: 0.28rem 0.4rem;
+  border-bottom: 1px solid var(--cate-line, #e2e8f0);
+  text-align: center;
+  white-space: nowrap;
+}
+.cate-gridtable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--cate-ground, #f8fafc);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--cate-muted, #64748b);
+}
+.cate-gridtable .cate-gridtable__name {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 200px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  background: var(--cate-surface, #fff);
+  font-weight: 600;
+  color: var(--cate-ink, #0f172a);
+  box-shadow: 2px 0 0 rgba(15, 23, 42, 0.05);
+}
+.cate-gridtable thead .cate-gridtable__name { z-index: 3; background: var(--cate-ground, #f8fafc); }
+.cate-gridtable tbody tr:hover td { background: #f8fafc; }
+.cate-gridtable tbody tr:hover .cate-gridtable__name { background: #f1f5f9; }
+.cate-gridtable__done { font-size: 0.68rem; font-weight: 600; color: #94a3b8; }
+.cate-gridtable__pct { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--cate-muted, #64748b); }
+.cate-gridtable tfoot td {
+  position: sticky;
+  bottom: 0;
+  background: var(--cate-ground, #f8fafc);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--cate-muted, #64748b);
+}
+.cate-gridtable__total { font-variant-numeric: tabular-nums; }
+.cate-cellwrap { display: inline-flex; align-items: center; gap: 2px; }
+.cate-cell {
+  width: 30px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: border-color 0.1s ease, background 0.1s ease;
+}
+.cate-cell:hover { border-color: var(--cate-primary, #2563eb); }
+.cate-cell:disabled { cursor: wait; opacity: 0.6; }
+.cate-cell.is-p { background: #f0fdf4; color: #16a34a; }
+.cate-cell.is-p.is-late { text-decoration: underline dotted; }
+.cate-cell.is-f { background: #fef2f2; color: #dc2626; }
+.cate-cell.is-j { background: #fffbeb; color: #b45309; }
+.cate-cell__clip {
+  border: none;
+  background: transparent;
+  padding: 0 2px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  opacity: 0.4;
+}
+.cate-cell__clip:hover { opacity: 1; }
+.cate-cell__clip.has-file { opacity: 1; }
+.cate-grid__legend {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin: 0.55rem 0 0;
+  font-size: 0.74rem;
+  color: var(--cate-muted, #64748b);
+}
+.cate-cell--legend { cursor: default; width: 26px; height: 22px; }
+
 /* ===== Board de distribuição (renovação multi-destino) =====
    Tela cheia: 3-4 colunas de até 30 cards não cabem no modal de 560px.
    Rascunho no cliente; commit por coluna no Confirmar. */

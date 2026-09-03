@@ -132,6 +132,22 @@ interface ChatThread {
   messages: ChatMessage[];
 }
 
+interface AttendanceGridMark {
+  sessionId: string;
+  enrollmentId: string;
+  present: boolean;
+  late: boolean;
+  justified: boolean;
+  hasCertificate: boolean;
+}
+
+interface AttendanceGridData {
+  classId: string;
+  sessions: Array<{ id: string; date: string; topic?: string | null }>;
+  students: Array<{ enrollmentId: string; status: string; member: { id: string; fullName: string } }>;
+  marks: AttendanceGridMark[];
+}
+
 interface EnrollmentDocument {
   id: string;
   kind: string;
@@ -633,6 +649,11 @@ const CatechesisPage: React.FC = () => {
   const [showSentNotices, setShowSentNotices] = useState(false);
 
   // Conversa família ↔ equipe por matrícula (Onda 4)
+  // Folha de presença (grade alunos × encontros)
+  const [gridData, setGridData] = useState<AttendanceGridData | null>(null);
+  const [gridSavingCells, setGridSavingCells] = useState<Record<string, boolean>>({});
+  const gridCertInputRef = useRef<HTMLInputElement | null>(null);
+  const gridCertTargetRef = useRef<{ sessionId: string; enrollmentId: string } | null>(null);
   const [chatTarget, setChatTarget] = useState<{ enrollmentId: string; fullName: string } | null>(null);
   const [chatThread, setChatThread] = useState<ChatThread | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
@@ -1532,6 +1553,138 @@ const CatechesisPage: React.FC = () => {
         // corpo não-JSON — segue para o genérico
       }
       notify.error(getErrorMessage(error, 'Erro ao gerar o PDF'));
+    }
+  };
+
+  // ===== Folha de presença (grade alunos × encontros, como o formulário de papel) =====
+  const openAttendanceGrid = async () => {
+    if (!selectedClass) return;
+    try {
+      const res = await api.get(`/catechesis/classes/${selectedClass.id}/attendance-grid`);
+      setGridData(res.data);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao abrir a folha de presença'));
+    }
+  };
+
+  const closeAttendanceGrid = () => {
+    setGridData(null);
+    // Badges "sem chamada"/X/Y da lista de encontros mudaram com os lançamentos
+    void refreshDetail();
+  };
+
+  const upsertGridMark = (
+    marks: AttendanceGridMark[],
+    next: AttendanceGridMark,
+  ): AttendanceGridMark[] => {
+    const rest = marks.filter(
+      (m) => !(m.sessionId === next.sessionId && m.enrollmentId === next.enrollmentId),
+    );
+    return [...rest, next];
+  };
+
+  /** Grava uma célula da folha (otimista; reverte se o POST falhar). */
+  const setGridCell = async (
+    sessionId: string,
+    enrollmentId: string,
+    entry: { present: boolean; late?: boolean; justified?: boolean },
+    keepCertificate: boolean,
+  ) => {
+    const key = `${sessionId}:${enrollmentId}`;
+    const previousMarks = gridData?.marks ?? [];
+    setGridSavingCells((prev) => ({ ...prev, [key]: true }));
+    setGridData((current) =>
+      current
+        ? {
+            ...current,
+            marks: upsertGridMark(current.marks, {
+              sessionId,
+              enrollmentId,
+              present: entry.present || entry.late === true,
+              late: entry.late === true,
+              justified: !entry.present && entry.justified === true,
+              hasCertificate: keepCertificate && !entry.present && entry.justified === true,
+            }),
+          }
+        : current,
+    );
+    try {
+      await api.post(`/catechesis/sessions/${sessionId}/attendance`, {
+        entries: [
+          { enrollmentId, present: entry.present, late: entry.late ?? false, justified: entry.justified ?? false },
+        ],
+      });
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao gravar a chamada'));
+      setGridData((current) => (current ? { ...current, marks: previousMarks } : current));
+    } finally {
+      setGridSavingCells((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
+
+  /** Clique na célula: — → presente → falta → falta justificada → presente… */
+  const cycleGridCell = (sessionId: string, enrollmentId: string, mark: AttendanceGridMark | undefined) => {
+    if (!mark) {
+      void setGridCell(sessionId, enrollmentId, { present: true }, false);
+      return;
+    }
+    if (mark.present) {
+      void setGridCell(sessionId, enrollmentId, { present: false }, false);
+      return;
+    }
+    if (!mark.justified) {
+      void setGridCell(sessionId, enrollmentId, { present: false, justified: true }, false);
+      return;
+    }
+    if (
+      mark.hasCertificate &&
+      !window.confirm('Sair de "falta justificada" remove o atestado anexado a esta falta. Continuar?')
+    ) {
+      return;
+    }
+    void setGridCell(sessionId, enrollmentId, { present: true }, false);
+  };
+
+  const promptGridCertificate = (sessionId: string, enrollmentId: string) => {
+    gridCertTargetRef.current = { sessionId, enrollmentId };
+    gridCertInputRef.current?.click();
+  };
+
+  const handleGridCertificateFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    const target = gridCertTargetRef.current;
+    gridCertTargetRef.current = null;
+    if (!file || !target) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      await api.post(
+        `/catechesis/sessions/${target.sessionId}/attendance/${target.enrollmentId}/certificate`,
+        formData,
+      );
+      notify.success('Atestado anexado — a falta ficou justificada.');
+      setGridData((current) =>
+        current
+          ? {
+              ...current,
+              marks: upsertGridMark(current.marks, {
+                sessionId: target.sessionId,
+                enrollmentId: target.enrollmentId,
+                present: false,
+                late: false,
+                justified: true,
+                hasCertificate: true,
+              }),
+            }
+          : current,
+      );
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao anexar o atestado'));
     }
   };
 
@@ -3120,6 +3273,9 @@ const CatechesisPage: React.FC = () => {
                   <section>
                     <div className="cate-section__head">
                       <h3 className="cate-section__title">Encontros</h3>
+                      <button className="cate-btn" onClick={() => void openAttendanceGrid()}>
+                        🗒 Folha de presença
+                      </button>
                       <span className="cate-section__hint">Clique num encontro para abrir/editar a chamada</span>
                     </div>
                     {sessions.length === 0 ? (
@@ -4401,6 +4557,163 @@ const CatechesisPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {gridData && selectedClass && (() => {
+        const markMap = new Map(gridData.marks.map((m) => [`${m.sessionId}:${m.enrollmentId}`, m]));
+        return (
+          <div className="cate-board-overlay" role="dialog" aria-modal="true" aria-label="Folha de presença">
+            <div className="cate-board__top">
+              <div>
+                <strong className="cate-board__title">
+                  🗒 Folha de presença · {selectedClass.name} ({selectedClass.year})
+                </strong>
+                <span className="cate-board__count">
+                  Clique na célula para lançar: presente → falta → falta justificada · cada clique já grava
+                </span>
+              </div>
+              <div className="cate-board__topbtns">
+                <button type="button" className="cate-btn" onClick={closeAttendanceGrid}>
+                  Fechar
+                </button>
+              </div>
+            </div>
+            {gridData.sessions.length === 0 ? (
+              <p className="cate-board__emptycol">Nenhum encontro criado ainda — use “+ Encontro (chamada)” ou gere a agenda do ano.</p>
+            ) : (
+              <div className="cate-gridwrap">
+                <table className="cate-gridtable">
+                  <thead>
+                    <tr>
+                      <th className="cate-gridtable__name">Catequizando</th>
+                      {gridData.sessions.map((session) => (
+                        <th key={session.id} title={session.topic || undefined}>
+                          {new Date(session.date).toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit' })}
+                        </th>
+                      ))}
+                      <th className="cate-gridtable__pct">%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gridData.students.map((student) => {
+                      let presentCount = 0;
+                      let markedCount = 0;
+                      gridData.sessions.forEach((session) => {
+                        const mark = markMap.get(`${session.id}:${student.enrollmentId}`);
+                        if (mark) {
+                          markedCount += 1;
+                          if (mark.present) presentCount += 1;
+                        }
+                      });
+                      const pct = markedCount === 0 ? null : Math.round((presentCount / markedCount) * 100);
+                      return (
+                        <tr key={student.enrollmentId}>
+                          <td className="cate-gridtable__name">
+                            {student.member.fullName}
+                            {student.status === 'COMPLETED' && <span className="cate-gridtable__done"> · concluído</span>}
+                          </td>
+                          {gridData.sessions.map((session) => {
+                            const key = `${session.id}:${student.enrollmentId}`;
+                            const mark = markMap.get(key);
+                            const saving = !!gridSavingCells[key];
+                            let cellClass = 'cate-cell';
+                            let label = '·';
+                            let title = 'Sem chamada — clique para marcar presente';
+                            if (mark) {
+                              if (mark.present) {
+                                cellClass += ' is-p';
+                                label = 'P';
+                                title = mark.late ? 'Presente (com atraso) — clique para marcar falta' : 'Presente — clique para marcar falta';
+                                if (mark.late) cellClass += ' is-late';
+                              } else if (mark.justified) {
+                                cellClass += ' is-j';
+                                label = 'FJ';
+                                title = 'Falta justificada — clique para voltar a presente';
+                              } else {
+                                cellClass += ' is-f';
+                                label = 'F';
+                                title = 'Falta — clique para marcar falta justificada';
+                              }
+                            }
+                            return (
+                              <td key={session.id}>
+                                <span className="cate-cellwrap">
+                                  <button
+                                    type="button"
+                                    className={cellClass}
+                                    disabled={saving}
+                                    title={title}
+                                    onClick={() => cycleGridCell(session.id, student.enrollmentId, mark)}
+                                  >
+                                    {saving ? '…' : label}
+                                  </button>
+                                  {mark && !mark.present && mark.justified && (
+                                    <button
+                                      type="button"
+                                      className={`cate-cell__clip${mark.hasCertificate ? ' has-file' : ''}`}
+                                      title={mark.hasCertificate ? 'Baixar o atestado anexado' : 'Anexar atestado desta falta'}
+                                      onClick={() =>
+                                        mark.hasCertificate
+                                          ? void downloadPdf(
+                                              `/catechesis/sessions/${session.id}/attendance/${student.enrollmentId}/certificate`,
+                                              `atestado_${student.member.fullName.replace(/\s+/g, '_').toLowerCase()}`,
+                                            )
+                                          : promptGridCertificate(session.id, student.enrollmentId)
+                                      }
+                                    >
+                                      📎
+                                    </button>
+                                  )}
+                                </span>
+                              </td>
+                            );
+                          })}
+                          <td className="cate-gridtable__pct">{pct === null ? '—' : `${pct}%`}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td className="cate-gridtable__name">Presentes</td>
+                      {gridData.sessions.map((session) => {
+                        let present = 0;
+                        let marked = 0;
+                        gridData.students.forEach((student) => {
+                          const mark = markMap.get(`${session.id}:${student.enrollmentId}`);
+                          if (mark) {
+                            marked += 1;
+                            if (mark.present) present += 1;
+                          }
+                        });
+                        return (
+                          <td key={session.id} className="cate-gridtable__total">
+                            {marked === 0 ? '—' : `${present}/${marked}`}
+                          </td>
+                        );
+                      })}
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+            <p className="cate-grid__legend">
+              <span className="cate-cell is-p cate-cell--legend">P</span> presente
+              <span className="cate-cell is-p is-late cate-cell--legend">P</span> com atraso
+              <span className="cate-cell is-f cate-cell--legend">F</span> falta
+              <span className="cate-cell is-j cate-cell--legend">FJ</span> falta justificada
+              <span className="cate-cell__clip has-file cate-cell--legend">📎</span> atestado anexado
+            </p>
+            <input
+              type="file"
+              hidden
+              ref={gridCertInputRef}
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              onChange={(e) => void handleGridCertificateFile(e)}
+            />
+          </div>
+        );
+      })()}
 
       {renewal && selectedClass && (!renewal.nextStage || renewal.targetClasses.length === 0 || renewal.students.length === 0) && (
         <div className="module-modal-overlay" onClick={() => setRenewal(null)}>
