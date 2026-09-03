@@ -753,29 +753,125 @@
 .link-button:hover { color: #1d4ed8; }
 
 /* Conversa família ↔ equipe (Onda 4) */
+.cate-chat-modal { display: flex; flex-direction: column; }
+.cate-chat__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+.cate-chat-modal .cate-chat__head h2 { margin: 0; font-size: 1.05rem; }
+.cate-chat__headsub { display: block; margin-top: 0.15rem; font-size: 0.76rem; color: #64748b; }
+.cate-chat__close {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.cate-chat__close:hover { background: rgba(15, 23, 42, 0.07); color: #0f172a; }
 .cate-chat {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  max-height: 380px;
+  gap: 0.35rem;
+  min-height: 220px;
+  max-height: 420px;
   overflow-y: auto;
-  padding: 0.5rem;
-  background: var(--cate-ground, #f5f7fa);
-  border-radius: 10px;
-}
-.cate-chat__msg { display: flex; justify-content: flex-start; }
-.cate-chat__msg--team { justify-content: flex-end; }
-.cate-chat__bubble {
-  max-width: 78%;
-  background: #fff;
+  padding: 0.7rem;
+  background: #f4f6fb;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
-  padding: 0.45rem 0.7rem;
 }
-.cate-chat__msg--team .cate-chat__bubble { background: #eaf0fe; border-color: #c7d7fb; }
-.cate-chat__bubble p { margin: 0.15rem 0; font-size: 0.9rem; white-space: pre-wrap; }
-.cate-chat__author { font-size: 0.7rem; font-weight: 700; color: #475569; }
-.cate-chat__time { font-size: 0.68rem; color: #94a3b8; }
+.cate-chat__empty { color: #94a3b8; text-align: center; margin: auto 0; font-size: 0.86rem; }
+.cate-chat__day {
+  display: flex;
+  justify-content: center;
+  margin: 0.35rem 0 0.2rem;
+}
+.cate-chat__day span {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 0.14rem 0.6rem;
+}
+.cate-chat__msg { display: flex; justify-content: flex-start; }
+.cate-chat__msg--own { justify-content: flex-end; }
+.cate-chat__bubble {
+  max-width: 80%;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  border-bottom-left-radius: 4px;
+  padding: 0.42rem 0.65rem 0.32rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+.cate-chat__msg--own .cate-chat__bubble {
+  background: #e7efff;
+  border-color: #c7d7fb;
+  border-bottom-left-radius: 14px;
+  border-bottom-right-radius: 4px;
+}
+.cate-chat__bubble p { margin: 0.12rem 0 0; font-size: 0.88rem; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+.cate-chat__author { font-size: 0.68rem; font-weight: 700; color: #475569; }
+.cate-chat__msg--own .cate-chat__author { color: #1d4ed8; }
+.cate-chat__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  margin-top: 0.15rem;
+  font-size: 0.64rem;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+/* ✓ enviada · ✓✓ entregue · ✓✓ azul lida */
+.cate-chat__ticks {
+  font-weight: 800;
+  letter-spacing: -0.14em;
+  padding-right: 0.14em;
+  color: #94a3b8;
+  cursor: default;
+}
+.cate-chat__ticks.is-read { color: #2563eb; }
+.cate-chat__compose { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
+.cate-chat__compose input {
+  flex: 1;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 0.5rem 0.9rem;
+  font: inherit;
+  font-size: 0.88rem;
+}
+.cate-chat__compose input:focus { outline: 2px solid #2563eb; outline-offset: 1px; border-color: #2563eb; }
+.cate-chat__send {
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.cate-chat__send:hover:not(:disabled) { background: #1d4ed8; }
+.cate-chat__send:disabled { opacity: 0.45; cursor: not-allowed; }
+.cate-chat__hint { margin: 0.4rem 0 0; font-size: 0.7rem; color: #94a3b8; text-align: center; }
 
 /* ===== Board de distribuição (renovação multi-destino) =====
    Tela cheia: 3-4 colunas de até 30 cards não cabem no modal de 560px.

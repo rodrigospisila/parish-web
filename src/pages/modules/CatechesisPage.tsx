@@ -119,6 +119,8 @@ interface ChatMessage {
   mine: boolean;
   createdAt: string;
   readAt?: string | null;
+  /** Notificação criada para o outro lado (tick duplo; azul quando readAt) */
+  deliveredAt?: string | null;
 }
 
 interface ChatThread {
@@ -633,6 +635,13 @@ const CatechesisPage: React.FC = () => {
   // Conversa família ↔ equipe por matrícula (Onda 4)
   const [chatTarget, setChatTarget] = useState<{ enrollmentId: string; fullName: string } | null>(null);
   const [chatThread, setChatThread] = useState<ChatThread | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const chatMessageCount = chatThread?.messages.length ?? 0;
+  // Conversa aberta/nova mensagem: rola para o fim (as recentes ficam embaixo)
+  useEffect(() => {
+    const el = chatScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [chatMessageCount]);
   const [chatText, setChatText] = useState('');
   const [sendingChat, setSendingChat] = useState(false);
 
@@ -1548,6 +1557,32 @@ const CatechesisPage: React.FC = () => {
       notify.error(getErrorMessage(error, 'Erro ao abrir a conversa'));
       setChatTarget(null);
     }
+  };
+
+  const chatDayKey = (iso: string) => new Date(iso).toLocaleDateString('pt-BR');
+  const chatDayLabel = (iso: string) => {
+    const key = chatDayKey(iso);
+    const today = new Date();
+    if (key === today.toLocaleDateString('pt-BR')) return 'Hoje';
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (key === yesterday.toLocaleDateString('pt-BR')) return 'Ontem';
+    return key;
+  };
+  /** Ticks estilo mensageiro: ✓ enviada, ✓✓ entregue, ✓✓ azul lida. */
+  const renderChatTicks = (message: ChatMessage) => {
+    const read = !!message.readAt;
+    const delivered = !!message.deliveredAt;
+    const label = read
+      ? `Lida em ${new Date(message.readAt!).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`
+      : delivered
+        ? 'Entregue'
+        : 'Enviada';
+    return (
+      <span className={`cate-chat__ticks${read ? ' is-read' : ''}`} title={label} aria-label={label}>
+        {read || delivered ? '✓✓' : '✓'}
+      </span>
+    );
   };
 
   const sendChat = async () => {
@@ -4864,60 +4899,89 @@ const CatechesisPage: React.FC = () => {
 
       {chatTarget && (
         <div className="module-modal-overlay" onClick={() => setChatTarget(null)}>
-          <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
-            <h2>💬 Conversa · {chatTarget.fullName}</h2>
-            <p style={{ fontSize: '0.82rem', color: '#666', margin: '0 0 0.6rem' }}>
-              Só a família e a equipe da turma leem esta conversa. Tudo fica registrado.
-            </p>
+          <div className="module-modal cate-chat-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <div className="cate-chat__head">
+              <div>
+                <h2>💬 {chatTarget.fullName}</h2>
+                <span className="cate-chat__headsub">
+                  {chatThread ? `${chatThread.className} · ` : ''}conversa entre a família e a equipe da turma
+                </span>
+              </div>
+              <button
+                type="button"
+                className="cate-chat__close"
+                aria-label="Fechar conversa"
+                onClick={() => setChatTarget(null)}
+              >
+                ✕
+              </button>
+            </div>
             {chatThread === null && <div className="loading">Carregando...</div>}
             {chatThread && (
-              <div className="cate-chat">
+              <div className="cate-chat" ref={chatScrollRef}>
                 {chatThread.messages.length === 0 && (
-                  <p style={{ color: '#888', textAlign: 'center', margin: '1rem 0' }}>Nenhuma mensagem ainda — escreva a primeira.</p>
+                  <p className="cate-chat__empty">Nenhuma mensagem ainda — escreva a primeira.</p>
                 )}
-                {chatThread.messages.map((message) => (
-                  <div key={message.id} className={`cate-chat__msg${message.fromTeam ? ' cate-chat__msg--team' : ''}`}>
-                    <div className="cate-chat__bubble">
-                      <span className="cate-chat__author">
-                        {message.fromTeam ? `Equipe · ${message.authorName}` : `Família · ${message.authorName}`}
-                      </span>
-                      <p>{message.body}</p>
-                      <span className="cate-chat__time">
-                        {new Date(message.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                        {message.fromTeam && message.readAt ? ' · lida' : ''}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                {chatThread.messages.map((message, index) => {
+                  const previous = chatThread.messages[index - 1];
+                  const showDay = !previous || chatDayKey(previous.createdAt) !== chatDayKey(message.createdAt);
+                  const ownSide = message.fromTeam === chatThread.isTeam;
+                  return (
+                    <React.Fragment key={message.id}>
+                      {showDay && (
+                        <div className="cate-chat__day">
+                          <span>{chatDayLabel(message.createdAt)}</span>
+                        </div>
+                      )}
+                      <div className={`cate-chat__msg${ownSide ? ' cate-chat__msg--own' : ''}`}>
+                        <div className="cate-chat__bubble">
+                          <span className="cate-chat__author">
+                            {message.fromTeam ? `Equipe · ${message.authorName}` : `Família · ${message.authorName}`}
+                          </span>
+                          <p>{message.body}</p>
+                          <span className="cate-chat__foot">
+                            {new Date(message.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            {ownSide && renderChatTicks(message)}
+                          </span>
+                        </div>
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
               </div>
             )}
             {chatThread && chatThread.canWrite && (
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
-                <input
-                  type="text"
-                  maxLength={1000}
-                  placeholder="Escreva para a família..."
-                  style={{ flex: 1 }}
-                  value={chatText}
-                  onChange={(e) => setChatText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      void sendChat();
-                    }
-                  }}
-                />
-                <button type="button" className="btn-submit" disabled={sendingChat || !chatText.trim()} onClick={() => void sendChat()}>
-                  {sendingChat ? '...' : 'Enviar'}
-                </button>
-              </div>
+              <>
+                <div className="cate-chat__compose">
+                  <input
+                    type="text"
+                    maxLength={1000}
+                    placeholder={chatThread.isTeam ? 'Escreva para a família…' : 'Escreva para a equipe…'}
+                    value={chatText}
+                    onChange={(e) => setChatText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        void sendChat();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="cate-chat__send"
+                    aria-label="Enviar mensagem"
+                    disabled={sendingChat || !chatText.trim()}
+                    onClick={() => void sendChat()}
+                  >
+                    {sendingChat ? '…' : 'Enviar ➤'}
+                  </button>
+                </div>
+                <p className="cate-chat__hint">🔒 Tudo fica registrado · Enter envia</p>
+              </>
             )}
             {chatThread && !chatThread.canWrite && (
-              <p style={{ fontSize: '0.82rem', color: '#888' }}>Matrícula encerrada — conversa somente para leitura.</p>
+              <p className="cate-chat__hint">Matrícula encerrada — conversa somente para leitura.</p>
             )}
-            <div className="modal-actions">
-              <button type="button" className="btn-cancel" onClick={() => setChatTarget(null)}>Fechar</button>
-            </div>
           </div>
         </div>
       )}
