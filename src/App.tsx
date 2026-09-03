@@ -11,6 +11,7 @@ import ParishesPage from './pages/ParishesPage';
 import CommunitiesPage from './pages/CommunitiesPage';
 import MembersPage from './pages/MembersPage';
 import MyAccountPage from './pages/MyAccountPage';
+import SystemSettingsPage from './pages/SystemSettingsPage';
 import EventsPage from './pages/EventsPage';
 import UsersPage from './pages/UsersPage';
 import SecurityPage from './pages/SecurityPage';
@@ -139,6 +140,11 @@ const App: React.FC = () => {
             <Route path="communities" element={<CommunitiesPage />} />
             <Route path="members" element={<MembersPage />} />
             <Route path="account" element={<MyAccountPage />} />
+            <Route path="settings" element={
+              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
+                <SystemSettingsPage />
+              </RoleProtectedRoute>
+            } />
             <Route path="events" element={<EventsPage />} />
             <Route path="fixed-schedule" element={
               <RoleProtectedRoute allowedRoles={FIXED_SCHEDULE_ROLES}>

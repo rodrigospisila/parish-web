@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import UserPhotoAvatar from './UserPhotoAvatar';
+import api from '../services/api';
 import './AdminLayout.css';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -59,6 +60,29 @@ const AdminLayout: React.FC = () => {
 
   const displayName = user?.name || user?.email || 'Usuário';
 
+  // Matriz do SYSTEM_ADMIN (Configurações): módulos desativados para o papel
+  // deste usuário somem do menu. SYSTEM_ADMIN sempre vê tudo.
+  const [disabledModules, setDisabledModules] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!user?.role || isSystemAdmin) return;
+    api
+      .get('/settings/module-access')
+      .then((res) => {
+        setDisabledModules(
+          new Set(
+            (res.data?.disabled ?? [])
+              .filter((d: { role: string }) => d.role === user.role)
+              .map((d: { moduleKey: string }) => d.moduleKey),
+          ),
+        );
+      })
+      .catch(() => {
+        // Falhou a consulta: menu completo (comportamento padrão do papel)
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.role]);
+  const modOn = (key: string) => isSystemAdmin || !disabledModules.has(key);
+
   return (
     <div className="admin-layout">
       <aside className="sidebar">
@@ -90,53 +114,73 @@ const AdminLayout: React.FC = () => {
               <NavIcon name="planejamento" /> Início · pendências
             </NavLink>
           )}
-          <span className="nav-section-label">Estrutura</span>
-          {canManageDioceses && (
+          {((canManageDioceses && modOn('dioceses')) || (canManageParishes && modOn('parishes')) || modOn('communities')) && (
+            <span className="nav-section-label">Estrutura</span>
+          )}
+          {canManageDioceses && modOn('dioceses') && (
             <NavLink to="/admin/dioceses" className="nav-link">
               <NavIcon name="diocese" /> Dioceses
             </NavLink>
           )}
-          {canManageParishes && (
+          {canManageParishes && modOn('parishes') && (
             <NavLink to="/admin/parishes" className="nav-link">
               <NavIcon name="paroquia" /> Paróquias
             </NavLink>
           )}
-          <NavLink to="/admin/communities" className="nav-link">
-            <NavIcon name="comunidade" /> Comunidades
-          </NavLink>
+          {modOn('communities') && (
+            <NavLink to="/admin/communities" className="nav-link">
+              <NavIcon name="comunidade" /> Comunidades
+            </NavLink>
+          )}
 
-          <span className="nav-section-label">Comunidade</span>
-          <NavLink to="/admin/members" className="nav-link">
-            <NavIcon name="membros" /> Membros
-          </NavLink>
-          <NavLink to="/admin/events" className="nav-link">
-            <NavIcon name="calendario-liturgico" /> Eventos
-          </NavLink>
-          {canManageSchedules && (
+          {(modOn('members') || modOn('events') || modOn('swaps') || (canManageSchedules && (modOn('fixed-schedule') || modOn('schedules')))) && (
+            <span className="nav-section-label">Comunidade</span>
+          )}
+          {modOn('members') && (
+            <NavLink to="/admin/members" className="nav-link">
+              <NavIcon name="membros" /> Membros
+            </NavLink>
+          )}
+          {modOn('events') && (
+            <NavLink to="/admin/events" className="nav-link">
+              <NavIcon name="calendario-liturgico" /> Eventos
+            </NavLink>
+          )}
+          {canManageSchedules && modOn('fixed-schedule') && (
             <NavLink to="/admin/fixed-schedule" className="nav-link">
               <NavIcon name="missa-proxima" /> Agenda Fixa
             </NavLink>
           )}
-          {canManageSchedules && (
+          {canManageSchedules && modOn('schedules') && (
             <NavLink to="/admin/schedules" className="nav-link">
               <NavIcon name="escala" /> Escalas
             </NavLink>
           )}
-          <NavLink to="/admin/swaps" className="nav-link">
-            <NavIcon name="trocas-escala" /> Trocas de Escala
-          </NavLink>
+          {modOn('swaps') && (
+            <NavLink to="/admin/swaps" className="nav-link">
+              <NavIcon name="trocas-escala" /> Trocas de Escala
+            </NavLink>
+          )}
 
-          <span className="nav-section-label">Pastoral</span>
-          <NavLink to="/admin/clergy-messages" className="nav-link">
-            <NavIcon name="sacerdote" /> Palavra Pastoral
-          </NavLink>
-          <NavLink to="/admin/saints" className="nav-link">
-            <NavIcon name="santo" /> Santos
-          </NavLink>
-          <NavLink to="/admin/pastorals/community" className="nav-link">
-            <NavIcon name="pastoral" /> Pastorais
-          </NavLink>
-          {isPastoralCoordinator && (
+          {(modOn('clergy-messages') || modOn('saints') || modOn('pastorals') || isCoordination) && (
+            <span className="nav-section-label">Pastoral</span>
+          )}
+          {modOn('clergy-messages') && (
+            <NavLink to="/admin/clergy-messages" className="nav-link">
+              <NavIcon name="sacerdote" /> Palavra Pastoral
+            </NavLink>
+          )}
+          {modOn('saints') && (
+            <NavLink to="/admin/saints" className="nav-link">
+              <NavIcon name="santo" /> Santos
+            </NavLink>
+          )}
+          {modOn('pastorals') && (
+            <NavLink to="/admin/pastorals/community" className="nav-link">
+              <NavIcon name="pastoral" /> Pastorais
+            </NavLink>
+          )}
+          {isPastoralCoordinator && modOn('my-pastorals') && (
             <NavLink to="/admin/pastorals/my" className="nav-link highlight">
               <NavIcon name="pastoral" /> Minhas Pastorais
             </NavLink>
@@ -148,46 +192,63 @@ const AdminLayout: React.FC = () => {
           )}
           {isCoordination && (
             <>
-              <NavLink to="/admin/catechesis" className="nav-link">
-                <NavIcon name="catequese" /> Catequese
-              </NavLink>
-              <NavLink to="/admin/planning" className="nav-link">
-                <NavIcon name="planejamento" /> Planejamento
-              </NavLink>
-              <NavLink to="/admin/documents" className="nav-link">
-                <NavIcon name="documento" /> Documentos
-              </NavLink>
-              <NavLink to="/admin/formation" className="nav-link">
-                <NavIcon name="biblia" /> Formação
-              </NavLink>
-              <NavLink to="/admin/rooms" className="nav-link">
-                <NavIcon name="espacos" /> Espaços
-              </NavLink>
-              <NavLink to="/admin/visitation" className="nav-link">
-                <NavIcon name="visitacao" /> Visitação
-              </NavLink>
+              {modOn('catechesis') && (
+                <NavLink to="/admin/catechesis" className="nav-link">
+                  <NavIcon name="catequese" /> Catequese
+                </NavLink>
+              )}
+              {modOn('planning') && (
+                <NavLink to="/admin/planning" className="nav-link">
+                  <NavIcon name="planejamento" /> Planejamento
+                </NavLink>
+              )}
+              {modOn('documents') && (
+                <NavLink to="/admin/documents" className="nav-link">
+                  <NavIcon name="documento" /> Documentos
+                </NavLink>
+              )}
+              {modOn('formation') && (
+                <NavLink to="/admin/formation" className="nav-link">
+                  <NavIcon name="biblia" /> Formação
+                </NavLink>
+              )}
+              {modOn('rooms') && (
+                <NavLink to="/admin/rooms" className="nav-link">
+                  <NavIcon name="espacos" /> Espaços
+                </NavLink>
+              )}
+              {modOn('visitation') && (
+                <NavLink to="/admin/visitation" className="nav-link">
+                  <NavIcon name="visitacao" /> Visitação
+                </NavLink>
+              )}
             </>
           )}
 
-          {(isCommunityManagement || canManageUsers) && <span className="nav-section-label">Gestão</span>}
-          {isCommunityManagement && (
-            <>
-              <NavLink to="/admin/finance" className="nav-link">
-                <NavIcon name="dizimo" /> Financeiro
-              </NavLink>
-              <NavLink to="/admin/sacrament-processes" className="nav-link">
-                <NavIcon name="cruz" /> Sacramentos
-              </NavLink>
-            </>
+          {(isCommunityManagement || canManageUsers || isSystemAdmin) && <span className="nav-section-label">Gestão</span>}
+          {isCommunityManagement && modOn('finance') && (
+            <NavLink to="/admin/finance" className="nav-link">
+              <NavIcon name="dizimo" /> Financeiro
+            </NavLink>
           )}
-          {canManageUsers && (
+          {isCommunityManagement && modOn('sacrament-processes') && (
+            <NavLink to="/admin/sacrament-processes" className="nav-link">
+              <NavIcon name="cruz" /> Sacramentos
+            </NavLink>
+          )}
+          {canManageUsers && modOn('users') && (
             <NavLink to="/admin/users" className="nav-link">
               <NavIcon name="usuarios" /> Usuários
             </NavLink>
           )}
-          {isCommunityManagement && (
+          {isCommunityManagement && modOn('audit') && (
             <NavLink to="/admin/audit" className="nav-link">
               <NavIcon name="documento" /> Auditoria
+            </NavLink>
+          )}
+          {isSystemAdmin && (
+            <NavLink to="/admin/settings" className="nav-link">
+              <NavIcon name="planejamento" /> Configurações
             </NavLink>
           )}
 
