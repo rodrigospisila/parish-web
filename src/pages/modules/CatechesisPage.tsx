@@ -498,6 +498,7 @@ const CatechesisPage: React.FC = () => {
   // Drag and drop nativo: os ids em voo ficam num ref (dataTransfer não é
   // legível durante o dragover) e o destaque da coluna sob o cursor em estado
   const dragIdsRef = useRef<string[]>([]);
+  const dragGhostRef = useRef<HTMLElement | null>(null);
   const [draggingIds, setDraggingIds] = useState<string[]>([]);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   /** Gravados nesta sessão do board quando a prévia não recarregou (falha
@@ -1898,18 +1899,43 @@ const CatechesisPage: React.FC = () => {
     setDraftMoves((prev) => [...prev, { enrollmentIds: moving, targetClassId: null, prev: prevMap }]);
   };
 
-  /** Início do arrasto: os ids em voo vão para o ref (dataTransfer não é legível no dragover). */
-  const startDrag = (e: React.DragEvent, ids: string[]) => {
+  /** Início do arrasto: os ids em voo vão para o ref (dataTransfer não é legível
+   * no dragover) e o ghost sob o cursor vira um card com badge de quantidade
+   * (pilha, quando a leva tem mais de um). */
+  const startDrag = (e: React.DragEvent, ids: string[], label: string) => {
     dragIdsRef.current = ids;
     setDraggingIds(ids);
     e.dataTransfer.effectAllowed = 'move';
     // Firefox só inicia o arrasto quando algum dado é posto no dataTransfer
     e.dataTransfer.setData('text/plain', String(ids.length));
+    // O ghost precisa estar no DOM quando setDragImage roda; o snapshot é
+    // tirado sincronamente, então o nó pode sair no próximo tick
+    const ghost = document.createElement('div');
+    ghost.className = `cate-drag-ghost${ids.length > 1 ? ' cate-drag-ghost--stack' : ''}`;
+    const name = document.createElement('span');
+    name.className = 'cate-drag-ghost__name';
+    name.textContent = ids.length > 1 ? `${label} + ${ids.length - 1}` : label;
+    ghost.appendChild(name);
+    if (ids.length > 1) {
+      const badge = document.createElement('span');
+      badge.className = 'cate-drag-ghost__badge';
+      badge.textContent = String(ids.length);
+      ghost.appendChild(badge);
+    }
+    document.body.appendChild(ghost);
+    e.dataTransfer.setDragImage(ghost, 24, 22);
+    dragGhostRef.current = ghost;
+    window.setTimeout(() => {
+      if (dragGhostRef.current === ghost) dragGhostRef.current = null;
+      ghost.remove();
+    }, 0);
   };
   const endDrag = () => {
     dragIdsRef.current = [];
     setDraggingIds([]);
     setDragOverCol(null);
+    dragGhostRef.current?.remove();
+    dragGhostRef.current = null;
   };
   const dragOverColumn = (e: React.DragEvent, col: string) => {
     if (!dragIdsRef.current.length || renewing) return;
@@ -4501,7 +4527,7 @@ const CatechesisPage: React.FC = () => {
                                 .filter(([gid, checked]) => checked && !renewalDraft[gid])
                                 .map(([gid]) => gid)
                             : [s.enrollmentId];
-                          startDrag(e, group.length ? group : [s.enrollmentId]);
+                          startDrag(e, group.length ? group : [s.enrollmentId], s.member.fullName);
                         }}
                         onDragEnd={endDrag}
                         onClick={() => setRenewalSelection((prev) => ({ ...prev, [s.enrollmentId]: !on }))}
@@ -4580,7 +4606,7 @@ const CatechesisPage: React.FC = () => {
                           key={s.enrollmentId}
                           className={`cate-board__card cate-board__card--draft${draggingIds.includes(s.enrollmentId) ? ' is-dragging' : ''}`}
                           draggable={!renewing}
-                          onDragStart={(e) => startDrag(e, [s.enrollmentId])}
+                          onDragStart={(e) => startDrag(e, [s.enrollmentId], s.member.fullName)}
                           onDragEnd={endDrag}
                         >
                           <span>{s.member.fullName}</span>
