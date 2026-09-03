@@ -124,6 +124,10 @@ const ROLE_LABELS: Record<string, string> = {
   COORDINATOR: 'Coordenador',
 };
 
+/** Funções oferecidas nos selects — a função é texto livre no backend, então
+ *  "Outra função…" cobre papéis próprios de cada pastoral (Salmista, Músico…). */
+const MEMBER_ROLE_OPTIONS = ['Coordenador', 'Vice-Coordenador', 'Secretário', 'Tesoureiro', 'Catequista', 'Membro'];
+
 const formatRoleLabel = (role: string) => ROLE_LABELS[role] || role;
 
 const getRoleClassName = (role: string) => {
@@ -248,7 +252,9 @@ const CommunityPastoralDetailsPage: React.FC = () => {
   });
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [memberRole, setMemberRole] = useState('Membro');
+  const [memberRoleCustom, setMemberRoleCustom] = useState('');
   const [editRole, setEditRole] = useState('');
+  const [editRoleCustom, setEditRoleCustom] = useState('');
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
   const [memberRoleFilter, setMemberRoleFilter] = useState('all');
   const [memberViewMode, setMemberViewMode] = useState<MemberViewMode>(() => {
@@ -627,7 +633,15 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
   const handleEditRole = (member: PastoralMember) => {
     setEditingMember(member);
-    setEditRole(member.role);
+    // Função fora da lista (ex.: veio de importação) cai em "Outra função…"
+    const current = formatRoleLabel(member.role);
+    if (MEMBER_ROLE_OPTIONS.includes(current)) {
+      setEditRole(current);
+      setEditRoleCustom('');
+    } else {
+      setEditRole('__other');
+      setEditRoleCustom(member.role);
+    }
     setShowEditRoleModal(true);
   };
 
@@ -693,12 +707,17 @@ const CommunityPastoralDetailsPage: React.FC = () => {
 
   const handleUpdateRole = async () => {
     if (!editingMember) return;
+    const resolvedRole = editRole === '__other' ? editRoleCustom.trim() : editRole;
+    if (!resolvedRole) {
+      notify.warning('Informe a função (ex.: Catequista, Salmista…)');
+      return;
+    }
 
     try {
       const token = localStorage.getItem('token');
       await axios.patch(
         `${API_URL}/pastorals/members/${editingMember.id}`,
-        { role: editRole },
+        { role: resolvedRole },
         { headers: { Authorization: `Bearer ${token}` } },
       );
 
@@ -717,6 +736,11 @@ const CommunityPastoralDetailsPage: React.FC = () => {
       notify.warning('Selecione um membro');
       return;
     }
+    const resolvedMemberRole = memberRole === '__other' ? memberRoleCustom.trim() : memberRole;
+    if (!resolvedMemberRole) {
+      notify.warning('Informe a função (ex.: Catequista, Salmista…)');
+      return;
+    }
 
     try {
       const token = localStorage.getItem('token');
@@ -725,7 +749,7 @@ const CommunityPastoralDetailsPage: React.FC = () => {
         {
           memberId: selectedMemberId,
           communityPastoralId: id,
-          role: memberRole,
+          role: resolvedMemberRole,
           isActive: true,
         },
         { headers: { Authorization: `Bearer ${token}` } },
@@ -1810,13 +1834,24 @@ const CommunityPastoralDetailsPage: React.FC = () => {
             <div className="form-group">
               <label>Função *</label>
               <select value={editRole} onChange={(event) => setEditRole(event.target.value)}>
-                <option value="Coordenador">Coordenador</option>
-                <option value="Vice-Coordenador">Vice-Coordenador</option>
-                <option value="Secretário">Secretário</option>
-                <option value="Tesoureiro">Tesoureiro</option>
-                <option value="Membro">Membro</option>
+                {MEMBER_ROLE_OPTIONS.map((role) => (
+                  <option key={role} value={role}>{role}</option>
+                ))}
+                <option value="__other">Outra função…</option>
               </select>
             </div>
+            {editRole === '__other' && (
+              <div className="form-group">
+                <label>Qual função? *</label>
+                <input
+                  type="text"
+                  maxLength={40}
+                  placeholder="Ex.: Salmista, Músico, Acólito…"
+                  value={editRoleCustom}
+                  onChange={(event) => setEditRoleCustom(event.target.value)}
+                />
+              </div>
+            )}
             <div className="modal-actions">
               <button onClick={() => setShowEditRoleModal(false)} className="cancel-button">
                 Cancelar
@@ -1861,13 +1896,24 @@ const CommunityPastoralDetailsPage: React.FC = () => {
                 onChange={(event) => setMemberRole(event.target.value)}
                 required
               >
-                <option value="Coordenador">Coordenador</option>
-                <option value="Vice-Coordenador">Vice-Coordenador</option>
-                <option value="Secretário">Secretário</option>
-                <option value="Tesoureiro">Tesoureiro</option>
-                <option value="Membro">Membro</option>
+                {MEMBER_ROLE_OPTIONS.map((role) => (
+                  <option key={role} value={role}>{role}</option>
+                ))}
+                <option value="__other">Outra função…</option>
               </select>
             </div>
+            {memberRole === '__other' && (
+              <div className="form-group">
+                <label>Qual função? *</label>
+                <input
+                  type="text"
+                  maxLength={40}
+                  placeholder="Ex.: Salmista, Músico, Acólito…"
+                  value={memberRoleCustom}
+                  onChange={(event) => setMemberRoleCustom(event.target.value)}
+                />
+              </div>
+            )}
 
             <div className="modal-actions">
               <button onClick={() => setShowAddMemberModal(false)} className="cancel-button">
