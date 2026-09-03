@@ -690,6 +690,13 @@ const CatechesisPage: React.FC = () => {
   const [gridSavingCells, setGridSavingCells] = useState<Record<string, boolean>>({});
   const gridCertInputRef = useRef<HTMLInputElement | null>(null);
   const gridCertTargetRef = useRef<{ sessionId: string; enrollmentId: string } | null>(null);
+  // Confirmação de transferência (modal no lugar do window.confirm)
+  const [transferConfirm, setTransferConfirm] = useState<{
+    enrollmentId: string;
+    fullName: string;
+    target: CatechesisClass;
+  } | null>(null);
+  const [transferring, setTransferring] = useState(false);
   const [chatTarget, setChatTarget] = useState<{ enrollmentId: string; fullName: string } | null>(null);
   const [chatThread, setChatThread] = useState<ChatThread | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
@@ -1007,24 +1014,29 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
-  const handleTransfer = async (enrollmentId: string, targetClassId: string, fullName: string) => {
+  // O select executava no primeiro clique, sem volta — o modal nomeando aluno,
+  // origem e destino evita a transferência acidental
+  const handleTransfer = (enrollmentId: string, targetClassId: string, fullName: string) => {
     if (!targetClassId) return;
     const target = classes.find((c) => c.id === targetClassId);
-    // O select executava no primeiro clique, sem volta — confirmação nomeando
-    // aluno e turma evita a transferência acidental
-    if (
-      !window.confirm(
-        `Transferir ${fullName} para a ${target ? `${target.name} (${target.year})` : 'turma escolhida'}? A matrícula atual fica como "Transferido" (o histórico é preservado).`,
-      )
-    ) {
-      return;
-    }
+    if (!target) return;
+    setTransferConfirm({ enrollmentId, fullName, target });
+  };
+
+  const confirmTransfer = async () => {
+    if (!transferConfirm || transferring) return;
+    setTransferring(true);
     try {
-      await api.patch(`/catechesis/enrollments/${enrollmentId}/transfer`, { targetClassId });
+      await api.patch(`/catechesis/enrollments/${transferConfirm.enrollmentId}/transfer`, {
+        targetClassId: transferConfirm.target.id,
+      });
       notify.success('Matrícula transferida!');
+      setTransferConfirm(null);
       refreshDetail();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao transferir matrícula'));
+    } finally {
+      setTransferring(false);
     }
   };
 
@@ -5354,6 +5366,51 @@ const CatechesisPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {transferConfirm && selectedClass && (
+        <div className="module-modal-overlay" onClick={() => !transferring && setTransferConfirm(null)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <h2>↔ Transferir catequizando</h2>
+            <p className="cate-transfer__who">
+              <strong>{transferConfirm.fullName}</strong>
+            </p>
+            <div className="cate-transfer__route">
+              <div className="cate-transfer__cell">
+                <span className="cate-transfer__label">De</span>
+                <strong>{selectedClass.name}</strong>
+                <span className="cate-transfer__sub">{selectedClass.year}</span>
+              </div>
+              <span className="cate-transfer__arrow">→</span>
+              <div className="cate-transfer__cell is-target">
+                <span className="cate-transfer__label">Para</span>
+                <strong>{transferConfirm.target.name}</strong>
+                <span className="cate-transfer__sub">
+                  {transferConfirm.target.year}
+                  {transferConfirm.target.weekday !== null && transferConfirm.target.weekday !== undefined
+                    ? ` · ${WEEKDAYS[transferConfirm.target.weekday]}`
+                    : ''}
+                  {transferConfirm.target.time ? ` às ${transferConfirm.target.time}` : ''}
+                  {transferConfirm.target.capacity != null && transferConfirm.target.openSpots != null
+                    ? ` · ${transferConfirm.target.openSpots} vaga${transferConfirm.target.openSpots === 1 ? '' : 's'}`
+                    : ''}
+                </span>
+              </div>
+            </div>
+            <p className="cate-transfer__note">
+              A matrícula atual fica como <strong>“Transferido”</strong> — presenças, pareceres e documentos
+              continuam no histórico.
+            </p>
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" disabled={transferring} onClick={() => setTransferConfirm(null)}>
+                Cancelar
+              </button>
+              <button type="button" className="btn-submit" disabled={transferring} onClick={() => void confirmTransfer()}>
+                {transferring ? 'Transferindo…' : 'Transferir'}
+              </button>
+            </div>
           </div>
         </div>
       )}

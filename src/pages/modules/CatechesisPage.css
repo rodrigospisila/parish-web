@@ -810,6 +810,47 @@
 .link-button:hover { color: #1d4ed8; }
 
 /* Conversa família ↔ equipe (Onda 4) */
+/* Modal de transferência: rota origem → destino */
+.cate-transfer__who { margin: 0 0 0.7rem; font-size: 0.95rem; color: var(--cate-ink, #0f172a); }
+.cate-transfer__route {
+  display: flex;
+  align-items: stretch;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+.cate-transfer__cell {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+.cate-transfer__cell strong { font-size: 0.92rem; color: #0f172a; }
+.cate-transfer__cell.is-target { border-color: #2563eb; background: #eff6ff; }
+.cate-transfer__label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+.cate-transfer__cell.is-target .cate-transfer__label { color: #2563eb; }
+.cate-transfer__sub { font-size: 0.76rem; color: #64748b; }
+.cate-transfer__arrow { align-self: center; font-size: 1.2rem; font-weight: 800; color: #2563eb; }
+.cate-transfer__note {
+  margin: 0 0 0.4rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 8px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  font-size: 0.8rem;
+  color: #92400e;
+}
+
 .cate-chat-modal { display: flex; flex-direction: column; }
 .cate-chat__head {
   display: flex;
