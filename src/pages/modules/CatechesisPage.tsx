@@ -5381,7 +5381,13 @@ const CatechesisPage: React.FC = () => {
               <div className="cate-transfer__cell">
                 <span className="cate-transfer__label">De</span>
                 <strong>{selectedClass.name}</strong>
-                <span className="cate-transfer__sub">{selectedClass.year}</span>
+                <span className="cate-transfer__sub">
+                  {selectedClass.year}
+                  {selectedClass.weekday !== null && selectedClass.weekday !== undefined
+                    ? ` · ${WEEKDAYS[selectedClass.weekday]}`
+                    : ''}
+                  {selectedClass.time ? ` às ${selectedClass.time}` : ''}
+                </span>
               </div>
               <span className="cate-transfer__arrow">→</span>
               <div className="cate-transfer__cell is-target">
