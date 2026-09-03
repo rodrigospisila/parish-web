@@ -649,6 +649,26 @@ const CatechesisPage: React.FC = () => {
   const [showSentNotices, setShowSentNotices] = useState(false);
 
   // Conversa família ↔ equipe por matrícula (Onda 4)
+  // Encontros: fila única (rolável, crescente) ou grade de cards — preferência lembrada
+  const [sessionsView, setSessionsView] = useState<'row' | 'grid'>(() => {
+    try {
+      return localStorage.getItem('cate:sessionsView') === 'grid' ? 'grid' : 'row';
+    } catch {
+      return 'row';
+    }
+  });
+  const [sessionsFilter, setSessionsFilter] = useState<'all' | 'open' | 'done'>('all');
+  const toggleSessionsView = () => {
+    setSessionsView((current) => {
+      const next = current === 'row' ? 'grid' : 'row';
+      try {
+        localStorage.setItem('cate:sessionsView', next);
+      } catch {
+        // sem storage (modo privado etc.) a preferência só não persiste
+      }
+      return next;
+    });
+  };
   // Folha de presença (grade alunos × encontros)
   const [gridData, setGridData] = useState<AttendanceGridData | null>(null);
   const [gridSavingCells, setGridSavingCells] = useState<Record<string, boolean>>({});
@@ -3276,15 +3296,66 @@ const CatechesisPage: React.FC = () => {
                       <button className="cate-btn" onClick={() => void openAttendanceGrid()}>
                         🗒 Folha de presença
                       </button>
+                      {sessions.length > 0 && (
+                        <div className="cate-filter" role="group" aria-label="Filtro de encontros">
+                          <button
+                            type="button"
+                            className={`cate-filter__opt${sessionsFilter === 'all' ? ' is-on' : ''}`}
+                            onClick={() => setSessionsFilter('all')}
+                          >
+                            Todos ({sessions.length})
+                          </button>
+                          <button
+                            type="button"
+                            className={`cate-filter__opt${sessionsFilter === 'open' ? ' is-on' : ''}`}
+                            onClick={() => setSessionsFilter('open')}
+                          >
+                            Abertos ({sessions.filter((s) => s.marked === 0).length})
+                          </button>
+                          <button
+                            type="button"
+                            className={`cate-filter__opt${sessionsFilter === 'done' ? ' is-on' : ''}`}
+                            onClick={() => setSessionsFilter('done')}
+                          >
+                            Concluídos ({sessions.filter((s) => s.marked > 0).length})
+                          </button>
+                        </div>
+                      )}
+                      {sessions.length > 0 && (
+                        <button
+                          type="button"
+                          className="cate-btn cate-btn--ghost"
+                          title={sessionsView === 'row' ? 'Mostrar todos os cards em grade' : 'Recolher para uma fila única'}
+                          onClick={toggleSessionsView}
+                        >
+                          {sessionsView === 'row' ? '⊞ Ver em grade' : '— Ver em fila'}
+                        </button>
+                      )}
                       <span className="cate-section__hint">Clique num encontro para abrir/editar a chamada</span>
                     </div>
                     {sessions.length === 0 ? (
                       <div className="cate-empty">
                         Nenhum encontro ainda — use “+ Encontro (chamada)” ou gere a agenda do ano.
                       </div>
-                    ) : (
-                      <div className="cate-sessions">
-                        {sessions.map((session) => {
+                    ) : (() => {
+                      // Ordem crescente (o ano se lê da esquerda para a direita) + filtro
+                      const visibleSessions = sessions
+                        .filter((s) =>
+                          sessionsFilter === 'all' ? true : sessionsFilter === 'open' ? s.marked === 0 : s.marked > 0,
+                        )
+                        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                      if (visibleSessions.length === 0) {
+                        return (
+                          <div className="cate-empty">
+                            {sessionsFilter === 'open'
+                              ? 'Nenhum encontro aberto — todas as chamadas foram feitas 🎉'
+                              : 'Nenhum encontro com chamada ainda.'}
+                          </div>
+                        );
+                      }
+                      return (
+                      <div className={`cate-sessions${sessionsView === 'row' ? ' cate-sessions--row' : ''}`}>
+                        {visibleSessions.map((session) => {
                           const d = new Date(session.date);
                           const fmt = (opts: Intl.DateTimeFormatOptions) =>
                             d.toLocaleDateString('pt-BR', { timeZone: 'UTC', ...opts });
@@ -3340,7 +3411,8 @@ const CatechesisPage: React.FC = () => {
                           );
                         })}
                       </div>
-                    )}
+                      );
+                    })()}
                   </section>
 
                   <section>

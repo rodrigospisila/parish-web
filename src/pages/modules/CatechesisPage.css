@@ -557,6 +557,18 @@
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: 0.6rem;
 }
+/* Modo fila: uma única fileira rolável (35 encontros não engolem a página) */
+.cate-sessions--row {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 0.45rem;
+  scroll-snap-type: x proximity;
+}
+.cate-sessions--row .cate-session {
+  flex: 0 0 235px;
+  scroll-snap-align: start;
+}
 .cate-session {
   display: flex;
   align-items: center;
