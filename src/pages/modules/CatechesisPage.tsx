@@ -1787,10 +1787,10 @@ const CatechesisPage: React.FC = () => {
       dragIdsRef.current = [];
       setDraggingIds([]);
       setDragOverCol(null);
-      // Destino padrão: o ANO SEGUINTE ao da turma de origem, se já existir
-      // (turmas de 2026 distribuem para 2027); senão, todos os anos
-      const targetYears = new Set(preview.targetClasses.map((t) => t.year));
-      setBoardYearFilter(targetYears.has(klass.year + 1) ? klass.year + 1 : 'all');
+      // Destino padrão: o ANO SEGUINTE ao da turma de origem (2026 → 2027).
+      // Sem turmas criadas nele, o board abre no aviso que guia o 📆 Criar —
+      // melhor do que oferecer as turmas do ano que está encerrando
+      setBoardYearFilter(klass.year + 1);
       setRenewal(preview);
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao preparar a renovação'));
@@ -4369,8 +4369,12 @@ const CatechesisPage: React.FC = () => {
         const selectedCount = Object.entries(renewalSelection).filter(([id, on]) => on && !renewalDraft[id]).length;
         const originCards = renewal.students.filter((s) => !renewalDraft[s.enrollmentId]);
         const nextColor = renewal.nextStage!.color ?? undefined;
-        // Filtro de ano de destino: na virada, 2026 conclui e 2027 recebe
-        const targetYears = [...new Set(renewal.targetClasses.map((t) => t.year))].sort((a, b) => b - a);
+        // Filtro de ano de destino: na virada, 2026 conclui e 2027 recebe.
+        // O ano seguinte entra SEMPRE como opção, mesmo sem turmas criadas —
+        // selecioná-lo mostra o aviso de criar as turmas do ano novo
+        const targetYears = [...new Set([selectedClass.year + 1, ...renewal.targetClasses.map((t) => t.year)])].sort(
+          (a, b) => b - a,
+        );
         const visibleTargets = boardYearFilter === 'all' ? renewal.targetClasses : renewal.targetClasses.filter((t) => t.year === boardYearFilter);
         const hiddenDraftCount = Object.values(renewalDraft).filter((tgt) => !visibleTargets.some((t) => t.id === tgt)).length;
         return (
@@ -4407,7 +4411,7 @@ const CatechesisPage: React.FC = () => {
             <div className="cate-board__top">
               <div>
                 <strong className="cate-board__title">
-                  Distribuir concluídos · {selectedClass.name} → {renewal.nextStage!.name}
+                  Distribuir concluídos · {selectedClass.name} ({selectedClass.year}) → {renewal.nextStage!.name}
                 </strong>
                 <span className="cate-board__count">
                   {placedBefore > 0 ? `${placedBefore} já realocado(s) · ` : ''}
@@ -4416,27 +4420,25 @@ const CatechesisPage: React.FC = () => {
                   {draftCount === 0 ? ' · arraste os nomes para as turmas' : ''}
                 </span>
               </div>
-              {targetYears.length > 1 && (
-                <div className="cate-filter" role="group" aria-label="Ano das turmas de destino">
-                  {targetYears.map((year) => (
-                    <button
-                      key={year}
-                      type="button"
-                      className={`cate-filter__opt${boardYearFilter === year ? ' is-on' : ''}`}
-                      onClick={() => setBoardYearFilter(year)}
-                    >
-                      Destino {year}
-                    </button>
-                  ))}
+              <div className="cate-filter" role="group" aria-label="Ano das turmas de destino">
+                {targetYears.map((year) => (
                   <button
+                    key={year}
                     type="button"
-                    className={`cate-filter__opt${boardYearFilter === 'all' ? ' is-on' : ''}`}
-                    onClick={() => setBoardYearFilter('all')}
+                    className={`cate-filter__opt${boardYearFilter === year ? ' is-on' : ''}`}
+                    onClick={() => setBoardYearFilter(year)}
                   >
-                    Todos
+                    Destino {year}
                   </button>
-                </div>
-              )}
+                ))}
+                <button
+                  type="button"
+                  className={`cate-filter__opt${boardYearFilter === 'all' ? ' is-on' : ''}`}
+                  onClick={() => setBoardYearFilter('all')}
+                >
+                  Todos
+                </button>
+              </div>
               <div className="cate-board__topbtns">
                 <button type="button" className="cate-btn" disabled={!draftMoves.length || renewing} onClick={undoLastMove}>
                   ⌫ Desfazer
@@ -4472,7 +4474,13 @@ const CatechesisPage: React.FC = () => {
                 <div className="cate-board__colhead">
                   {renewal.stage.color && <span className="cate-stage-dot" style={{ background: renewal.stage.color }} />}
                   <strong>Concluídos · {selectedClass.name}</strong>
+                  <span className="cate-board__year">{selectedClass.year}</span>
                 </div>
+                <p className="cate-board__sub">
+                  {selectedClass.weekday !== null && selectedClass.weekday !== undefined ? WEEKDAYS[selectedClass.weekday] : 'Dia a definir'}
+                  {selectedClass.time ? ` às ${selectedClass.time}` : ''}
+                  {selectedClass.room ? ` · ${selectedClass.room}` : ''}
+                </p>
                 <div className="cate-board__links">
                   <button
                     type="button"
@@ -4546,6 +4554,7 @@ const CatechesisPage: React.FC = () => {
                   <p className="cate-board__emptycol">
                     Nenhuma turma de destino {boardYearFilter !== 'all' ? `de ${boardYearFilter}` : ''} — crie as turmas do
                     ano novo na aba “Encerramento do ano” (📆 Criar) e reabra a distribuição.
+                    {renewal.targetClasses.length > 0 ? ' Turmas de outros anos aparecem pelo filtro acima.' : ''}
                   </p>
                 </div>
               )}
