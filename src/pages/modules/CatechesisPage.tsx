@@ -143,6 +143,9 @@ interface EnrollmentDocument {
   /** Conferência automática (IA) — apoio, a decisão é da equipe */
   autoCheckStatus?: 'MATCH' | 'MISMATCH' | 'UNREADABLE' | 'SKIPPED' | null;
   autoCheckNotes?: string | null;
+  /** O que foi LIDO do documento — base do "corrigir cadastro" */
+  extractedName?: string | null;
+  extractedBirthDate?: string | null;
   /** O binário ainda está armazenado? (aceitos ficam; recusados/antigos não) */
   hasFile?: boolean;
   reviewNotes?: string | null;
@@ -1145,6 +1148,28 @@ const CatechesisPage: React.FC = () => {
     setDocTarget({ enrollmentId, fullName });
     void refreshDocList(enrollmentId);
     if (selectedClass) refreshDocReqs(selectedClass.id);
+  };
+
+  /** Divergência lida do documento → corrige o cadastro do membro (auditado;
+   * a conferência automática reexecuta e o badge deve virar "confere"). */
+  const handleApplyCorrection = async (doc: EnrollmentDocument) => {
+    if (!docTarget) return;
+    const parts: string[] = [];
+    if (doc.extractedName) parts.push(`Nome: "${docTarget.fullName}" → "${doc.extractedName}"`);
+    if (doc.extractedBirthDate) {
+      parts.push(`Nascimento: ${new Date(doc.extractedBirthDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} (conforme o documento)`);
+    }
+    if (!window.confirm(`Corrigir o cadastro conforme o documento?\n\n${parts.join('\n')}\n\nA alteração fica registrada em auditoria e o documento é conferido de novo.`)) {
+      return;
+    }
+    try {
+      await api.post(`/catechesis/documents/${doc.id}/apply-correction`, {});
+      notify.success('Cadastro corrigido — o documento será conferido de novo em instantes (↻).');
+      void refreshDocList(docTarget.enrollmentId);
+      void refreshDetail();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao corrigir o cadastro'));
+    }
   };
 
   /** Balcão: a secretaria registra a declaração em nome da família. */
@@ -3742,7 +3767,18 @@ const CatechesisPage: React.FC = () => {
                       <span style={{ fontSize: '0.78rem', color: '#15803d', fontWeight: 600 }}>🤖 {doc.autoCheckNotes}</span>
                     )}
                     {doc.autoCheckStatus === 'MISMATCH' && (
-                      <span style={{ fontSize: '0.78rem', color: '#b45309', fontWeight: 700 }}>🤖 {doc.autoCheckNotes}</span>
+                      <>
+                        <span style={{ fontSize: '0.78rem', color: '#b45309', fontWeight: 700 }}>🤖 {doc.autoCheckNotes}</span>
+                        {(doc.extractedName || doc.extractedBirthDate) && (
+                          <button
+                            className="cate-mini"
+                            style={{ marginLeft: 6 }}
+                            onClick={() => void handleApplyCorrection(doc)}
+                          >
+                            ✎ Corrigir cadastro pelo documento
+                          </button>
+                        )}
+                      </>
                     )}
                     {doc.autoCheckStatus === 'UNREADABLE' && (
                       <span style={{ fontSize: '0.78rem', color: '#64748b' }}>🤖 {doc.autoCheckNotes}</span>
