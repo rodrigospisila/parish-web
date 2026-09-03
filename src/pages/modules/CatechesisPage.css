@@ -810,6 +810,19 @@
 .link-button:hover { color: #1d4ed8; }
 
 /* Conversa família ↔ equipe (Onda 4) */
+/* Uso de imagem negado pela família — a equipe precisa ver de relance */
+.cate-noimage {
+  display: inline-block;
+  margin-left: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  background: #fef2f2;
+  color: #b91c1c;
+  white-space: nowrap;
+}
+
 /* Modal de transferência: rota origem → destino */
 .cate-transfer__who { margin: 0 0 0.7rem; font-size: 0.95rem; color: var(--cate-ink, #0f172a); }
 .cate-transfer__route {

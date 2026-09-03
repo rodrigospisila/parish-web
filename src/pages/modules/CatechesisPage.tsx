@@ -108,6 +108,8 @@ interface ClassReport {
     sessions: number;
     /** Mensagens da família ainda não lidas pela equipe (Onda 4) */
     unreadMessages?: number;
+    /** Uso de imagem: true autorizado, false negado, null/ausente = não respondido */
+    imageConsent?: boolean | null;
   }>;
 }
 
@@ -3578,6 +3580,14 @@ const CatechesisPage: React.FC = () => {
                                 <tr key={student.enrollmentId}>
                                   <td>
                                     <strong>{student.member.fullName}</strong>
+                                    {student.imageConsent === false && (
+                                      <span
+                                        className="cate-noimage"
+                                        title="A família NÃO autorizou o uso de imagem — preservar o catequizando em fotos e vídeos"
+                                      >
+                                        🚫📷 sem uso de imagem
+                                      </span>
+                                    )}
                                     {student.contact && (
                                       <div style={{ fontSize: '0.76rem', color: '#64748b' }}>
                                         {student.contact.name ? `Resp.: ${student.contact.name}` : 'Contato próprio'}
