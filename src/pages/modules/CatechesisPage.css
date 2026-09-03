@@ -530,26 +530,104 @@
 .cate-session {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.65rem;
   border: 1px solid var(--cate-line);
   border-radius: 10px;
-  padding: 0.6rem 0.8rem;
+  padding: 0.5rem 0.6rem;
   background: var(--cate-surface);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
-.cate-session:hover { border-color: var(--cate-primary); background: var(--cate-primary-soft); }
-.cate-session__date { font-size: 0.86rem; font-weight: 700; color: var(--cate-ink); }
-.cate-session__meta { font-size: 0.76rem; color: var(--cate-muted); margin-top: 0.1rem; }
+.cate-session:hover,
+.cate-session:focus-within {
+  border-color: var(--cate-primary);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1);
+  transform: translateY(-1px);
+}
+.cate-session:focus-visible { outline: 2px solid var(--cate-primary); outline-offset: 1px; }
+/* Bloco de data estilo folhinha de calendário */
+.cate-session__cal {
+  flex: 0 0 auto;
+  width: 46px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.28rem 0 0.32rem;
+  border: 1px solid var(--cate-line);
+  border-radius: 8px;
+  background: var(--cate-ground);
+}
+.cate-session:hover .cate-session__cal { background: var(--cate-primary-soft); border-color: transparent; }
+.cate-session__cal-day {
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.05;
+  color: var(--cate-ink);
+  font-variant-numeric: tabular-nums;
+}
+.cate-session__cal-mon {
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--cate-muted);
+  margin-top: 0.12rem;
+  white-space: nowrap;
+}
+.cate-session__main { flex: 1; min-width: 0; }
+.cate-session__topic {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--cate-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cate-session__topic--none { color: var(--cate-muted); font-weight: 500; font-style: italic; }
 .cate-session__badge {
-  flex-shrink: 0;
-  font-size: 0.72rem;
+  display: inline-block;
+  margin-top: 0.22rem;
+  font-size: 0.68rem;
   font-weight: 700;
   border-radius: 999px;
-  padding: 0.18rem 0.55rem;
+  padding: 0.14rem 0.5rem;
 }
+/* Ações só no hover (ou foco por teclado); em touch ficam sempre visíveis */
+.cate-session__actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0.1rem;
+  opacity: 0;
+  transform: translateX(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.cate-session:hover .cate-session__actions,
+.cate-session:focus-within .cate-session__actions {
+  opacity: 1;
+  transform: none;
+}
+@media (hover: none) {
+  .cate-session__actions { opacity: 1; transform: none; }
+}
+.cate-session__action {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 0.82rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.cate-session__action:hover { background: rgba(15, 23, 42, 0.07); }
+.cate-session__action--danger:hover { background: var(--cate-danger-soft); }
 .cate-session__badge--done { background: var(--cate-ok-soft); color: var(--cate-ok); }
 .cate-session__badge--todo { background: var(--cate-warn-soft); color: var(--cate-warn); }
 

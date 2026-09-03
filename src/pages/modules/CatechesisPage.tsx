@@ -3076,48 +3076,61 @@ const CatechesisPage: React.FC = () => {
                       </div>
                     ) : (
                       <div className="cate-sessions">
-                        {sessions.map((session) => (
-                          <div
-                            key={session.id}
-                            className="cate-session"
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => void openSessionAttendance(session)}
-                            onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && void openSessionAttendance(session)}
-                          >
-                            <span>
-                              <span className="cate-session__date">
-                                {new Date(session.date).toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' })}
-                              </span>
-                              <div className="cate-session__meta">{session.topic || 'Sem tema'}</div>
-                            </span>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                              {session.marked === 0 ? (
-                                <span className="cate-session__badge cate-session__badge--todo">sem chamada</span>
-                              ) : (
-                                <span className="cate-session__badge cate-session__badge--done">
-                                  {session.present}/{session.marked} ✓
+                        {sessions.map((session) => {
+                          const d = new Date(session.date);
+                          const fmt = (opts: Intl.DateTimeFormatOptions) =>
+                            d.toLocaleDateString('pt-BR', { timeZone: 'UTC', ...opts });
+                          return (
+                            <div
+                              key={session.id}
+                              className="cate-session"
+                              role="button"
+                              tabIndex={0}
+                              title={fmt({ weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                              onClick={() => void openSessionAttendance(session)}
+                              onKeyDown={(e) => e.key === 'Enter' && e.target === e.currentTarget && void openSessionAttendance(session)}
+                            >
+                              <span className="cate-session__cal">
+                                <span className="cate-session__cal-day">{fmt({ day: '2-digit' })}</span>
+                                <span className="cate-session__cal-mon">
+                                  {fmt({ month: 'short' }).replace('.', '')} {fmt({ year: '2-digit' })}
                                 </span>
-                              )}
-                              <button
-                                type="button"
-                                className="cate-chip__remove"
-                                title="Editar encontro"
-                                onClick={(e) => { e.stopPropagation(); void handleEditSession(session); }}
-                              >
-                                ✏️
-                              </button>
-                              <button
-                                type="button"
-                                className="cate-chip__remove"
-                                title="Excluir encontro"
-                                onClick={(e) => { e.stopPropagation(); void handleDeleteSession(session); }}
-                              >
-                                🗑
-                              </button>
-                            </span>
-                          </div>
-                        ))}
+                              </span>
+                              <span className="cate-session__main">
+                                <span className={`cate-session__topic${session.topic ? '' : ' cate-session__topic--none'}`}>
+                                  {session.topic || 'Sem tema'}
+                                </span>
+                                {session.marked === 0 ? (
+                                  <span className="cate-session__badge cate-session__badge--todo">sem chamada</span>
+                                ) : (
+                                  <span className="cate-session__badge cate-session__badge--done">
+                                    {session.present}/{session.marked} presentes
+                                  </span>
+                                )}
+                              </span>
+                              <span className="cate-session__actions">
+                                <button
+                                  type="button"
+                                  className="cate-session__action"
+                                  title="Editar encontro"
+                                  aria-label="Editar encontro"
+                                  onClick={(e) => { e.stopPropagation(); void handleEditSession(session); }}
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  type="button"
+                                  className="cate-session__action cate-session__action--danger"
+                                  title="Excluir encontro"
+                                  aria-label="Excluir encontro"
+                                  onClick={(e) => { e.stopPropagation(); void handleDeleteSession(session); }}
+                                >
+                                  🗑
+                                </button>
+                              </span>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </section>
