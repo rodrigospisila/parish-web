@@ -2977,87 +2977,104 @@ const CatechesisPage: React.FC = () => {
             </div>
 
             <div className="cate-toolbar">
-              <button
-                className="cate-btn cate-btn--primary"
-                onClick={() => {
-                  // Sempre abre limpo — um "matricular mesmo assim" marcado num
-                  // cancelamento anterior não pode vazar para a próxima matrícula
-                  setEnrollForm({ memberId: '', waiveBaptism: false, overrideCapacity: false, unbaptized: false });
-                  setShowEnrollModal(true);
-                }}
-              >
-                + Matricular
-              </button>
-              <button className="cate-btn cate-btn--primary" onClick={() => setShowSessionModal(true)}>
-                + Encontro (chamada)
-              </button>
-              <button className="cate-btn" onClick={openEditClass}>
-                ✏️ Editar turma
-              </button>
-              <button className="cate-btn" title="Criar a turma do ano seguinte, mantendo ou ajustando os catequistas" onClick={() => void openRollover(selectedClass)}>
-                📆 Turma de {selectedClass.year + 1}
-              </button>
-              {selectedClass.capacity != null && (
-                <span className={`cate-seats ${selectedClass.isFull ? 'is-full' : ''}`}>
-                  {selectedClass.isFull
-                    ? `Lotada (${selectedClass.occupied ?? 0}/${selectedClass.capacity})`
-                    : `${selectedClass.openSpots} vaga${selectedClass.openSpots === 1 ? '' : 's'} de ${selectedClass.capacity}`}
-                </span>
-              )}
-              <span className="cate-toolbar__sep" />
-              <button
-                className="cate-btn"
-                onClick={() => {
-                  // Sempre abre limpo — prévia de outra turma/período não vaza
-                  setAgendaDates({});
-                  setAgendaRange({ from: '', to: '' });
-                  setShowAgendaModal(true);
-                }}
-              >
-                📅 Gerar agenda
-              </button>
-              <button className="cate-btn" onClick={() => void openTopicsModal()}>
-                📝 Planejar temas
-              </button>
-              <button className="cate-btn" onClick={() => void openSentNotices()}>
-                ✉ Avisos enviados
-              </button>
-              <button className="cate-btn" title="Quais documentos a turma pede na inscrição e se são obrigatórios" onClick={() => void openDocReqModal()}>
-                📎 Docs da inscrição
-              </button>
-              {report && report.active > 0 && (
-                <button className="cate-btn" onClick={() => openBatchComplete()}>🎓 Concluir turma</button>
-              )}
-              {report && report.completed > 0 && (
-                <button className="cate-btn" onClick={() => void openRenewal()}>↻ Renovar / distribuir</button>
-              )}
-              <button
-                className="cate-btn"
-                onClick={() => {
-                  // Sempre abre limpo — a matriz da turma anterior não pode
-                  // receber cliques (pagamento iria para a taxa errada)
-                  setClassFees([]);
-                  setShowFees(true);
-                  loadClassFees();
-                }}
-              >
-                💰 Taxas
-              </button>
-              <span className="cate-toolbar__sep" />
-              <button
-                className="cate-btn"
-                onClick={() => downloadPdf(`/catechesis/classes/${selectedClass.id}/roster.pdf`, `lista_${selectedClass.name.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
-              >
-                🖨 Lista da turma
-              </button>
-              {report && report.completed > 0 && (
+              <div className="cate-toolbar__primary">
                 <button
-                  className="cate-btn"
-                  onClick={() => downloadPdf(`/catechesis/classes/${selectedClass.id}/certificates.pdf`, `certificados_${selectedClass.name.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
+                  className="cate-btn cate-btn--primary"
+                  onClick={() => {
+                    // Sempre abre limpo — um "matricular mesmo assim" marcado num
+                    // cancelamento anterior não pode vazar para a próxima matrícula
+                    setEnrollForm({ memberId: '', waiveBaptism: false, overrideCapacity: false, unbaptized: false });
+                    setShowEnrollModal(true);
+                  }}
                 >
-                  🎓 Certificados (lote)
+                  + Matricular
                 </button>
-              )}
+                <button className="cate-btn cate-btn--primary" onClick={() => setShowSessionModal(true)}>
+                  + Encontro (chamada)
+                </button>
+                {selectedClass.capacity != null && (
+                  <span className={`cate-seats ${selectedClass.isFull ? 'is-full' : ''}`}>
+                    {selectedClass.isFull
+                      ? `Lotada (${selectedClass.occupied ?? 0}/${selectedClass.capacity})`
+                      : `${selectedClass.openSpots} vaga${selectedClass.openSpots === 1 ? '' : 's'} de ${selectedClass.capacity}`}
+                  </span>
+                )}
+              </div>
+              <div className="cate-toolbar__groups">
+                <div className="cate-actiongroup">
+                  <span className="cate-actiongroup__label">Turma</span>
+                  <div className="cate-actiongroup__btns">
+                    <button className="cate-btn" onClick={openEditClass}>
+                      ✏️ Editar
+                    </button>
+                    <button
+                      className="cate-btn"
+                      onClick={() => {
+                        // Sempre abre limpo — prévia de outra turma/período não vaza
+                        setAgendaDates({});
+                        setAgendaRange({ from: '', to: '' });
+                        setShowAgendaModal(true);
+                      }}
+                    >
+                      📅 Gerar agenda
+                    </button>
+                    <button className="cate-btn" onClick={() => void openTopicsModal()}>
+                      📝 Planejar temas
+                    </button>
+                    <button className="cate-btn" title="Quais documentos a turma pede na inscrição e se são obrigatórios" onClick={() => void openDocReqModal()}>
+                      📎 Docs da inscrição
+                    </button>
+                  </div>
+                </div>
+                <div className="cate-actiongroup">
+                  <span className="cate-actiongroup__label">Ciclo do ano</span>
+                  <div className="cate-actiongroup__btns">
+                    {report && report.active > 0 && (
+                      <button className="cate-btn" onClick={() => openBatchComplete()}>🎓 Concluir turma</button>
+                    )}
+                    {report && report.completed > 0 && (
+                      <button className="cate-btn" onClick={() => void openRenewal()}>↻ Renovar / distribuir</button>
+                    )}
+                    <button className="cate-btn" title="Criar a turma do ano seguinte, mantendo ou ajustando os catequistas" onClick={() => void openRollover(selectedClass)}>
+                      📆 Turma de {selectedClass.year + 1}
+                    </button>
+                  </div>
+                </div>
+                <div className="cate-actiongroup">
+                  <span className="cate-actiongroup__label">Registros</span>
+                  <div className="cate-actiongroup__btns">
+                    <button className="cate-btn" onClick={() => void openSentNotices()}>
+                      ✉ Avisos enviados
+                    </button>
+                    <button
+                      className="cate-btn"
+                      onClick={() => {
+                        // Sempre abre limpo — a matriz da turma anterior não pode
+                        // receber cliques (pagamento iria para a taxa errada)
+                        setClassFees([]);
+                        setShowFees(true);
+                        loadClassFees();
+                      }}
+                    >
+                      💰 Taxas
+                    </button>
+                    <button
+                      className="cate-btn"
+                      onClick={() => downloadPdf(`/catechesis/classes/${selectedClass.id}/roster.pdf`, `lista_${selectedClass.name.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
+                    >
+                      🖨 Lista da turma
+                    </button>
+                    {report && report.completed > 0 && (
+                      <button
+                        className="cate-btn"
+                        onClick={() => downloadPdf(`/catechesis/classes/${selectedClass.id}/certificates.pdf`, `certificados_${selectedClass.name.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
+                      >
+                        🎓 Certificados (lote)
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
 
             {reportLoading && <div className="loading">Carregando a turma...</div>}

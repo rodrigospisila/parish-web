@@ -436,18 +436,48 @@
 /* Toolbar de ações */
 .cate-toolbar {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.65rem;
   padding: 0.85rem 1.5rem;
   border-bottom: 1px solid var(--cate-line);
   background: var(--cate-surface);
 }
-.cate-toolbar__sep {
-  width: 1px;
-  height: 22px;
-  background: var(--cate-line);
-  margin: 0 0.35rem;
+.cate-toolbar__primary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.cate-toolbar__groups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.5rem 1.1rem;
+}
+.cate-actiongroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  padding-left: 1.1rem;
+  border-left: 1px solid var(--cate-line);
+}
+.cate-actiongroup:first-child { padding-left: 0; border-left: none; }
+.cate-actiongroup__label {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--cate-muted);
+}
+.cate-actiongroup__btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.cate-actiongroup .cate-btn {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.3rem 0.6rem;
 }
 .cate-btn {
   display: inline-flex;
