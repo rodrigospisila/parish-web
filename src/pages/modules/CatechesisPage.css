@@ -841,6 +841,23 @@
 .cate-board__status--err { color: #b91c1c; }
 .cate-board__emptycol { font-size: 0.8rem; color: #94a3b8; text-align: center; margin: 0.6rem 0; }
 
+/* Drag and drop do board de distribuição */
+.cate-board__card[draggable='true'] { cursor: grab; }
+.cate-board__card[draggable='true']:active { cursor: grabbing; }
+.cate-board__card.is-dragging { opacity: 0.35; }
+.cate-board__col.is-dragover {
+  border-color: #16a34a;
+  box-shadow: inset 0 0 0 2px #16a34a;
+  background: #f0fdf4;
+}
+.cate-board__move.is-drop {
+  opacity: 1;
+  border-style: solid;
+  border-color: #16a34a !important;
+  color: #16a34a !important;
+  background: #f0fdf4;
+}
+
 /* Seletor de equipe da virada de ano (modal 📆): linhas clicáveis no lugar do
    checklist — o checkbox dentro de .form-group herdava width:100% e quebrava */
 .cate-team-pick__head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.4rem; }

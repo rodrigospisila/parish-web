@@ -493,8 +493,13 @@ const CatechesisPage: React.FC = () => {
   /** enrollmentId → turma destino escolhida no rascunho */
   const [renewalDraft, setRenewalDraft] = useState<Record<string, string>>({});
   /** Pilha de movimentos para o Desfazer (cada entrada = um lote movido;
-   * `from` guarda a coluna de onde um card voltou à origem) */
-  const [draftMoves, setDraftMoves] = useState<Array<{ enrollmentIds: string[]; targetClassId: string | null; from?: string | null }>>([]);
+   * `prev` guarda, por card, a coluna de onde ele saiu — null = origem) */
+  const [draftMoves, setDraftMoves] = useState<Array<{ enrollmentIds: string[]; targetClassId: string | null; prev: Record<string, string | null> }>>([]);
+  // Drag and drop nativo: os ids em voo ficam num ref (dataTransfer não é
+  // legível durante o dragover) e o destaque da coluna sob o cursor em estado
+  const dragIdsRef = useRef<string[]>([]);
+  const [draggingIds, setDraggingIds] = useState<string[]>([]);
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   /** Gravados nesta sessão do board quando a prévia não recarregou (falha
    * parcial): render trata como "já realocado" para não parecer pendente */
   const [placedLocalIds, setPlacedLocalIds] = useState<Record<string, string>>({});
@@ -1778,6 +1783,9 @@ const CatechesisPage: React.FC = () => {
       setOverrideColumns({});
       setColumnStatus({});
       setPlacedLocalIds({});
+      dragIdsRef.current = [];
+      setDraggingIds([]);
+      setDragOverCol(null);
       // Destino padrão: o ANO SEGUINTE ao da turma de origem, se já existir
       // (turmas de 2026 distribuem para 2027); senão, todos os anos
       const targetYears = new Set(preview.targetClasses.map((t) => t.year));
@@ -1797,15 +1805,12 @@ const CatechesisPage: React.FC = () => {
   const draftCountFor = (targetClassId: string) =>
     Object.values(renewalDraft).filter((id) => id === targetClassId).length;
 
-  /** Move os selecionados (ainda na origem) para a coluna — só rascunho, nada gravado. */
-  const moveSelectedTo = (target: RenewalTargetClass) => {
-    const moving = Object.entries(renewalSelection)
-      .filter(([id, checked]) => checked && !renewalDraft[id])
-      .map(([id]) => id);
-    if (!moving.length) {
-      notify.error('Selecione catequizandos na coluna de origem');
-      return;
-    }
+  /** Move ids para a coluna (rascunho) — serve à seleção e ao drag and drop.
+   * Aceita cards vindos da origem OU de outra coluna destino (re-arrasto). */
+  const moveIdsTo = (target: RenewalTargetClass, ids: string[]) => {
+    if (renewing) return;
+    const moving = ids.filter((id) => renewalDraft[id] !== target.id);
+    if (!moving.length) return;
     if (target.capacity != null) {
       const free = target.capacity - target.occupied - draftCountFor(target.id);
       if (moving.length > free && !overrideColumns[target.id]) {
@@ -1818,6 +1823,10 @@ const CatechesisPage: React.FC = () => {
         setOverrideColumns((prev) => ({ ...prev, [target.id]: true }));
       }
     }
+    const prevMap: Record<string, string | null> = {};
+    moving.forEach((id) => {
+      prevMap[id] = renewalDraft[id] ?? null;
+    });
     setRenewalDraft((prev) => {
       const next = { ...prev };
       moving.forEach((id) => {
@@ -1832,56 +1841,118 @@ const CatechesisPage: React.FC = () => {
       });
       return next;
     });
-    setDraftMoves((prev) => [...prev, { enrollmentIds: moving, targetClassId: target.id }]);
+    setDraftMoves((prev) => [...prev, { enrollmentIds: moving, targetClassId: target.id, prev: prevMap }]);
     setColumnStatus({});
   };
 
-  /** Devolve um card do destino para a origem (rascunho). */
-  const returnToOrigin = (enrollmentId: string) => {
+  /** Move os selecionados (ainda na origem) para a coluna — só rascunho, nada gravado. */
+  const moveSelectedTo = (target: RenewalTargetClass) => {
+    const moving = Object.entries(renewalSelection)
+      .filter(([id, checked]) => checked && !renewalDraft[id])
+      .map(([id]) => id);
+    if (!moving.length) {
+      notify.error('Selecione catequizandos na coluna de origem');
+      return;
+    }
+    moveIdsTo(target, moving);
+  };
+
+  /** Devolve cards do destino para a origem (rascunho) — botão × ou drop na origem. */
+  const returnToOrigin = (enrollmentIds: string[]) => {
     // Durante o Confirmar o snapshot já foi tirado — retratação aqui gravaria
     // a matrícula contra a ação do usuário
     if (renewing) return;
-    const from = renewalDraft[enrollmentId] ?? null;
+    const moving = enrollmentIds.filter((id) => renewalDraft[id]);
+    if (!moving.length) return;
+    const prevMap: Record<string, string | null> = {};
+    moving.forEach((id) => {
+      prevMap[id] = renewalDraft[id] ?? null;
+    });
     const next = { ...renewalDraft };
-    delete next[enrollmentId];
+    moving.forEach((id) => {
+      delete next[id];
+    });
     setRenewalDraft(next);
     // Coluna esvaziada perde a exceção de capacidade concedida — a próxima
     // leva pede confirmação de novo
-    if (from && !Object.values(next).includes(from)) {
+    const emptied = [...new Set(Object.values(prevMap))].filter(
+      (col): col is string => !!col && !Object.values(next).includes(col),
+    );
+    if (emptied.length) {
       setOverrideColumns((prev) => {
         const cleaned = { ...prev };
-        delete cleaned[from];
+        emptied.forEach((col) => delete cleaned[col]);
         return cleaned;
       });
     }
-    setDraftMoves((prev) => [...prev, { enrollmentIds: [enrollmentId], targetClassId: null, from }]);
+    setDraftMoves((prev) => [...prev, { enrollmentIds: moving, targetClassId: null, prev: prevMap }]);
+  };
+
+  /** Início do arrasto: os ids em voo vão para o ref (dataTransfer não é legível no dragover). */
+  const startDrag = (e: React.DragEvent, ids: string[]) => {
+    dragIdsRef.current = ids;
+    setDraggingIds(ids);
+    e.dataTransfer.effectAllowed = 'move';
+    // Firefox só inicia o arrasto quando algum dado é posto no dataTransfer
+    e.dataTransfer.setData('text/plain', String(ids.length));
+  };
+  const endDrag = () => {
+    dragIdsRef.current = [];
+    setDraggingIds([]);
+    setDragOverCol(null);
+  };
+  const dragOverColumn = (e: React.DragEvent, col: string) => {
+    if (!dragIdsRef.current.length || renewing) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverCol((cur) => (cur === col ? cur : col));
+  };
+  const dragLeaveColumn = (e: React.DragEvent, col: string) => {
+    // Entrar num filho da coluna também dispara dragleave — só apaga o
+    // destaque quando o cursor sai da coluna de verdade
+    if (e.relatedTarget && e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setDragOverCol((cur) => (cur === col ? null : cur));
   };
 
   const undoLastMove = () => {
     const last = draftMoves[draftMoves.length - 1];
     if (!last) return;
     if (last.targetClassId === null) {
-      // Desfazer um "voltar para origem": o card retorna à coluna de onde saiu
-      if (last.from) {
-        const id = last.enrollmentIds[0];
-        const from = last.from;
-        setRenewalDraft((prev) => ({ ...prev, [id]: from }));
-        setRenewalSelection((prev) => ({ ...prev, [id]: false }));
-      }
+      // Desfazer um "voltar para origem": cada card retorna à coluna de onde saiu
+      setRenewalDraft((prev) => {
+        const next = { ...prev };
+        last.enrollmentIds.forEach((id) => {
+          const back = last.prev[id];
+          if (back) next[id] = back;
+        });
+        return next;
+      });
+      setRenewalSelection((prev) => {
+        const next = { ...prev };
+        last.enrollmentIds.forEach((id) => {
+          next[id] = false;
+        });
+        return next;
+      });
       setDraftMoves((prev) => prev.slice(0, -1));
       return;
     }
+    // Desfazer um "mover para a coluna": quem veio da origem volta selecionado;
+    // quem veio de OUTRA coluna (re-arrasto) volta para ela
     setRenewalDraft((prev) => {
       const next = { ...prev };
       last.enrollmentIds.forEach((id) => {
-        if (next[id] === last.targetClassId) delete next[id];
+        if (next[id] !== last.targetClassId) return;
+        const back = last.prev[id];
+        if (back) next[id] = back;
+        else delete next[id];
       });
       return next;
     });
     setRenewalSelection((prev) => {
       const next = { ...prev };
       last.enrollmentIds.forEach((id) => {
-        next[id] = true;
+        next[id] = !last.prev[id];
       });
       return next;
     });
@@ -4306,6 +4377,7 @@ const CatechesisPage: React.FC = () => {
                   {placedBefore > 0 ? `${placedBefore} já realocado(s) · ` : ''}
                   {draftCount} em rascunho — nada é gravado até confirmar
                   {hiddenDraftCount > 0 ? ` · ${hiddenDraftCount} em coluna(s) de outro ano (oculta)` : ''}
+                  {draftCount === 0 ? ' · arraste os nomes para as turmas' : ''}
                 </span>
               </div>
               {targetYears.length > 1 && (
@@ -4347,7 +4419,20 @@ const CatechesisPage: React.FC = () => {
               </div>
             </div>
             <div className="cate-board__cols">
-              <div className="cate-board__col">
+              <div
+                className={`cate-board__col${dragOverCol === 'origin' ? ' is-dragover' : ''}`}
+                onDragOver={(e) => {
+                  // A origem só recebe cards que estão em alguma coluna destino
+                  if (dragIdsRef.current.some((id) => renewalDraft[id])) dragOverColumn(e, 'origin');
+                }}
+                onDragLeave={(e) => dragLeaveColumn(e, 'origin')}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const ids = dragIdsRef.current;
+                  endDrag();
+                  returnToOrigin(ids);
+                }}
+              >
                 <div className="cate-board__colhead">
                   {renewal.stage.color && <span className="cate-stage-dot" style={{ background: renewal.stage.color }} />}
                   <strong>Concluídos · {selectedClass.name}</strong>
@@ -4396,8 +4481,19 @@ const CatechesisPage: React.FC = () => {
                       <button
                         key={s.enrollmentId}
                         type="button"
-                        className={`cate-board__card${on ? ' is-selected' : ''}`}
+                        className={`cate-board__card${on ? ' is-selected' : ''}${draggingIds.includes(s.enrollmentId) ? ' is-dragging' : ''}`}
                         aria-pressed={on}
+                        draggable={!renewing}
+                        onDragStart={(e) => {
+                          // Arrastar um card selecionado leva a leva selecionada inteira
+                          const group = on
+                            ? Object.entries(renewalSelection)
+                                .filter(([gid, checked]) => checked && !renewalDraft[gid])
+                                .map(([gid]) => gid)
+                            : [s.enrollmentId];
+                          startDrag(e, group.length ? group : [s.enrollmentId]);
+                        }}
+                        onDragEnd={endDrag}
                         onClick={() => setRenewalSelection((prev) => ({ ...prev, [s.enrollmentId]: !on }))}
                       >
                         <span>{s.member.fullName}</span>
@@ -4426,8 +4522,16 @@ const CatechesisPage: React.FC = () => {
                 return (
                   <div
                     key={t.id}
-                    className="cate-board__col cate-board__col--dest"
+                    className={`cate-board__col cate-board__col--dest${dragOverCol === t.id ? ' is-dragover' : ''}`}
                     style={nextColor ? { borderTopColor: nextColor } : undefined}
+                    onDragOver={(e) => dragOverColumn(e, t.id)}
+                    onDragLeave={(e) => dragLeaveColumn(e, t.id)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const ids = dragIdsRef.current;
+                      endDrag();
+                      moveIdsTo(t, ids);
+                    }}
                   >
                     <div className="cate-board__colhead">
                       <strong>{t.name}</strong>
@@ -4462,7 +4566,13 @@ const CatechesisPage: React.FC = () => {
                     )}
                     <div className="cate-board__cards">
                       {cards.map((s) => (
-                        <div key={s.enrollmentId} className="cate-board__card cate-board__card--draft">
+                        <div
+                          key={s.enrollmentId}
+                          className={`cate-board__card cate-board__card--draft${draggingIds.includes(s.enrollmentId) ? ' is-dragging' : ''}`}
+                          draggable={!renewing}
+                          onDragStart={(e) => startDrag(e, [s.enrollmentId])}
+                          onDragEnd={endDrag}
+                        >
                           <span>{s.member.fullName}</span>
                           {s.unbaptized && <span className="cate-board__tag cate-board__tag--dove">🕊</span>}
                           <button
@@ -4470,7 +4580,7 @@ const CatechesisPage: React.FC = () => {
                             className="cate-chip__remove"
                             title="Voltar para a origem"
                             disabled={renewing}
-                            onClick={() => returnToOrigin(s.enrollmentId)}
+                            onClick={() => returnToOrigin([s.enrollmentId])}
                           >
                             ×
                           </button>
@@ -4479,13 +4589,14 @@ const CatechesisPage: React.FC = () => {
                     </div>
                     <button
                       type="button"
-                      className="cate-board__move"
+                      className={`cate-board__move${dragOverCol === t.id && draggingIds.length ? ' is-drop' : ''}`}
                       style={nextColor ? { borderColor: nextColor, color: nextColor } : undefined}
                       disabled={renewing || selectedCount === 0}
                       onClick={() => moveSelectedTo(t)}
                     >
-                      Mover {selectedCount || ''} para cá
-                      {free !== null && selectedCount > free ? ` (cabem ${Math.max(0, free)})` : ''}
+                      {dragOverCol === t.id && draggingIds.length
+                        ? `Soltar ${draggingIds.length} aqui`
+                        : `Mover ${selectedCount || ''} para cá${free !== null && selectedCount > free ? ` (cabem ${Math.max(0, free)})` : ''}`}
                     </button>
                   </div>
                 );
