@@ -40,6 +40,8 @@ interface CommunityPastoral {
   community: Community;
   members: any[];
   subGroups: any[];
+  /** Pedidos "quero participar" aguardando decisão */
+  _count?: { joinRequests?: number };
 }
 
 const CommunityPastoralsPage: React.FC = () => {
@@ -293,6 +295,18 @@ const CommunityPastoralsPage: React.FC = () => {
                   <span className={`status-badge ${pastoral.status === 'ACTIVE' ? 'green' : 'gray'}`}>
                     {pastoral.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
                   </span>
+                  {(pastoral._count?.joinRequests ?? 0) > 0 && (
+                    <span
+                      title="Pedidos “quero participar” aguardando — aprove ou recuse nos detalhes"
+                      style={{
+                        fontSize: '0.72rem', fontWeight: 700, borderRadius: '999px',
+                        padding: '0.18rem 0.55rem', background: '#fffbeb',
+                        border: '1px solid #fde68a', color: '#92400e', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      🙋 {pastoral._count!.joinRequests} pedido{(pastoral._count!.joinRequests ?? 0) > 1 ? 's' : ''}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

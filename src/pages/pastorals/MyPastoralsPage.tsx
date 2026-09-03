@@ -42,6 +42,8 @@ interface MyPastoral {
   status: string;
   meetingDay?: string;
   meetingTime?: string;
+  /** Pedidos "quero participar" aguardando decisão */
+  _count?: { joinRequests?: number };
 }
 
 const MyPastoralsPage: React.FC = () => {
@@ -161,6 +163,7 @@ const MyPastoralsPage: React.FC = () => {
               const accentColor = pastoral.globalPastoral.colorHex || '#075AA9';
               const leaders = getLeaders(pastoral);
               const isActive = pastoral.status === 'ACTIVE';
+              const joinRequests = pastoral._count?.joinRequests ?? 0;
 
               return (
                 <article
@@ -221,6 +224,23 @@ const MyPastoralsPage: React.FC = () => {
                         {isActive ? 'Ativa' : 'Inativa'}
                       </span>
                     </div>
+
+                    {/* Alerta: pedidos "quero participar" aguardando decisão */}
+                    {joinRequests > 0 && (
+                      <div
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.6rem',
+                          padding: '0.6rem 0.75rem', borderRadius: '10px',
+                          background: '#fffbeb', border: '1px solid #fde68a',
+                        }}
+                      >
+                        <span style={{ fontSize: '1rem' }}>🙋</span>
+                        <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: '700', color: '#92400e' }}>
+                          {joinRequests} pedido{joinRequests > 1 ? 's' : ''} “quero participar” aguardando —
+                          aprove ou recuse nos detalhes
+                        </p>
+                      </div>
+                    )}
 
                     {/* Descrição */}
                     {pastoral.description && (
