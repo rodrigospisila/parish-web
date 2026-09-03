@@ -1607,31 +1607,43 @@ const CatechesisPage: React.FC = () => {
   const setGridCell = async (
     sessionId: string,
     enrollmentId: string,
-    entry: { present: boolean; late?: boolean; justified?: boolean },
+    entry: { present: boolean; late?: boolean; justified?: boolean; clear?: boolean },
     keepCertificate: boolean,
   ) => {
     const key = `${sessionId}:${enrollmentId}`;
     const previousMarks = gridData?.marks ?? [];
     setGridSavingCells((prev) => ({ ...prev, [key]: true }));
-    setGridData((current) =>
-      current
-        ? {
-            ...current,
-            marks: upsertGridMark(current.marks, {
-              sessionId,
-              enrollmentId,
-              present: entry.present || entry.late === true,
-              late: entry.late === true,
-              justified: !entry.present && entry.justified === true,
-              hasCertificate: keepCertificate && !entry.present && entry.justified === true,
-            }),
-          }
-        : current,
-    );
+    setGridData((current) => {
+      if (!current) return current;
+      if (entry.clear) {
+        // Limpar = a célula volta a "sem chamada"
+        return {
+          ...current,
+          marks: current.marks.filter((m) => !(m.sessionId === sessionId && m.enrollmentId === enrollmentId)),
+        };
+      }
+      return {
+        ...current,
+        marks: upsertGridMark(current.marks, {
+          sessionId,
+          enrollmentId,
+          present: entry.present || entry.late === true,
+          late: entry.late === true,
+          justified: !entry.present && entry.justified === true,
+          hasCertificate: keepCertificate && !entry.present && entry.justified === true,
+        }),
+      };
+    });
     try {
       await api.post(`/catechesis/sessions/${sessionId}/attendance`, {
         entries: [
-          { enrollmentId, present: entry.present, late: entry.late ?? false, justified: entry.justified ?? false },
+          {
+            enrollmentId,
+            present: entry.present,
+            late: entry.late ?? false,
+            justified: entry.justified ?? false,
+            clear: entry.clear ?? false,
+          },
         ],
       });
     } catch (error) {
@@ -1646,7 +1658,7 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
-  /** Clique na célula: — → presente → falta → falta justificada → presente… */
+  /** Clique na célula: — → presente → falta → falta justificada → limpar (—). */
   const cycleGridCell = (sessionId: string, enrollmentId: string, mark: AttendanceGridMark | undefined) => {
     if (!mark) {
       void setGridCell(sessionId, enrollmentId, { present: true }, false);
@@ -1662,11 +1674,40 @@ const CatechesisPage: React.FC = () => {
     }
     if (
       mark.hasCertificate &&
-      !window.confirm('Sair de "falta justificada" remove o atestado anexado a esta falta. Continuar?')
+      !window.confirm('Limpar este lançamento remove também o atestado anexado à falta. Continuar?')
     ) {
       return;
     }
-    void setGridCell(sessionId, enrollmentId, { present: true }, false);
+    // Fecha o ciclo desfazendo o lançamento — clique por engano tem volta
+    void setGridCell(sessionId, enrollmentId, { present: false, clear: true }, false);
+  };
+
+  /** Abre o atestado numa guia (visualizar); o blob autenticado vira URL temporária. */
+  const openAbsenceCertificate = async (sessionId: string, enrollmentId: string) => {
+    try {
+      const res = await api.get(`/catechesis/sessions/${sessionId}/attendance/${enrollmentId}/certificate`, {
+        responseType: 'blob',
+      });
+      const url = URL.createObjectURL(res.data);
+      const win = window.open(url, '_blank');
+      if (!win) {
+        notify.error('O navegador bloqueou a nova guia — libere pop-ups para visualizar o atestado');
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (error: any) {
+      try {
+        if (error?.response?.data instanceof Blob) {
+          const parsed = JSON.parse(await error.response.data.text());
+          if (parsed?.message) {
+            notify.error(Array.isArray(parsed.message) ? parsed.message.join(', ') : parsed.message);
+            return;
+          }
+        }
+      } catch {
+        // corpo não-JSON — segue para o genérico
+      }
+      notify.error(getErrorMessage(error, 'Erro ao abrir o atestado'));
+    }
   };
 
   const promptGridCertificate = (sessionId: string, enrollmentId: string) => {
@@ -4640,7 +4681,7 @@ const CatechesisPage: React.FC = () => {
                   🗒 Folha de presença · {selectedClass.name} ({selectedClass.year})
                 </strong>
                 <span className="cate-board__count">
-                  Clique na célula para lançar: presente → falta → falta justificada · cada clique já grava
+                  Clique na célula para lançar: presente → falta → falta justificada → limpar · cada clique já grava
                 </span>
               </div>
               <div className="cate-board__topbtns">
@@ -4699,7 +4740,7 @@ const CatechesisPage: React.FC = () => {
                               } else if (mark.justified) {
                                 cellClass += ' is-j';
                                 label = 'FJ';
-                                title = 'Falta justificada — clique para voltar a presente';
+                                title = 'Falta justificada — clique para limpar o lançamento';
                               } else {
                                 cellClass += ' is-f';
                                 label = 'F';
@@ -4722,13 +4763,10 @@ const CatechesisPage: React.FC = () => {
                                     <button
                                       type="button"
                                       className={`cate-cell__clip${mark.hasCertificate ? ' has-file' : ''}`}
-                                      title={mark.hasCertificate ? 'Baixar o atestado anexado' : 'Anexar atestado desta falta'}
+                                      title={mark.hasCertificate ? 'Visualizar o atestado anexado' : 'Anexar atestado desta falta'}
                                       onClick={() =>
                                         mark.hasCertificate
-                                          ? void downloadPdf(
-                                              `/catechesis/sessions/${session.id}/attendance/${student.enrollmentId}/certificate`,
-                                              `atestado_${student.member.fullName.replace(/\s+/g, '_').toLowerCase()}`,
-                                            )
+                                          ? void openAbsenceCertificate(session.id, student.enrollmentId)
                                           : promptGridCertificate(session.id, student.enrollmentId)
                                       }
                                     >
