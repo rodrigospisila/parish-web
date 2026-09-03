@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import TitleIcon from '../components/TitleIcon';
+import UserPhotoAvatar, { announceAvatarUpdated } from '../components/UserPhotoAvatar';
 import { useAuth } from '../contexts/AuthContext';
 import { notify, confirm } from '../services/notification.service';
 
@@ -48,10 +49,43 @@ const MyAccountPage: React.FC = () => {
   const [communityId, setCommunityId] = useState('');
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
 
   const headers = () => ({
     headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
   });
+
+  const handleAvatarFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    setAvatarBusy(true);
+    try {
+      await axios.post(`${API_URL}/users/me/avatar`, formData, headers());
+      announceAvatarUpdated();
+      notify.success('Foto de perfil atualizada!');
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Erro ao enviar a foto');
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const handleRemoveAvatar = async () => {
+    setAvatarBusy(true);
+    try {
+      await axios.delete(`${API_URL}/users/me/avatar`, headers());
+      announceAvatarUpdated();
+      notify.success('Foto removida.');
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Erro ao remover a foto');
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
 
   const loadLinks = async () => {
     try {
@@ -187,12 +221,37 @@ const MyAccountPage: React.FC = () => {
         }}
       >
         <h3 style={{ margin: '0 0 0.8rem' }}>Dados</h3>
-        <p style={{ margin: '0.2rem 0' }}>
-          <strong>{user?.name}</strong> · {user?.email}
-        </p>
-        <p style={{ margin: '0.2rem 0', color: '#66788c' }}>
-          {ROLE_LABELS[user?.role ?? ''] ?? user?.role}
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <UserPhotoAvatar userId={user?.id} name={user?.name || user?.email || 'Usuário'} size={72} />
+          <div>
+            <p style={{ margin: '0.2rem 0' }}>
+              <strong>{user?.name}</strong> · {user?.email}
+            </p>
+            <p style={{ margin: '0.2rem 0', color: '#66788c' }}>
+              {ROLE_LABELS[user?.role ?? ''] ?? user?.role}
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <button
+                type="button"
+                className="btn-secondary"
+                disabled={avatarBusy}
+                onClick={() => avatarInputRef.current?.click()}
+              >
+                {avatarBusy ? 'Enviando…' : '📷 Trocar foto'}
+              </button>
+              <button type="button" className="btn-secondary" disabled={avatarBusy} onClick={() => void handleRemoveAvatar()}>
+                Remover foto
+              </button>
+            </div>
+            <input
+              type="file"
+              hidden
+              ref={avatarInputRef}
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => void handleAvatarFile(e)}
+            />
+          </div>
+        </div>
       </div>
 
       <div

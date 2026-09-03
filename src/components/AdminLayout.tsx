@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { avatarColor, initials } from './SaintAvatar';
+import UserPhotoAvatar from './UserPhotoAvatar';
 import './AdminLayout.css';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -74,9 +74,7 @@ const AdminLayout: React.FC = () => {
             title="Minha conta"
           >
             <div className="sidebar-user-top">
-              <div className="sidebar-user-avatar" style={{ background: avatarColor(displayName) }}>
-                {initials(displayName)}
-              </div>
+              <UserPhotoAvatar userId={user?.id} name={displayName} size={40} className="sidebar-user-avatar" />
               <div className="sidebar-user-info">
                 <span className="sidebar-user-name" title={displayName}>{displayName}</span>
                 <span className="sidebar-user-email" title={user?.email}>{user?.email}</span>
