@@ -2563,22 +2563,26 @@ const CatechesisPage: React.FC = () => {
     <div className="module-page">
       <div className="page-header">
         <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="catequese" /> Catequese</h1>
-        <div className="header-actions">
-          {tab === 'stages' ? (
-            <button className="btn-primary" onClick={() => setShowStageModal(true)}>+ Nova Etapa</button>
-          ) : (
-            <button className="btn-primary" onClick={() => setShowClassModal(true)}>+ Nova Turma</button>
-          )}
-        </div>
+        {isCoordinator && (
+          <div className="header-actions">
+            {tab === 'stages' ? (
+              <button className="btn-primary" onClick={() => setShowStageModal(true)}>+ Nova Etapa</button>
+            ) : (
+              <button className="btn-primary" onClick={() => setShowClassModal(true)}>+ Nova Turma</button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="module-tabs">
         <button className={`tab-btn ${tab === 'classes' ? 'active' : ''}`} onClick={() => setTab('classes')}>
-          Turmas ({classes.length})
+          {isCoordinator ? `Turmas (${classes.length})` : `Minhas turmas (${classes.length})`}
         </button>
-        <button className={`tab-btn ${tab === 'stages' ? 'active' : ''}`} onClick={() => setTab('stages')}>
-          Etapas ({stages.length})
-        </button>
+        {isCoordinator && (
+          <button className={`tab-btn ${tab === 'stages' ? 'active' : ''}`} onClick={() => setTab('stages')}>
+            Etapas ({stages.length})
+          </button>
+        )}
         {isCoordinator && (
           <button className={`tab-btn ${tab === 'panorama' ? 'active' : ''}`} onClick={openPanoramaTab}>
             Panorama
@@ -3199,7 +3203,13 @@ const CatechesisPage: React.FC = () => {
             ))}
           </div>
           )}
-          {classes.length === 0 && <div className="cate-empty">Nenhuma turma cadastrada — crie a primeira em “+ Nova Turma”.</div>}
+          {classes.length === 0 && (
+            <div className="cate-empty">
+              {isCoordinator
+                ? 'Nenhuma turma cadastrada — crie a primeira em “+ Nova Turma”.'
+                : 'Você ainda não está vinculado a nenhuma turma como catequista — fale com a coordenação da catequese.'}
+            </div>
+          )}
           {classes.length > 0 && classesForView.length === 0 && (
             <div className="cate-empty">
               {classesAttentionOnly
@@ -3245,35 +3255,41 @@ const CatechesisPage: React.FC = () => {
                       <span className="cate-chip__avatar">{initials(catechist.fullName)}</span>
                       {catechist.fullName}
                       <span className="cate-chip__role">{catechist.role}</span>
-                      <button
-                        className="cate-chip__remove"
-                        title="Remover da turma"
-                        onClick={() => handleRemoveCatechist(catechist.memberId, catechist.fullName)}
-                      >
-                        ×
-                      </button>
+                      {isCoordinator && (
+                        <button
+                          className="cate-chip__remove"
+                          title="Remover da turma"
+                          onClick={() => handleRemoveCatechist(catechist.memberId, catechist.fullName)}
+                        >
+                          ×
+                        </button>
+                      )}
                     </span>
                   ))}
-                  <button className="cate-btn cate-btn--ghost" onClick={() => void openCatechistModal()}>
-                    + Catequista
-                  </button>
+                  {isCoordinator && (
+                    <button className="cate-btn cate-btn--ghost" onClick={() => void openCatechistModal()}>
+                      + Catequista
+                    </button>
+                  )}
                 </div>
               )}
             </div>
 
             <div className="cate-toolbar">
               <div className="cate-toolbar__primary">
-                <button
-                  className="cate-btn cate-btn--primary"
-                  onClick={() => {
-                    // Sempre abre limpo — um "matricular mesmo assim" marcado num
-                    // cancelamento anterior não pode vazar para a próxima matrícula
-                    setEnrollForm({ memberId: '', waiveBaptism: false, overrideCapacity: false, unbaptized: false });
-                    setShowEnrollModal(true);
-                  }}
-                >
-                  + Matricular
-                </button>
+                {isCoordinator && (
+                  <button
+                    className="cate-btn cate-btn--primary"
+                    onClick={() => {
+                      // Sempre abre limpo — um "matricular mesmo assim" marcado num
+                      // cancelamento anterior não pode vazar para a próxima matrícula
+                      setEnrollForm({ memberId: '', waiveBaptism: false, overrideCapacity: false, unbaptized: false });
+                      setShowEnrollModal(true);
+                    }}
+                  >
+                    + Matricular
+                  </button>
+                )}
                 <button className="cate-btn cate-btn--primary" onClick={() => setShowSessionModal(true)}>
                   + Encontro (chamada)
                 </button>
@@ -3289,9 +3305,11 @@ const CatechesisPage: React.FC = () => {
                 <div className="cate-actiongroup">
                   <span className="cate-actiongroup__label">Turma</span>
                   <div className="cate-actiongroup__btns">
-                    <button className="cate-btn" onClick={openEditClass}>
-                      ✏️ Editar
-                    </button>
+                    {isCoordinator && (
+                      <button className="cate-btn" onClick={openEditClass}>
+                        ✏️ Editar
+                      </button>
+                    )}
                     <button
                       className="cate-btn"
                       onClick={() => {
@@ -3306,11 +3324,14 @@ const CatechesisPage: React.FC = () => {
                     <button className="cate-btn" onClick={() => void openTopicsModal()}>
                       📝 Planejar temas
                     </button>
-                    <button className="cate-btn" title="Quais documentos a turma pede na inscrição e se são obrigatórios" onClick={() => void openDocReqModal()}>
-                      📎 Docs da inscrição
-                    </button>
+                    {isCoordinator && (
+                      <button className="cate-btn" title="Quais documentos a turma pede na inscrição e se são obrigatórios" onClick={() => void openDocReqModal()}>
+                        📎 Docs da inscrição
+                      </button>
+                    )}
                   </div>
                 </div>
+                {isCoordinator && (
                 <div className="cate-actiongroup">
                   <span className="cate-actiongroup__label">Ciclo do ano</span>
                   <div className="cate-actiongroup__btns">
@@ -3325,24 +3346,27 @@ const CatechesisPage: React.FC = () => {
                     </button>
                   </div>
                 </div>
+                )}
                 <div className="cate-actiongroup">
                   <span className="cate-actiongroup__label">Registros</span>
                   <div className="cate-actiongroup__btns">
                     <button className="cate-btn" onClick={() => void openSentNotices()}>
                       ✉ Avisos enviados
                     </button>
-                    <button
-                      className="cate-btn"
-                      onClick={() => {
-                        // Sempre abre limpo — a matriz da turma anterior não pode
-                        // receber cliques (pagamento iria para a taxa errada)
-                        setClassFees([]);
-                        setShowFees(true);
-                        loadClassFees();
-                      }}
-                    >
-                      💰 Taxas
-                    </button>
+                    {isCoordinator && (
+                      <button
+                        className="cate-btn"
+                        onClick={() => {
+                          // Sempre abre limpo — a matriz da turma anterior não pode
+                          // receber cliques (pagamento iria para a taxa errada)
+                          setClassFees([]);
+                          setShowFees(true);
+                          loadClassFees();
+                        }}
+                      >
+                        💰 Taxas
+                      </button>
+                    )}
                     <button
                       className="cate-btn"
                       onClick={() => downloadPdf(`/catechesis/classes/${selectedClass.id}/roster.pdf`, `lista_${selectedClass.name.replace(/\s+/g, '_').toLowerCase()}.pdf`)}
@@ -3766,12 +3790,15 @@ const CatechesisPage: React.FC = () => {
                                           >
                                             📄 Declaração
                                           </button>
+                                          {isCoordinator && (
                                           <button
                                             className="cate-mini cate-mini--ok"
                                             onClick={() => handleComplete(student.enrollmentId, student.member.fullName)}
                                           >
                                             Concluir
                                           </button>
+                                          )}
+                                          {isCoordinator && (
                                           <select
                                             className="cate-select"
                                             // Controlado em "": o valor não fica preso após erro e a
@@ -3802,6 +3829,7 @@ const CatechesisPage: React.FC = () => {
                                               </optgroup>
                                             ))}
                                           </select>
+                                          )}
                                         </>
                                       )}
                                     </div>

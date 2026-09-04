@@ -83,6 +83,19 @@ const AdminLayout: React.FC = () => {
   }, [user?.role]);
   const modOn = (key: string) => isSystemAdmin || !disabledModules.has(key);
 
+  // Fiel/voluntário CATEQUISTA: o menu ganha "Catequese" (o backend lista só
+  // as turmas onde ele está na equipe e valida cada ação)
+  const isBaseRole = user?.role === 'FAITHFUL' || user?.role === 'VOLUNTEER';
+  const [isCatechist, setIsCatechist] = useState(false);
+  useEffect(() => {
+    if (!isBaseRole) return;
+    api
+      .get('/catechesis/my-classes')
+      .then((res) => setIsCatechist(Array.isArray(res.data) && res.data.length > 0))
+      .catch(() => setIsCatechist(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
   return (
     <div className="admin-layout">
       <aside className="sidebar">
@@ -156,6 +169,11 @@ const AdminLayout: React.FC = () => {
               <NavIcon name="escala" /> Escalas
             </NavLink>
           )}
+          {!canManageSchedules && (
+            <NavLink to="/admin/my-schedule" className="nav-link">
+              <NavIcon name="escala" /> Minha Escala
+            </NavLink>
+          )}
           {modOn('swaps') && (
             <NavLink to="/admin/swaps" className="nav-link">
               <NavIcon name="trocas-escala" /> Trocas de Escala
@@ -188,6 +206,11 @@ const AdminLayout: React.FC = () => {
           {isSystemAdmin && (
             <NavLink to="/admin/pastorals/global" className="nav-link">
               <NavIcon name="igreja" /> Pastorais Globais
+            </NavLink>
+          )}
+          {isCatechist && !isCoordination && modOn('catechesis') && (
+            <NavLink to="/admin/catechesis" className="nav-link highlight">
+              <NavIcon name="catequese" /> Catequese (minha turma)
             </NavLink>
           )}
           {isCoordination && (

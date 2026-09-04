@@ -12,6 +12,7 @@ import CommunitiesPage from './pages/CommunitiesPage';
 import MembersPage from './pages/MembersPage';
 import MyAccountPage from './pages/MyAccountPage';
 import SystemSettingsPage from './pages/SystemSettingsPage';
+import MySchedulePage from './pages/MySchedulePage';
 import EventsPage from './pages/EventsPage';
 import UsersPage from './pages/UsersPage';
 import SecurityPage from './pages/SecurityPage';
@@ -188,8 +189,11 @@ const App: React.FC = () => {
             } />
 
             {/* Módulos das Fases 3–4 */}
+            <Route path="my-schedule" element={<MySchedulePage />} />
             <Route path="catechesis" element={
-              <RoleProtectedRoute allowedRoles={COORDINATION_ROLES}>
+              // Fiel/voluntário CATEQUISTA também entra: a página se limita às
+              // turmas dele (backend restringe a lista e valida cada ação)
+              <RoleProtectedRoute allowedRoles={[...COORDINATION_ROLES, 'VOLUNTEER', 'FAITHFUL']}>
                 <CatechesisPage />
               </RoleProtectedRoute>
             } />
