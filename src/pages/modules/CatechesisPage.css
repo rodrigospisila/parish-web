@@ -1,6 +1,10 @@
 /* Catequese — design dedicado (prefixo .cate- para não vazar aos outros módulos) */
 
-.cate-root {
+/* Os overlays de tela cheia (board de distribuição e folha de presença) são
+   renderizados FORA do .cate-root — sem os tokens aqui, os botões primários
+   ficavam sem fundo (invisíveis) */
+.cate-root,
+.cate-board-overlay {
   --cate-primary: #2563eb;
   --cate-primary-soft: #eff6ff;
   --cate-ink: #0f172a;
