@@ -132,6 +132,9 @@ const EventsPage: React.FC = () => {
   const { user: currentUser } = useAuth();
   const canDragEvents = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR']
     .includes(currentUser?.role ?? '');
+  // Fiel/voluntário: agenda somente leitura (criar/editar/excluir é da
+  // coordenação de pastoral para cima — o backend já barra, a UI esconde)
+  const canManageEvents = canDragEvents;
 
   // Mini-calendário lateral: data clicada navega o calendário principal
   const [miniDate, setMiniDate] = useState<Date | null>(null);
@@ -501,9 +504,11 @@ const EventsPage: React.FC = () => {
     <div className="events-page">
       <div className="events-header">
         <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="calendario-liturgico" /> Agenda de Eventos</h1>
-        <button className="btn-new-event" onClick={openNewEventModal}>
-          + Novo Evento
-        </button>
+        {canManageEvents && (
+          <button className="btn-new-event" onClick={openNewEventModal}>
+            + Novo Evento
+          </button>
+        )}
       </div>
 
       <div className="events-controls">
@@ -676,7 +681,7 @@ const EventsPage: React.FC = () => {
         <div className="events-table-container entity-table">
           <div className="table-actions">
             <div className="bulk-actions" style={selectedEvents.length === 0 ? { display: 'none' } : undefined}>
-              {selectedEvents.length > 0 && (
+              {canManageEvents && selectedEvents.length > 0 && (
                 <>
                   <span className="selected-count">{selectedEvents.length} selecionado(s)</span>
                   <button className="btn-bulk-delete" onClick={handleBulkDelete}>
@@ -807,12 +812,16 @@ const EventsPage: React.FC = () => {
                     {event.maxParticipants && ` / ${event.maxParticipants}`}
                   </td>
                   <td className="actions-cell">
-                    <button className="entity-icon-btn" onClick={() => handleEdit(event)} title="Editar">
-                      ✏️
-                    </button>
-                    <button className="entity-icon-btn danger" onClick={() => handleDelete(event.id)} title="Excluir">
-                      🗑️
-                    </button>
+                    {canManageEvents && (
+                      <>
+                        <button className="entity-icon-btn" onClick={() => handleEdit(event)} title="Editar">
+                          ✏️
+                        </button>
+                        <button className="entity-icon-btn danger" onClick={() => handleDelete(event.id)} title="Excluir">
+                          🗑️
+                        </button>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -952,17 +961,19 @@ const EventsPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="event-detail-actions">
-              <button className="btn-edit" onClick={() => handleEdit(selectedEvent)}>
-                Editar
-              </button>
-              <button className="btn-duplicate" onClick={handleDuplicateClick}>
-                Duplicar
-              </button>
-              <button className="btn-delete" onClick={() => handleDelete(selectedEvent.id)}>
-                Excluir
-              </button>
-            </div>
+            {canManageEvents && (
+              <div className="event-detail-actions">
+                <button className="btn-edit" onClick={() => handleEdit(selectedEvent)}>
+                  Editar
+                </button>
+                <button className="btn-duplicate" onClick={handleDuplicateClick}>
+                  Duplicar
+                </button>
+                <button className="btn-delete" onClick={() => handleDelete(selectedEvent.id)}>
+                  Excluir
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
