@@ -3,6 +3,7 @@ import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify, confirm } from '../../services/notification.service';
 import SearchSelect from '../../components/SearchSelect';
+import { DateInput, TimeInput } from '../../components/DateInput';
 import { useAuth } from '../../contexts/AuthContext';
 import './ModulePages.css';
 
@@ -551,7 +552,7 @@ const FixedSchedulePage: React.FC = () => {
                 </div>
                 <div className="form-group">
                   <label>Horário (HH:MM) *</label>
-                  <input type="time" required value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value })} />
+                  <TimeInput required value={form.time} onChange={(value) => setForm({ ...form, time: value })} />
                 </div>
               </div>
 
@@ -567,7 +568,7 @@ const FixedSchedulePage: React.FC = () => {
               {form.isSpecial ? (
                 <div className="form-group">
                   <label>Data especial *</label>
-                  <input type="date" required value={form.specialDate} onChange={(e) => setForm({ ...form, specialDate: e.target.value })} />
+                  <DateInput required value={form.specialDate} onChange={(value) => setForm({ ...form, specialDate: value })} />
                 </div>
               ) : (
                 <div className="form-group">
@@ -750,7 +751,7 @@ const FixedSchedulePage: React.FC = () => {
             </p>
             <div className="form-group">
               <label>Data da celebração *</label>
-              <input type="date" value={genDate} onChange={(e) => setGenDate(e.target.value)} />
+              <DateInput value={genDate} onChange={(value) => setGenDate(value)} />
             </div>
             <p style={{ fontSize: '0.85rem', color: '#666' }}>
               As pastorais vinculadas ({(genTarget.pastorals ?? []).length}) serão copiadas para a escala.

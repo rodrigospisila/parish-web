@@ -5,6 +5,7 @@ import { notify, confirm } from '../services/notification.service';
 import SacramentsModal from '../components/SacramentsModal';
 import SaintAvatar, { avatarColor, initials } from '../components/SaintAvatar';
 import SearchSelect from '../components/SearchSelect';
+import { DateInput } from '../components/DateInput';
 import { usePatronSaints } from '../components/PatronSaintsManager';
 import { useAuth } from '../contexts/AuthContext';
 import './MembersPage.css';
@@ -1000,10 +1001,9 @@ const MembersPage: React.FC = () => {
 
                   <div className="form-group">
                     <label>Data de Nascimento</label>
-                    <input
-                      type="date"
+                    <DateInput
                       value={formData.birthDate}
-                      onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
+                      onChange={(value) => setFormData({ ...formData, birthDate: value })}
                     />
                   </div>
                 </div>

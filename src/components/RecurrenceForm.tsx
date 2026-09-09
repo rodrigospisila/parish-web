@@ -1,4 +1,5 @@
 import React from 'react';
+import { DateInput } from './DateInput';
 import './RecurrenceForm.css';
 
 interface RecurrenceFormProps {
@@ -114,7 +115,7 @@ const RecurrenceForm: React.FC<RecurrenceFormProps> = ({
 
       <div className="form-group">
         <label>Data de término</label>
-        <input type="date" value={recurrenceEndDate} onChange={(event) => onChange('recurrenceEndDate', event.target.value)} />
+        <DateInput value={recurrenceEndDate} onChange={(value) => onChange('recurrenceEndDate', value)} />
       </div>
 
       <div className="recurrence-summary">

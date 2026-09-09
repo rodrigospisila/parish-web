@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import TitleIcon from '../../components/TitleIcon';
+import { DateInput } from '../../components/DateInput';
 import api, { getErrorMessage } from '../../services/api';
 import { notify, confirm } from '../../services/notification.service';
 import './ModulePages.css';
@@ -285,7 +286,7 @@ const DocumentsPage: React.FC = () => {
               </div>
               <div className="form-group">
                 <label>Válido até (opcional)</label>
-                <input type="date" value={form.validUntil} onChange={(e) => setForm({ ...form, validUntil: e.target.value })} />
+                <DateInput value={form.validUntil} onChange={(value) => setForm({ ...form, validUntil: value })} />
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn-cancel" onClick={() => setShowModal(false)}>Cancelar</button>

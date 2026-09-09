@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../../../services/api';
 import { notify } from '../../../services/notification.service';
+import { DateInput } from '../../../components/DateInput';
 import { formatBRL, friendlyError, providerStatusLabel } from './financeShared';
 
 /**
@@ -446,7 +447,7 @@ const GuestsTab: React.FC<GuestsTabProps> = ({ parishId, onDataChanged }) => {
               <div className="form-row">
                 <div className="form-group">
                   <label htmlFor="guest-confirm-date">Data em que caiu no extrato *</label>
-                  <input id="guest-confirm-date" type="date" required max={todayIso()} value={confirmForm.date} onChange={(e) => setConfirmForm({ ...confirmForm, date: e.target.value })} />
+                  <DateInput id="guest-confirm-date" required max={todayIso()} value={confirmForm.date} onChange={(value) => setConfirmForm({ ...confirmForm, date: value })} />
                 </div>
                 <div className="form-group">
                   <label htmlFor="guest-confirm-amount">Valor que caiu (R$) *</label>

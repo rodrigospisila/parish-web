@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../../../services/api';
 import { notify } from '../../../services/notification.service';
+import { DateInput } from '../../../components/DateInput';
 import { downloadBlob, formatBRL, friendlyError, httpStatus, plural } from './financeShared';
 
 /**
@@ -729,7 +730,7 @@ const CampaignsTab: React.FC<CampaignsTabProps> = ({ communities, parishIdParam,
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.82rem', color: '#555' }}>
                   Data *
-                  <input type="date" required value={entryForm.date} onChange={(e) => setEntryForm({ ...entryForm, date: e.target.value })} />
+                  <DateInput required value={entryForm.date} onChange={(value) => setEntryForm({ ...entryForm, date: value })} />
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.82rem', color: '#555' }}>
                   Meio
@@ -945,11 +946,11 @@ const CampaignsTab: React.FC<CampaignsTabProps> = ({ communities, parishIdParam,
               <div className="form-row">
                 <div className="form-group">
                   <label htmlFor="campaign-starts">Início</label>
-                  <input id="campaign-starts" type="date" value={form.startsAt} onChange={(e) => setForm({ ...form, startsAt: e.target.value })} />
+                  <DateInput id="campaign-starts" value={form.startsAt} onChange={(value) => setForm({ ...form, startsAt: value })} />
                 </div>
                 <div className="form-group">
                   <label htmlFor="campaign-ends">Fim</label>
-                  <input id="campaign-ends" type="date" min={form.startsAt || undefined} value={form.endsAt} onChange={(e) => setForm({ ...form, endsAt: e.target.value })} />
+                  <DateInput id="campaign-ends" min={form.startsAt || undefined} value={form.endsAt} onChange={(value) => setForm({ ...form, endsAt: value })} />
                 </div>
               </div>
               <label className="form-check">

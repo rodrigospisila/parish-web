@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import TitleIcon from '../../components/TitleIcon';
 import RoomSelect from '../../components/RoomSelect';
+import { DateInput, TimeInput } from '../../components/DateInput';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
 import { useAuth } from '../../contexts/AuthContext';
@@ -4052,7 +4053,7 @@ const CatechesisPage: React.FC = () => {
                 </div>
                 <div className="form-group">
                   <label>Horário</label>
-                  <input type="time" value={classForm.time} onChange={(e) => setClassForm({ ...classForm, time: e.target.value })} />
+                  <TimeInput value={classForm.time} onChange={(value) => setClassForm({ ...classForm, time: value })} />
                 </div>
               </div>
               <div className="form-row">
@@ -4180,7 +4181,7 @@ const CatechesisPage: React.FC = () => {
                 </div>
                 <div className="form-group">
                   <label>Horário</label>
-                  <input type="time" value={editClassForm.time} onChange={(e) => setEditClassForm({ ...editClassForm, time: e.target.value })} />
+                  <TimeInput value={editClassForm.time} onChange={(value) => setEditClassForm({ ...editClassForm, time: value })} />
                 </div>
               </div>
               <div className="form-group">
@@ -4208,18 +4209,16 @@ const CatechesisPage: React.FC = () => {
                 <div className="form-row">
                   <div className="form-group">
                     <label>Abrem em (opcional)</label>
-                    <input
-                      type="date"
+                    <DateInput
                       value={editClassForm.enrollmentOpensAt}
-                      onChange={(e) => setEditClassForm({ ...editClassForm, enrollmentOpensAt: e.target.value })}
+                      onChange={(value) => setEditClassForm({ ...editClassForm, enrollmentOpensAt: value })}
                     />
                   </div>
                   <div className="form-group">
                     <label>Encerram em (opcional)</label>
-                    <input
-                      type="date"
+                    <DateInput
                       value={editClassForm.enrollmentClosesAt}
-                      onChange={(e) => setEditClassForm({ ...editClassForm, enrollmentClosesAt: e.target.value })}
+                      onChange={(value) => setEditClassForm({ ...editClassForm, enrollmentClosesAt: value })}
                     />
                   </div>
                 </div>
@@ -4311,11 +4310,11 @@ const CatechesisPage: React.FC = () => {
                   </div>
                   <div className="form-group">
                     <label>Abrem em</label>
-                    <input type="date" value={windowForm.opensAt} onChange={(e) => setWindowForm({ ...windowForm, opensAt: e.target.value })} />
+                    <DateInput value={windowForm.opensAt} onChange={(value) => setWindowForm({ ...windowForm, opensAt: value })} />
                   </div>
                   <div className="form-group">
                     <label>Encerram em</label>
-                    <input type="date" value={windowForm.closesAt} onChange={(e) => setWindowForm({ ...windowForm, closesAt: e.target.value })} />
+                    <DateInput value={windowForm.closesAt} onChange={(value) => setWindowForm({ ...windowForm, closesAt: value })} />
                   </div>
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
@@ -4432,7 +4431,7 @@ const CatechesisPage: React.FC = () => {
             <form onSubmit={handleCreateSession}>
               <div className="form-group">
                 <label>Data *</label>
-                <input type="date" required value={sessionForm.date} onChange={(e) => setSessionForm({ ...sessionForm, date: e.target.value })} />
+                <DateInput required value={sessionForm.date} onChange={(value) => setSessionForm({ ...sessionForm, date: value })} />
               </div>
               <div className="form-group">
                 <label>Tema</label>
@@ -4880,7 +4879,7 @@ const CatechesisPage: React.FC = () => {
                 </div>
                 <div className="form-group">
                   <label>Vencimento</label>
-                  <input type="date" value={feeForm.dueDate} onChange={(e) => setFeeForm({ ...feeForm, dueDate: e.target.value })} />
+                  <DateInput value={feeForm.dueDate} onChange={(value) => setFeeForm({ ...feeForm, dueDate: value })} />
                 </div>
               </div>
               <button type="submit" className="btn-small success">+ Criar taxa (avisa as famílias)</button>
@@ -4987,11 +4986,11 @@ const CatechesisPage: React.FC = () => {
             <div className="form-row">
               <div className="form-group">
                 <label>Início *</label>
-                <input type="date" value={agendaRange.from} onChange={(e) => { setAgendaRange({ ...agendaRange, from: e.target.value }); setAgendaDates({}); }} />
+                <DateInput value={agendaRange.from} onChange={(value) => { setAgendaRange({ ...agendaRange, from: value }); setAgendaDates({}); }} />
               </div>
               <div className="form-group">
                 <label>Fim *</label>
-                <input type="date" value={agendaRange.to} onChange={(e) => { setAgendaRange({ ...agendaRange, to: e.target.value }); setAgendaDates({}); }} />
+                <DateInput value={agendaRange.to} onChange={(value) => { setAgendaRange({ ...agendaRange, to: value }); setAgendaDates({}); }} />
               </div>
             </div>
             <button type="button" className="btn-small" onClick={buildAgendaPreview}>Gerar prévia</button>
@@ -5541,7 +5540,7 @@ const CatechesisPage: React.FC = () => {
                 </div>
                 <div className="form-group">
                   <label>Horário</label>
-                  <input type="time" value={rolloverForm.time} onChange={(e) => setRolloverForm({ ...rolloverForm, time: e.target.value })} />
+                  <TimeInput value={rolloverForm.time} onChange={(value) => setRolloverForm({ ...rolloverForm, time: value })} />
                 </div>
               </div>
               <div className="form-row">
@@ -5672,11 +5671,10 @@ const CatechesisPage: React.FC = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Data da conclusão *</label>
-                  <input
-                    type="date"
+                  <DateInput
                     required
                     value={batchCompleteForm.date}
-                    onChange={(e) => setBatchCompleteForm({ ...batchCompleteForm, date: e.target.value })}
+                    onChange={(value) => setBatchCompleteForm({ ...batchCompleteForm, date: value })}
                   />
                 </div>
                 <div className="form-group">

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
+import { DateTimeInput } from '../../components/DateInput';
 import './ModulePages.css';
 
 interface Room {
@@ -295,11 +296,11 @@ const RoomsPage: React.FC = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Início *</label>
-                  <input type="datetime-local" required value={reserveForm.startTime} onChange={(e) => setReserveForm({ ...reserveForm, startTime: e.target.value })} />
+                  <DateTimeInput required value={reserveForm.startTime} onChange={(value) => setReserveForm({ ...reserveForm, startTime: value })} />
                 </div>
                 <div className="form-group">
                   <label>Fim *</label>
-                  <input type="datetime-local" required value={reserveForm.endTime} onChange={(e) => setReserveForm({ ...reserveForm, endTime: e.target.value })} />
+                  <DateTimeInput required value={reserveForm.endTime} onChange={(value) => setReserveForm({ ...reserveForm, endTime: value })} />
                 </div>
               </div>
               <p style={{ color: '#777', fontSize: '0.85rem' }}>

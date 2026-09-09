@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import TitleIcon from '../../components/TitleIcon';
+import { DateInput } from '../../components/DateInput';
 import api, { getErrorMessage } from '../../services/api';
 import { notify, confirm } from '../../services/notification.service';
 import './ModulePages.css';
@@ -417,7 +418,7 @@ const PlanningPage: React.FC = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Prazo</label>
-                  <input type="date" value={actionForm.dueDate} onChange={(e) => setActionForm({ ...actionForm, dueDate: e.target.value })} />
+                  <DateInput value={actionForm.dueDate} onChange={(value) => setActionForm({ ...actionForm, dueDate: value })} />
                 </div>
                 <div className="form-group">
                   <label>Responsável</label>

@@ -2,6 +2,7 @@
 import axios from 'axios';
 import TitleIcon from '../components/TitleIcon';
 import RoomSelect from '../components/RoomSelect';
+import { DateInput, TimeInput, DateTimeInput } from '../components/DateInput';
 import { notify, confirm } from '../services/notification.service';
 import { useAuth } from '../contexts/AuthContext';
 import { getEventTypeLabel } from '../constants/eventOptions';
@@ -2477,14 +2478,14 @@ const SchedulesPage: React.FC = () => {
             <div className="coordinator-period">
               <label className="coordinator-date-field">
                 <span>De</span>
-                <input type="date" value={overviewFrom} onChange={(event) => setOverviewFrom(event.target.value)} />
+                <DateInput value={overviewFrom} onChange={(value) => setOverviewFrom(value)} />
               </label>
               <span className="coordinator-period-sep" aria-hidden="true">
                 →
               </span>
               <label className="coordinator-date-field">
                 <span>Até</span>
-                <input type="date" value={overviewTo} onChange={(event) => setOverviewTo(event.target.value)} />
+                <DateInput value={overviewTo} onChange={(value) => setOverviewTo(value)} />
               </label>
               <button className="overview-action-button is-primary" onClick={fetchOverview}>
                 Aplicar
@@ -3404,11 +3405,10 @@ const SchedulesPage: React.FC = () => {
 
               <div className="form-group">
                 <label>Data e hora</label>
-                <input
-                  type="datetime-local"
+                <DateTimeInput
                   required
                   value={createForm.date}
-                  onChange={(event) => setCreateForm({ ...createForm, date: event.target.value })}
+                  onChange={(value) => setCreateForm({ ...createForm, date: value })}
                 />
               </div>
 
@@ -4400,28 +4400,25 @@ const SchedulesPage: React.FC = () => {
               </div>
               <div className="form-group">
                 <label>Data *</label>
-                <input
-                  type="datetime-local"
+                <DateTimeInput
                   required
                   value={standaloneForm.date}
-                  onChange={(event) => setStandaloneForm({ ...standaloneForm, date: event.target.value })}
+                  onChange={(value) => setStandaloneForm({ ...standaloneForm, date: value })}
                 />
               </div>
               <div className="form-row" style={{ display: 'flex', gap: '0.75rem' }}>
                 <div className="form-group" style={{ flex: 1 }}>
                   <label>Início (HH:MM)</label>
-                  <input
-                    type="time"
+                  <TimeInput
                     value={standaloneForm.startTime}
-                    onChange={(event) => setStandaloneForm({ ...standaloneForm, startTime: event.target.value })}
+                    onChange={(value) => setStandaloneForm({ ...standaloneForm, startTime: value })}
                   />
                 </div>
                 <div className="form-group" style={{ flex: 1 }}>
                   <label>Fim (HH:MM)</label>
-                  <input
-                    type="time"
+                  <TimeInput
                     value={standaloneForm.endTime}
-                    onChange={(event) => setStandaloneForm({ ...standaloneForm, endTime: event.target.value })}
+                    onChange={(value) => setStandaloneForm({ ...standaloneForm, endTime: value })}
                   />
                 </div>
               </div>

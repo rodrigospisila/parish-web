@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { DateInput } from './DateInput';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -160,12 +161,11 @@ const SacramentsModal: React.FC<Props> = ({ memberId, memberName, onClose }) => 
             </div>
             <div className="form-group">
               <label htmlFor="sac-date">Data</label>
-              <input
+              <DateInput
                 id="sac-date"
-                type="date"
                 required
                 value={form.date}
-                onChange={(e) => setForm({ ...form, date: e.target.value })}
+                onChange={(value) => setForm({ ...form, date: value })}
               />
             </div>
           </div>

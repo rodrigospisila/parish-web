@@ -5,6 +5,7 @@ import { notify } from '../services/notification.service';
 import { applyDuration, generateRecurrenceDates, getEventDuration } from '../utils/recurrenceHelper';
 import RecurrenceForm from './RecurrenceForm';
 import RoomSelect from './RoomSelect';
+import { DateTimeInput } from './DateInput';
 import { useAuth } from '../contexts/AuthContext';
 import './CreateEventModal.css';
 
@@ -492,20 +493,18 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
                 <div className="form-row">
                   <div className="form-group">
                     <label>Data/hora início *</label>
-                    <input
-                      type="datetime-local"
+                    <DateTimeInput
                       required
                       value={formData.startDate}
-                      onChange={(event) => setFormData({ ...formData, startDate: event.target.value })}
+                      onChange={(value) => setFormData({ ...formData, startDate: value })}
                     />
                   </div>
 
                   <div className="form-group">
                     <label>Data/hora fim</label>
-                    <input
-                      type="datetime-local"
+                    <DateTimeInput
                       value={formData.endDate}
-                      onChange={(event) => setFormData({ ...formData, endDate: event.target.value })}
+                      onChange={(value) => setFormData({ ...formData, endDate: value })}
                     />
                   </div>
                 </div>

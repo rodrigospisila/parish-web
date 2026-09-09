@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import TitleIcon from '../../components/TitleIcon';
+import { DateInput } from '../../components/DateInput';
 import axios from 'axios';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
@@ -369,7 +370,7 @@ const VisitationPage: React.FC = () => {
             <form onSubmit={handleRegisterVisit}>
               <div className="form-group">
                 <label>Data da visita *</label>
-                <input type="date" required value={visitForm.date} onChange={(e) => setVisitForm({ ...visitForm, date: e.target.value })} />
+                <DateInput required value={visitForm.date} onChange={(value) => setVisitForm({ ...visitForm, date: value })} />
               </div>
               <div className="form-group">
                 <label>Visitadores</label>

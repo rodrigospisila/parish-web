@@ -4,6 +4,7 @@ import api from '../../services/api';
 import axios from 'axios';
 import { formatDate, formatDateTime } from '../../utils/dateFormat';
 import RoomSelect from '../../components/RoomSelect';
+import { DateInput, TimeInput, DateTimeInput } from '../../components/DateInput';
 import { notify, confirm as confirmDialog } from '../../services/notification.service';
 import './PastoralsPage.css';
 
@@ -1570,11 +1571,10 @@ const CommunityPastoralDetailsPage: React.FC = () => {
             </div>
             <div className="form-group">
               <label>Data e hora *</label>
-              <input
-                type="datetime-local"
+              <DateTimeInput
                 value={meetingFormData.date}
-                onChange={(event) =>
-                  setMeetingFormData({ ...meetingFormData, date: event.target.value })
+                onChange={(value) =>
+                  setMeetingFormData({ ...meetingFormData, date: value })
                 }
                 required
               />
@@ -1629,22 +1629,20 @@ const CommunityPastoralDetailsPage: React.FC = () => {
             </div>
             <div className="form-group">
               <label>Data de início *</label>
-              <input
-                type="date"
+              <DateInput
                 value={activityFormData.startDate}
-                onChange={(event) =>
-                  setActivityFormData({ ...activityFormData, startDate: event.target.value })
+                onChange={(value) =>
+                  setActivityFormData({ ...activityFormData, startDate: value })
                 }
                 required
               />
             </div>
             <div className="form-group">
               <label>Data de término</label>
-              <input
-                type="date"
+              <DateInput
                 value={activityFormData.endDate}
-                onChange={(event) =>
-                  setActivityFormData({ ...activityFormData, endDate: event.target.value })
+                onChange={(value) =>
+                  setActivityFormData({ ...activityFormData, endDate: value })
                 }
               />
             </div>
@@ -1795,11 +1793,10 @@ const CommunityPastoralDetailsPage: React.FC = () => {
             </div>
             <div className="form-group">
               <label>Horário da reunião</label>
-              <input
-                type="time"
+              <TimeInput
                 value={editFormData.meetingTime}
-                onChange={(event) =>
-                  setEditFormData({ ...editFormData, meetingTime: event.target.value })
+                onChange={(value) =>
+                  setEditFormData({ ...editFormData, meetingTime: value })
                 }
               />
             </div>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import TitleIcon from '../components/TitleIcon';
+import { DateInput } from '../components/DateInput';
 import api, { getErrorMessage } from '../services/api';
 import {
   actionLabel,
@@ -160,22 +161,20 @@ const AuditPage: React.FC = () => {
         />
         <label className="audit-date-field">
           De
-          <input
-            type="date"
+          <DateInput
             className="filter-input"
             value={form.from}
             max={form.to || undefined}
-            onChange={(e) => updateForm('from', e.target.value)}
+            onChange={(value) => updateForm('from', value)}
           />
         </label>
         <label className="audit-date-field">
           Até
-          <input
-            type="date"
+          <DateInput
             className="filter-input"
             value={form.to}
             min={form.from || undefined}
-            onChange={(e) => updateForm('to', e.target.value)}
+            onChange={(value) => updateForm('to', value)}
           />
         </label>
         <select

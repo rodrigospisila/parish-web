@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../../services/api';
 import { notify } from '../../../services/notification.service';
+import { DateInput } from '../../../components/DateInput';
 import { downloadBlob, formatBRL, friendlyError } from './financeShared';
 import type { Campaign } from './CampaignsTab';
 
@@ -524,7 +525,7 @@ const PresentialTab: React.FC<PresentialTabProps> = ({ parishIdParam, onDataChan
               </label>
               <label style={fieldStyle}>
                 Data *
-                <input style={inputStyle} type="date" required max={todayIso()} value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
+                <DateInput style={inputStyle} required max={todayIso()} value={form.date} onChange={(value) => setForm({ ...form, date: value })} />
               </label>
               <label style={fieldStyle}>
                 Campanha (opcional)

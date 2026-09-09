@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import TitleIcon from '../../components/TitleIcon';
+import { DateInput } from '../../components/DateInput';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
 import './ModulePages.css';
@@ -274,7 +275,7 @@ const SacramentProcessesPage: React.FC = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Data prevista</label>
-                  <input type="date" value={createForm.scheduledDate} onChange={(e) => setCreateForm({ ...createForm, scheduledDate: e.target.value })} />
+                  <DateInput value={createForm.scheduledDate} onChange={(value) => setCreateForm({ ...createForm, scheduledDate: value })} />
                 </div>
                 <div className="form-group">
                   <label>Celebrante</label>
@@ -358,7 +359,7 @@ const SacramentProcessesPage: React.FC = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Data da celebração</label>
-                  <input type="date" value={celebrateForm.date} onChange={(e) => setCelebrateForm({ ...celebrateForm, date: e.target.value })} />
+                  <DateInput value={celebrateForm.date} onChange={(value) => setCelebrateForm({ ...celebrateForm, date: value })} />
                 </div>
                 <div className="form-group">
                   <label>Ministro</label>

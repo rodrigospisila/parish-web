@@ -5,6 +5,7 @@ import axios from 'axios';
 import { useAuth } from '../../contexts/AuthContext';
 import { notify, confirm } from '../../services/notification.service';
 import { initials } from '../../components/SaintAvatar';
+import { DateInput } from '../../components/DateInput';
 import './PastoralsPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -425,10 +426,9 @@ const CommunityPastoralsPage: React.FC = () => {
               <div className="form-row">
                 <div className="form-group">
                   <label>Data de Fundação</label>
-                  <input
-                    type="date"
+                  <DateInput
                     value={formData.foundedAt}
-                    onChange={(e) => setFormData({ ...formData, foundedAt: e.target.value })}
+                    onChange={(value) => setFormData({ ...formData, foundedAt: value })}
                   />
                 </div>
 

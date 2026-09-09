@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import TitleIcon from '../../components/TitleIcon';
+import { DateInput, MonthInput } from '../../components/DateInput';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
 import { useAuth } from '../../contexts/AuthContext';
@@ -900,8 +901,8 @@ const FinancePage: React.FC = () => {
               <option value="">Todo o escopo</option>
               {communities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-            <input type="date" className="filter-input" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} />
-            <input type="date" className="filter-input" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} />
+            <DateInput className="filter-input" value={filters.from} onChange={(value) => setFilters({ ...filters, from: value })} />
+            <DateInput className="filter-input" value={filters.to} onChange={(value) => setFilters({ ...filters, to: value })} />
           </div>
 
           {summary && (
@@ -1363,7 +1364,7 @@ const FinancePage: React.FC = () => {
 
           <h4 style={{ color: '#555', textTransform: 'uppercase', fontSize: '0.9rem', marginTop: '1.6rem' }}>Relatório do mês por comunidade</h4>
           <div className="filters-bar">
-            <input type="month" className="filter-input" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} />
+            <MonthInput className="filter-input" value={reportMonth} onChange={(value) => setReportMonth(value)} />
             <select className="filter-select" value={reportCommunity} onChange={(e) => setReportCommunity(e.target.value)}>
               <option value="">Todas as comunidades do escopo</option>
               {communities.map((c) => (
@@ -1479,7 +1480,7 @@ const FinancePage: React.FC = () => {
                   <div className="form-row">
                     <div className="form-group">
                       <label>Data em que caiu no extrato *</label>
-                      <input type="date" required value={confirmForm.date} onChange={(e) => setConfirmForm({ ...confirmForm, date: e.target.value })} />
+                      <DateInput required value={confirmForm.date} onChange={(value) => setConfirmForm({ ...confirmForm, date: value })} />
                     </div>
                     <div className="form-group">
                       <label>Nº no extrato (opcional)</label>
@@ -1494,7 +1495,7 @@ const FinancePage: React.FC = () => {
                       </div>
                       <div className="form-group">
                         <label>Mês de referência</label>
-                        <input type="month" value={confirmForm.referenceMonth} onChange={(e) => setConfirmForm({ ...confirmForm, referenceMonth: e.target.value })} />
+                        <MonthInput value={confirmForm.referenceMonth} onChange={(value) => setConfirmForm({ ...confirmForm, referenceMonth: value })} />
                       </div>
                     </div>
                   )}
@@ -1608,7 +1609,7 @@ const FinancePage: React.FC = () => {
           <div className="filters">
             <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#555' }}>
               Mês de referência:
-              <input type="month" className="filter-input" value={referenceMonth} onChange={(e) => setReferenceMonth(e.target.value)} />
+              <MonthInput className="filter-input" value={referenceMonth} onChange={(value) => setReferenceMonth(value)} />
             </label>
           </div>
 
@@ -1687,7 +1688,7 @@ const FinancePage: React.FC = () => {
                 </div>
                 <div className="form-group">
                   <label>Data *</label>
-                  <input type="date" required value={txForm.date} onChange={(e) => setTxForm({ ...txForm, date: e.target.value })} />
+                  <DateInput required value={txForm.date} onChange={(value) => setTxForm({ ...txForm, date: value })} />
                 </div>
               </div>
               {needsParishForTx && (
@@ -1798,13 +1799,13 @@ const FinancePage: React.FC = () => {
                 </div>
                 <div className="form-group">
                   <label>Data *</label>
-                  <input type="date" required value={contributionForm.date} onChange={(e) => setContributionForm({ ...contributionForm, date: e.target.value })} />
+                  <DateInput required value={contributionForm.date} onChange={(value) => setContributionForm({ ...contributionForm, date: value })} />
                 </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
                   <label>Mês de referência *</label>
-                  <input type="month" required value={contributionForm.referenceMonth} onChange={(e) => setContributionForm({ ...contributionForm, referenceMonth: e.target.value })} />
+                  <MonthInput required value={contributionForm.referenceMonth} onChange={(value) => setContributionForm({ ...contributionForm, referenceMonth: value })} />
                 </div>
                 <div className="form-group">
                   <label>Forma *</label>

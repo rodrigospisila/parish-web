@@ -1,0 +1,93 @@
+/* Campos de data/hora no formato brasileiro (DateInput / TimeInput / MonthInput / DateTimeInput) */
+.date-br,
+.time-br {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0.3rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.date-br > input[type='text'],
+.time-br > input[type='text'] {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+.date-br.is-invalid > input[type='text'],
+.time-br.is-invalid > input[type='text'] {
+  border-color: #c53b42 !important;
+  background: #fff5f5;
+}
+
+/* Ícone do calendário: o input nativo fica invisível por cima, então o clique
+   abre o seletor do navegador sem mostrar o formato dele no campo */
+.date-br__pick {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2.1rem;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  background: #f5f7fa;
+  font-size: 0.95rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.date-br__pick:hover {
+  background: #eaf4ff;
+  border-color: #0a84ff;
+}
+
+.date-br__pick > input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.date-br__pick > input:disabled {
+  cursor: not-allowed;
+}
+
+.time-br__hint {
+  position: absolute;
+  right: 0.55rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #7b8794;
+  pointer-events: none;
+}
+
+.time-br > input[type='text'] {
+  padding-right: 2.4rem !important;
+}
+
+.datetime-br {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.datetime-br > .date-br {
+  flex: 1 1 60%;
+}
+
+.datetime-br > .time-br {
+  flex: 1 1 40%;
+  min-width: 6.5rem;
+}
