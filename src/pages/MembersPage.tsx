@@ -28,6 +28,7 @@ interface Member {
   birthDate?: string;
   maritalStatus?: 'SINGLE' | 'MARRIED' | 'DIVORCED' | 'WIDOWED' | 'COMMON_LAW_MARRIAGE';
   occupation?: string;
+  notes?: string;
   email?: string;
   phone?: string;
   zipCode?: string;
@@ -180,6 +181,7 @@ const MembersPage: React.FC = () => {
     birthDate: '',
     maritalStatus: '',
     occupation: '',
+    notes: '',
     email: '',
     phone: '',
     zipCode: '',
@@ -285,6 +287,7 @@ const MembersPage: React.FC = () => {
       birthDate: member.birthDate ? member.birthDate.slice(0, 10) : '',
       maritalStatus: member.maritalStatus || '',
       occupation: member.occupation || '',
+      notes: member.notes || '',
       email: member.email || '',
       phone: member.phone || '',
       zipCode: member.zipCode || '',
@@ -428,6 +431,7 @@ const MembersPage: React.FC = () => {
       birthDate: '',
       maritalStatus: '',
       occupation: '',
+      notes: '',
       email: '',
       phone: '',
       zipCode: '',
@@ -738,7 +742,12 @@ const MembersPage: React.FC = () => {
                   {member.birthDate && (
                     <div className="entity-field">
                       <span className="entity-field-label">Nascimento</span>
-                      <span className="entity-field-value">{new Date(member.birthDate).toLocaleDateString('pt-BR')}</span>
+                      <span className="entity-field-value">
+                        {/* Ano 1900 = só dia/mês conhecidos (importado de planilha sem ano) */}
+                        {new Date(member.birthDate).getUTCFullYear() <= 1900
+                          ? `${new Date(member.birthDate).toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit' })} (ano não informado)`
+                          : new Date(member.birthDate).toLocaleDateString('pt-BR')}
+                      </span>
                     </div>
                   )}
                   {member.maritalStatus && (
@@ -751,6 +760,14 @@ const MembersPage: React.FC = () => {
                     <div className="entity-field">
                       <span className="entity-field-label">Profissão</span>
                       <span className="entity-field-value">{member.occupation}</span>
+                    </div>
+                  )}
+                  {member.notes && (
+                    <div className="entity-field">
+                      <span className="entity-field-label">Observações</span>
+                      <span className="entity-field-value" title={member.notes}>
+                        {member.notes.length > 60 ? `${member.notes.slice(0, 60)}…` : member.notes}
+                      </span>
                     </div>
                   )}
                   {member.email && (
@@ -1271,6 +1288,21 @@ const MembersPage: React.FC = () => {
                       }
                     />
                   </div>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>📝 Observações</legend>
+                <div className="form-group">
+                  <label htmlFor="member-notes">Anotações internas da coordenação</label>
+                  <textarea
+                    id="member-notes"
+                    rows={3}
+                    maxLength={2000}
+                    placeholder="Ex.: tamanho de camiseta, restrições, informações úteis para a equipe"
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  />
                 </div>
               </fieldset>
 
