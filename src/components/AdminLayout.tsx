@@ -124,7 +124,7 @@ const AdminLayout: React.FC = () => {
         <nav className="sidebar-nav">
           {canSeeDashboard && (
             <NavLink to="/admin/dashboard" className="nav-link highlight">
-              <NavIcon name="planejamento" /> Início · pendências
+              <NavIcon name="planejamento" /> Início
             </NavLink>
           )}
           {((canManageDioceses && modOn('dioceses')) || (canManageParishes && modOn('parishes')) || modOn('communities')) && (
