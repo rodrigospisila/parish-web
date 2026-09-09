@@ -1026,7 +1026,14 @@ const SchedulesPage: React.FC = () => {
       const eventId = schedule.event?.id;
       if (!eventId) continue;
       if (!map.has(eventId)) map.set(eventId, new Set());
-      map.get(eventId)!.add(toDayKey(schedule.date));
+      const days = map.get(eventId)!;
+      days.add(toDayKey(schedule.date));
+      // Escala de evento às 21:00 (UTC-3) cai em 00:00Z e `toDayKey` leria o dia
+      // seguinte em UTC; o dia LOCAL também conta para quitar o evento
+      const local = new Date(schedule.date);
+      days.add(
+        `${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}-${String(local.getDate()).padStart(2, '0')}`,
+      );
     }
     return map;
   }, [schedules]);
@@ -1626,7 +1633,10 @@ const SchedulesPage: React.FC = () => {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     const todayKey = toDayKey(startOfToday);
+    const now = Date.now();
     for (const eventItem of eventsWithoutSchedule) {
+      // Evento de hoje que já terminou não é mais pendência (o backend recusaria a escala)
+      if (new Date(eventItem.endDate ?? eventItem.startDate).getTime() < now) continue;
       const done = scheduledDaysByEvent.get(eventItem.id);
       for (const day of eventDayKeys(eventItem)) {
         if (day < todayKey || done?.has(day)) continue;
@@ -1937,8 +1947,35 @@ const SchedulesPage: React.FC = () => {
         { role, communityPastoralId: bulkTarget.communityPastoralId },
         { headers },
       );
-      const created: number = data?.created?.length ?? 0;
-      const skipped: { fullName: string; reason: string }[] = data?.skipped ?? [];
+      let created: number = data?.created?.length ?? 0;
+      let skipped: { memberId: string; fullName: string; reason: string; conflict?: boolean }[] = data?.skipped ?? [];
+
+      // Quem tem conflito de horário em outra escala só entra com confirmação explícita
+      const conflicted = skipped.filter((item) => item.conflict);
+      if (conflicted.length > 0) {
+        const names = conflicted.slice(0, 4).map((item) => item.fullName).join(', ');
+        const proceed = await confirm.action(
+          'Conflito de horário',
+          `${conflicted.length} membro(s) já estão em outra escala no mesmo horário: ${names}${conflicted.length > 4 ? '…' : ''}. Escalar mesmo assim?`,
+          'Escalar mesmo assim',
+          'Deixar de fora',
+        );
+        if (proceed) {
+          const retry = await axios.post(
+            `${API_URL}/schedules/${activeSchedule.id}/assignments/bulk`,
+            {
+              role,
+              communityPastoralId: bulkTarget.communityPastoralId,
+              memberIds: conflicted.map((item) => item.memberId),
+              overrideConflict: true,
+            },
+            { headers },
+          );
+          created += retry.data?.created?.length ?? 0;
+          skipped = [...skipped.filter((item) => !item.conflict), ...(retry.data?.skipped ?? [])];
+        }
+      }
+
       if (created > 0) {
         notify.success(`👥 ${created} membro(s) de ${bulkTarget.name} convocado(s).`);
       }
@@ -1955,8 +1992,9 @@ const SchedulesPage: React.FC = () => {
         notify.info('Esta pastoral não tem membros ativos para convocar.');
       }
       setBulkTarget(null);
+      // fetchScheduleById já sincroniza a lista; o calendário/resumo vem do overview
       await fetchScheduleById(activeSchedule.id);
-      await fetchData();
+      await fetchOverview();
     } catch (error: any) {
       notify.error(error.response?.data?.message || 'Não foi possível convocar a pastoral');
     } finally {
@@ -2701,7 +2739,7 @@ const SchedulesPage: React.FC = () => {
                               pastoralNames ? ` — ${pastoralNames}` : ''
                             } · clique para criar a escala`}
                           >
-                            {time && <span className="cal-pill-time">{time}</span>}
+                            {time && time !== '00:00' && <span className="cal-pill-time">{time}</span>}
                             <span className="cal-pill-title">{eventItem.title} · sem escala</span>
                             <span className="cal-pill-count">⚠</span>
                           </button>
@@ -3622,13 +3660,13 @@ const SchedulesPage: React.FC = () => {
                             <small>{pastoral.role || 'Sem limite de vagas definido'}</small>
                           )}
                         </button>
-                        {!pastoral.byGroup && !isFull && (
+                        {!pastoral.byGroup && !isFull && activeSchedule.status === 'OPEN' && (
                           <button
                             type="button"
                             className="pastoral-bulk-btn"
                             title={`Convocar de uma vez todos os membros ativos de ${pastoral.name} (reunião, mutirão…)`}
                             onClick={() => {
-                              setBulkRole(pastoral.role || roleSuggestions[0] || 'Participante');
+                              setBulkRole(pastoral.role || 'Participante');
                               setBulkTarget({
                                 communityPastoralId: pastoral.communityPastoralId,
                                 name: pastoral.name,
@@ -4653,7 +4691,7 @@ const SchedulesPage: React.FC = () => {
                 autoFocus
               />
               <datalist id="bulk-roles">
-                {['Participante', ...roleSuggestions].map((role) => (
+                {Array.from(new Set(['Participante', ...roleSuggestions])).map((role) => (
                   <option key={role} value={role} />
                 ))}
               </datalist>
