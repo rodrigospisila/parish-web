@@ -4340,6 +4340,43 @@ button.couple-chip.is-action:hover {
   cursor: wait;
 }
 
+/* Convocar toda a pastoral (abaixo do card de vagas da pastoral) */
+.pastoral-bulk-btn {
+  width: 100%;
+  margin-top: 6px;
+  border: 1px dashed #075aa9;
+  background: #eaf4ff;
+  color: #075aa9;
+  border-radius: 9px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pastoral-bulk-btn:hover {
+  background: #d9ebff;
+  border-style: solid;
+}
+
+.pastoral-bulk-btn:focus-visible {
+  outline: 2px solid #0a84ff;
+  outline-offset: 2px;
+}
+
+/* Pill de evento sem escala dentro do calendario (mesma familia da agenda fixa) */
+.cal-pill.is-event-pending {
+  border: 1px dashed #d97706;
+  background: #fff7ea;
+  color: #92600a;
+}
+
+.cal-pill.is-event-pending:hover {
+  border-color: #b45309;
+  background: #ffedd0;
+}
+
 /* Botao "gerar todas" na toolbar do calendario */
 .cal-generate-all {
   border: 1px solid #d97706;

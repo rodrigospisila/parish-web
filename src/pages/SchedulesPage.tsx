@@ -4,6 +4,7 @@ import TitleIcon from '../components/TitleIcon';
 import RoomSelect from '../components/RoomSelect';
 import { notify, confirm } from '../services/notification.service';
 import { useAuth } from '../contexts/AuthContext';
+import { getEventTypeLabel } from '../constants/eventOptions';
 import './SchedulesPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -768,6 +769,10 @@ const SchedulesPage: React.FC = () => {
   const [slotsSaving, setSlotsSaving] = useState(false);
   // Substituição de membro: ao escalar o novo, o anterior é removido
   const [replaceTarget, setReplaceTarget] = useState<Assignment | null>(null);
+  // Convocação em lote (toda a pastoral de uma vez — reunião, mutirão)
+  const [bulkTarget, setBulkTarget] = useState<{ communityPastoralId: string; name: string; remaining: number | null } | null>(null);
+  const [bulkRole, setBulkRole] = useState('');
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
   const headers = {
     Authorization: `Bearer ${localStorage.getItem('token')}`,
@@ -1049,14 +1054,16 @@ const SchedulesPage: React.FC = () => {
       .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
   }, [events, scheduledDaysByEvent, searchText]);
 
-  const openCreate = (event?: EventItem) => {
+  /** `dayKey` (YYYY-MM-DD) força o dia — clique numa pendência do calendário */
+  const openCreate = (event?: EventItem, dayKey?: string) => {
     resetCreateForm();
     if (event) {
+      const time = toDateTimeInput(event.startDate).slice(11) || '00:00';
       setCreateForm({
         eventId: event.id,
         title: `Escala - ${event.title}`,
         description: '',
-        date: firstPendingDateInput(event),
+        date: dayKey ? `${dayKey}T${time}` : firstPendingDateInput(event),
         pastoralSettings: buildCreatePastoralSettings(event),
       });
     }
@@ -1613,6 +1620,26 @@ const SchedulesPage: React.FC = () => {
     return map;
   }, [visibleFixedPendingMonth]);
 
+  // Eventos sem escala, por dia (cada dia do evento ainda sem escala vira uma pendência)
+  const eventsPendingByDay = useMemo(() => {
+    const map = new Map<string, EventItem[]>();
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const todayKey = toDayKey(startOfToday);
+    for (const eventItem of eventsWithoutSchedule) {
+      const done = scheduledDaysByEvent.get(eventItem.id);
+      for (const day of eventDayKeys(eventItem)) {
+        if (day < todayKey || done?.has(day)) continue;
+        if (!map.has(day)) map.set(day, []);
+        map.get(day)!.push(eventItem);
+      }
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+    }
+    return map;
+  }, [eventsWithoutSchedule, scheduledDaysByEvent]);
+
   const overviewTotal = overview.length;
   const overviewAssignments = overview.reduce((acc, item) => acc + item.counts.total, 0);
   const overviewChecked = overview.reduce((acc, item) => acc + item.counts.checkedIn, 0);
@@ -1892,6 +1919,48 @@ const SchedulesPage: React.FC = () => {
         );
       }
       throw error;
+    }
+  };
+
+  /** Convoca todos os membros ativos da pastoral com a mesma função (uma chamada). */
+  const confirmBulkAssign = async () => {
+    if (!bulkTarget || !activeSchedule) return;
+    const role = bulkRole.trim();
+    if (!role) {
+      notify.warning('Informe a função com que todos serão convocados');
+      return;
+    }
+    setBulkSubmitting(true);
+    try {
+      const { data } = await axios.post(
+        `${API_URL}/schedules/${activeSchedule.id}/assignments/bulk`,
+        { role, communityPastoralId: bulkTarget.communityPastoralId },
+        { headers },
+      );
+      const created: number = data?.created?.length ?? 0;
+      const skipped: { fullName: string; reason: string }[] = data?.skipped ?? [];
+      if (created > 0) {
+        notify.success(`👥 ${created} membro(s) de ${bulkTarget.name} convocado(s).`);
+      }
+      if (skipped.length > 0) {
+        const preview = skipped
+          .slice(0, 3)
+          .map((item) => `${item.fullName} (${item.reason})`)
+          .join('; ');
+        notify.warning(
+          `${skipped.length} ficaram de fora: ${preview}${skipped.length > 3 ? '…' : ''}`,
+        );
+      }
+      if (created === 0 && skipped.length === 0) {
+        notify.info('Esta pastoral não tem membros ativos para convocar.');
+      }
+      setBulkTarget(null);
+      await fetchScheduleById(activeSchedule.id);
+      await fetchData();
+    } catch (error: any) {
+      notify.error(error.response?.data?.message || 'Não foi possível convocar a pastoral');
+    } finally {
+      setBulkSubmitting(false);
     }
   };
 
@@ -2616,6 +2685,28 @@ const SchedulesPage: React.FC = () => {
                           </button>
                         );
                       })}
+                      {(eventsPendingByDay.get(cell.key) ?? []).map((eventItem) => {
+                        const time = toDateTimeInput(eventItem.startDate).slice(11) || '';
+                        const pastoralNames = (eventItem.eventPastorals ?? [])
+                          .map((ep) => ep.communityPastoral?.globalPastoral?.name)
+                          .filter(Boolean)
+                          .join(', ');
+                        return (
+                          <button
+                            key={`ev-${eventItem.id}-${cell.key}`}
+                            type="button"
+                            className="cal-pill is-event-pending"
+                            onClick={() => openCreate(eventItem, cell.key)}
+                            title={`${getEventTypeLabel(eventItem.type)} "${eventItem.title}" sem escala${
+                              pastoralNames ? ` — ${pastoralNames}` : ''
+                            } · clique para criar a escala`}
+                          >
+                            {time && <span className="cal-pill-time">{time}</span>}
+                            <span className="cal-pill-title">{eventItem.title} · sem escala</span>
+                            <span className="cal-pill-count">⚠</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   );
                 })}
@@ -3090,7 +3181,7 @@ const SchedulesPage: React.FC = () => {
             pendingEventsPreview.map((eventItem) => (
               <div className="event-item" key={eventItem.id}>
                 <div className="event-info">
-                  <span className="event-type-badge">{eventItem.type}</span>
+                  <span className="event-type-badge">{getEventTypeLabel(eventItem.type)}</span>
                   <div className="event-copy">
                     <div className="event-title-row">
                       <strong>{eventItem.title}</strong>
@@ -3531,6 +3622,23 @@ const SchedulesPage: React.FC = () => {
                             <small>{pastoral.role || 'Sem limite de vagas definido'}</small>
                           )}
                         </button>
+                        {!pastoral.byGroup && !isFull && (
+                          <button
+                            type="button"
+                            className="pastoral-bulk-btn"
+                            title={`Convocar de uma vez todos os membros ativos de ${pastoral.name} (reunião, mutirão…)`}
+                            onClick={() => {
+                              setBulkRole(pastoral.role || roleSuggestions[0] || 'Participante');
+                              setBulkTarget({
+                                communityPastoralId: pastoral.communityPastoralId,
+                                name: pastoral.name,
+                                remaining: pastoral.requiredPeople > 0 ? pastoral.remainingPeople ?? null : null,
+                              });
+                            }}
+                          >
+                            👥 Convocar toda a pastoral
+                          </button>
+                        )}
                         {scheduledGroups.length > 0 && (
                           <div className="side-group-chips">
                             {scheduledGroups.map((group) => (
@@ -4512,6 +4620,55 @@ const SchedulesPage: React.FC = () => {
                   : assignWithSpouse && spouseInCurrentPastoral(assignTarget)
                     ? '💍 Escalar casal (2)'
                     : 'Escalar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bulkTarget && activeSchedule && (
+        <div className="modal-overlay assign-target-overlay" onClick={() => !bulkSubmitting && setBulkTarget(null)}>
+          <div className="modal-content assign-target-modal" onClick={(event) => event.stopPropagation()}>
+            <button className="modal-close" onClick={() => setBulkTarget(null)} disabled={bulkSubmitting}>
+              ×
+            </button>
+            <h2>Convocar toda a pastoral</h2>
+            <p className="candidate-inline-summary">
+              Todos os membros ativos de <strong>{bulkTarget.name}</strong> entram em <strong>{activeSchedule.title}</strong>{' '}
+              e recebem o aviso para confirmar.
+              {bulkTarget.remaining !== null
+                ? ` Restam ${bulkTarget.remaining} vaga(s): quem não couber fica de fora.`
+                : ' A escala não tem limite de vagas.'}{' '}
+              Quem já está escalado, está inativo ou tem conflito de horário é pulado e listado no aviso.
+            </p>
+            <div className="form-group">
+              <label htmlFor="bulk-role">Função de todos nesta escala</label>
+              <input
+                id="bulk-role"
+                type="text"
+                list="bulk-roles"
+                value={bulkRole}
+                onChange={(event) => setBulkRole(event.target.value)}
+                placeholder="Ex: Participante, Catequista"
+                autoFocus
+              />
+              <datalist id="bulk-roles">
+                {['Participante', ...roleSuggestions].map((role) => (
+                  <option key={role} value={role} />
+                ))}
+              </datalist>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn-cancel" onClick={() => setBulkTarget(null)} disabled={bulkSubmitting}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="btn-submit"
+                disabled={bulkSubmitting || !bulkRole.trim()}
+                onClick={() => void confirmBulkAssign()}
+              >
+                {bulkSubmitting ? 'Convocando...' : '👥 Convocar todos'}
               </button>
             </div>
           </div>
