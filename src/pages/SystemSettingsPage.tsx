@@ -29,6 +29,22 @@ const MODULES: Array<{ key: string; label: string; section: string }> = [
   { key: 'audit', label: 'Auditoria', section: 'Gestão' },
 ];
 
+/** Recursos do Início do aplicativo (mesmas chaves do backend). */
+const MOBILE_FEATURES: Array<{ key: string; label: string; hint: string }> = [
+  { key: 'calendar', label: 'Calendário', hint: 'atalho do topo' },
+  { key: 'my-schedule', label: 'Minha Escala', hint: 'atalho do topo' },
+  { key: 'pastorals', label: 'Pastorais', hint: 'atalho do topo' },
+  { key: 'liturgy', label: 'Liturgia', hint: 'atalho do topo e seção “Liturgia do dia”' },
+  { key: 'nearby-masses', label: 'Missas por perto', hint: 'cartão' },
+  { key: 'tithe', label: 'Dízimo e ofertas', hint: 'cartão' },
+  { key: 'prayer-wall', label: 'Mural de oração', hint: 'cartão' },
+  { key: 'catechesis', label: 'Catequese', hint: 'cartão' },
+  { key: 'next-celebration', label: 'Próxima celebração', hint: 'seção' },
+  { key: 'pastoral-word', label: 'Palavra Pastoral', hint: 'seção' },
+  { key: 'upcoming-events', label: 'Próximos eventos', hint: 'seção' },
+  { key: 'mass-schedules', label: 'Missas fixas', hint: 'seção' },
+];
+
 const ROLES: Array<{ key: string; label: string }> = [
   { key: 'DIOCESAN_ADMIN', label: 'Adm. Diocesana' },
   { key: 'PARISH_ADMIN', label: 'Adm. Paroquial' },
@@ -48,18 +64,45 @@ const SystemSettingsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  // Aplicativo: recursos do Início desligados (global)
+  const [mobileDisabled, setMobileDisabled] = useState<Set<string>>(new Set());
+  const [mobileDirty, setMobileDirty] = useState(false);
+  const [mobileSaving, setMobileSaving] = useState(false);
 
   useEffect(() => {
-    api
-      .get('/settings/module-access')
-      .then((res) => {
+    Promise.all([api.get('/settings/module-access'), api.get('/settings/mobile-features')])
+      .then(([modules, mobile]) => {
         setDisabled(
-          new Set((res.data?.disabled ?? []).map((d: { moduleKey: string; role: string }) => `${d.moduleKey}:${d.role}`)),
+          new Set((modules.data?.disabled ?? []).map((d: { moduleKey: string; role: string }) => `${d.moduleKey}:${d.role}`)),
         );
+        setMobileDisabled(new Set<string>(mobile.data?.disabled ?? []));
       })
       .catch((error) => notify.error(getErrorMessage(error, 'Erro ao carregar as configurações')))
       .finally(() => setLoading(false));
   }, []);
+
+  const toggleMobile = (key: string) => {
+    setMobileDisabled((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    setMobileDirty(true);
+  };
+
+  const saveMobile = async () => {
+    setMobileSaving(true);
+    try {
+      await api.put('/settings/mobile-features', { disabled: [...mobileDisabled] });
+      setMobileDirty(false);
+      notify.success('Aplicativo atualizado — o Início obedece na próxima abertura (até 5 min de cache).');
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao salvar os recursos do aplicativo'));
+    } finally {
+      setMobileSaving(false);
+    }
+  };
 
   const toggle = (moduleKey: string, role: string) => {
     const key = `${moduleKey}:${role}`;
@@ -181,6 +224,37 @@ const SystemSettingsPage: React.FC = () => {
           <span style={{ marginLeft: 'auto', fontSize: '0.78rem', color: '#94a3b8' }}>
             O perfil Administração do Sistema sempre vê tudo.
           </span>
+        </div>
+      </div>
+
+      <div style={{ background: '#fff', border: '1px solid #e4ebf4', borderRadius: 14, padding: '1rem 1.2rem', marginTop: '1.2rem' }}>
+        <h3 style={{ margin: '0 0 0.2rem' }}>📱 Aplicativo — o que aparece no Início</h3>
+        <p style={{ margin: '0 0 0.9rem', fontSize: '0.88rem', color: '#64748b' }}>
+          Vale para todos os usuários do app. Desmarcar esconde o atalho, cartão ou seção da tela inicial
+          (as telas continuam existindo — só deixam de ser oferecidas).
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '0.5rem 1rem' }}>
+          {MOBILE_FEATURES.map((feature) => {
+            const off = mobileDisabled.has(feature.key);
+            return (
+              <label key={feature.key} style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', fontSize: '0.9rem', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={!off}
+                  onChange={() => toggleMobile(feature.key)}
+                  style={{ width: 17, height: 17, cursor: 'pointer', accentColor: '#075AA9' }}
+                />
+                <span style={{ fontWeight: 600, color: off ? '#94a3b8' : '#1a2b3c' }}>{feature.label}</span>
+                <span style={{ fontSize: '0.74rem', color: '#94a3b8' }}>{feature.hint}</span>
+              </label>
+            );
+          })}
+        </div>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', marginTop: '1rem' }}>
+          <button type="button" className="add-button" disabled={mobileSaving || !mobileDirty} onClick={() => void saveMobile()}>
+            {mobileSaving ? 'Salvando…' : 'Salvar aplicativo'}
+          </button>
+          {mobileDirty && <span style={{ fontSize: '0.82rem', color: '#b45309', fontWeight: 600 }}>Alterações não salvas</span>}
         </div>
       </div>
     </div>
