@@ -254,6 +254,8 @@ const EventsPage: React.FC = () => {
   };
 
   const handleDateClick = (date: Date) => {
+    // Fiel/voluntário: agenda somente leitura — clicar na data não cria evento
+    if (!canManageEvents) return;
     setEditingEvent(null);
     setInitialEventStartDate(toLocalInputValue(date));
     setShowModal(true);
