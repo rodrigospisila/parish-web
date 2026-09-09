@@ -566,6 +566,7 @@ const CatechesisPage: React.FC = () => {
     opensAt: '',
     closesAt: '',
     fullBehavior: '' as '' | 'WAITLIST' | 'BLOCK',
+    capacityMode: 'keep' as 'keep' | 'fixed' | 'current',
     capacity: '',
     onlyWithoutCapacity: true,
   });
@@ -2568,6 +2569,7 @@ const CatechesisPage: React.FC = () => {
       opensAt: '',
       closesAt: '',
       fullBehavior: '',
+      capacityMode: 'keep',
       capacity: '',
       onlyWithoutCapacity: true,
     });
@@ -2591,8 +2593,15 @@ const CatechesisPage: React.FC = () => {
     if (windowForm.opensAt) payload.enrollmentOpensAt = windowForm.opensAt;
     if (windowForm.closesAt) payload.enrollmentClosesAt = windowForm.closesAt;
     if (windowForm.fullBehavior) payload.fullBehavior = windowForm.fullBehavior;
-    if (windowForm.capacity.trim()) {
+    if (windowForm.capacityMode === 'fixed') {
+      if (!windowForm.capacity.trim() || Number(windowForm.capacity) < 1) {
+        notify.warning('Informe o limite de vagas (número inteiro maior que zero).');
+        return;
+      }
       payload.capacity = Number(windowForm.capacity);
+      payload.onlyWithoutCapacity = windowForm.onlyWithoutCapacity;
+    } else if (windowForm.capacityMode === 'current') {
+      payload.capacityFromOccupied = true;
       payload.onlyWithoutCapacity = windowForm.onlyWithoutCapacity;
     }
     if (Object.keys(payload).length <= (windowForm.stageId ? 3 : 2)) {
@@ -2607,6 +2616,9 @@ const CatechesisPage: React.FC = () => {
     try {
       const { data } = await api.patch('/catechesis/classes/enrollment-window', payload);
       notify.success(`${data.updated} turma(s) atualizada(s)${data.capacityUpdated ? ` · vagas em ${data.capacityUpdated}` : ''}.`);
+      if (data.emptySkipped) {
+        notify.info(`${data.emptySkipped} turma(s) sem catequizandos ficaram sem limite (0 vaga bloquearia a turma).`);
+      }
       if (Array.isArray(data.overfull) && data.overfull.length) {
         notify.warning(
           `${data.overfull.length} turma(s) já têm mais matriculados que o novo limite (ninguém foi removido): ${data.overfull
@@ -4323,22 +4335,42 @@ const CatechesisPage: React.FC = () => {
                 <strong style={{ fontSize: '0.85rem' }}>Vagas por turma</strong>
                 <div className="form-row" style={{ marginTop: 6 }}>
                   <div className="form-group">
-                    <label>Limite de vagas (em branco = não alterar)</label>
-                    <input
-                      type="number"
-                      min={1}
-                      placeholder="Ex.: 20"
-                      value={windowForm.capacity}
-                      onChange={(e) => setWindowForm({ ...windowForm, capacity: e.target.value })}
-                    />
+                    <label>Como definir</label>
+                    <select
+                      value={windowForm.capacityMode}
+                      onChange={(e) => setWindowForm({ ...windowForm, capacityMode: e.target.value as 'keep' | 'fixed' | 'current' })}
+                    >
+                      <option value="keep">Não alterar</option>
+                      <option value="fixed">Mesmo limite para todas</option>
+                      <option value="current">Número atual de catequizandos de cada turma</option>
+                    </select>
                   </div>
+                  {windowForm.capacityMode === 'fixed' && (
+                    <div className="form-group">
+                      <label>Limite de vagas</label>
+                      <input
+                        type="number"
+                        min={1}
+                        placeholder="Ex.: 20"
+                        value={windowForm.capacity}
+                        onChange={(e) => setWindowForm({ ...windowForm, capacity: e.target.value })}
+                        required
+                      />
+                    </div>
+                  )}
                 </div>
+                {windowForm.capacityMode === 'current' && (
+                  <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 0.6rem' }}>
+                    Cada turma recebe como limite o que já tem hoje (matriculados + inscrições aguardando aprovação) — fecha
+                    novas vagas sem tirar ninguém. Turma sem catequizandos fica sem limite.
+                  </p>
+                )}
                 <label className="form-check">
                   <input
                     type="checkbox"
                     checked={windowForm.onlyWithoutCapacity}
                     onChange={(e) => setWindowForm({ ...windowForm, onlyWithoutCapacity: e.target.checked })}
-                    disabled={!windowForm.capacity.trim()}
+                    disabled={windowForm.capacityMode === 'keep'}
                   />
                   Só nas turmas que ainda não têm limite (preserva as exceções já ajustadas)
                 </label>
