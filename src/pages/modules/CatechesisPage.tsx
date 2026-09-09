@@ -555,6 +555,20 @@ const CatechesisPage: React.FC = () => {
   const [classesYearFilter, setClassesYearFilter] = useState<'all' | number>('all');
   // Filtro por etapa (chave = nome da etapa; as turmas não carregam o stageId)
   const [classesStageFilter, setClassesStageFilter] = useState<'all' | string>('all');
+  // Janela de inscrições em lote (todas as turmas de um ano/comunidade)
+  const [showWindowModal, setShowWindowModal] = useState(false);
+  const [savingWindow, setSavingWindow] = useState(false);
+  const [windowForm, setWindowForm] = useState({
+    communityId: '',
+    year: new Date().getFullYear(),
+    stageId: '',
+    open: 'keep' as 'keep' | 'open' | 'closed',
+    opensAt: '',
+    closesAt: '',
+    fullBehavior: '' as '' | 'WAITLIST' | 'BLOCK',
+    capacity: '',
+    onlyWithoutCapacity: true,
+  });
   // Só turmas com pendência acionável (o Início conta, aqui mostra ONDE)
   const [classesAttentionOnly, setClassesAttentionOnly] = useState(false);
   const [yearEndYearFilter, setYearEndYearFilter] = useState<'all' | number>('all');
@@ -2543,6 +2557,72 @@ const CatechesisPage: React.FC = () => {
 
   // Filtro por ano da lista de turmas (na virada convivem 2026 e 2027)
   const classYears = [...new Set(classes.map((k) => k.year))].sort((a, b) => b - a);
+  const classCommunityIds = [...new Set(classes.map((k) => k.communityId).filter((id): id is string => !!id))];
+
+  const openWindowModal = () => {
+    setWindowForm({
+      communityId: (classCommunityIds.length === 1 ? classCommunityIds[0] : user?.communityId ?? classCommunityIds[0]) ?? '',
+      year: classesYearFilter !== 'all' ? classesYearFilter : classYears[0] ?? new Date().getFullYear(),
+      stageId: '',
+      open: 'keep',
+      opensAt: '',
+      closesAt: '',
+      fullBehavior: '',
+      capacity: '',
+      onlyWithoutCapacity: true,
+    });
+    setShowWindowModal(true);
+  };
+
+  // A lista de turmas traz a etapa só pelo nome; o backend filtra pelo id
+  const windowStageName = stages.find((s) => s.id === windowForm.stageId)?.name;
+  const windowTargets = classes.filter(
+    (k) =>
+      k.communityId === windowForm.communityId &&
+      k.year === Number(windowForm.year) &&
+      (!windowForm.stageId || k.stage.name === windowStageName),
+  );
+
+  const submitWindow = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload: Record<string, unknown> = { communityId: windowForm.communityId, year: Number(windowForm.year) };
+    if (windowForm.stageId) payload.stageId = windowForm.stageId;
+    if (windowForm.open !== 'keep') payload.enrollmentOpen = windowForm.open === 'open';
+    if (windowForm.opensAt) payload.enrollmentOpensAt = windowForm.opensAt;
+    if (windowForm.closesAt) payload.enrollmentClosesAt = windowForm.closesAt;
+    if (windowForm.fullBehavior) payload.fullBehavior = windowForm.fullBehavior;
+    if (windowForm.capacity.trim()) {
+      payload.capacity = Number(windowForm.capacity);
+      payload.onlyWithoutCapacity = windowForm.onlyWithoutCapacity;
+    }
+    if (Object.keys(payload).length <= (windowForm.stageId ? 3 : 2)) {
+      notify.warning('Escolha pelo menos um ajuste para aplicar às turmas.');
+      return;
+    }
+    if (!windowTargets.length) {
+      notify.warning('Nenhuma turma ativa nesse recorte.');
+      return;
+    }
+    setSavingWindow(true);
+    try {
+      const { data } = await api.patch('/catechesis/classes/enrollment-window', payload);
+      notify.success(`${data.updated} turma(s) atualizada(s)${data.capacityUpdated ? ` · vagas em ${data.capacityUpdated}` : ''}.`);
+      if (Array.isArray(data.overfull) && data.overfull.length) {
+        notify.warning(
+          `${data.overfull.length} turma(s) já têm mais matriculados que o novo limite (ninguém foi removido): ${data.overfull
+            .slice(0, 3)
+            .map((o: { name: string; occupied: number }) => `${o.name} (${o.occupied})`)
+            .join(', ')}${data.overfull.length > 3 ? '…' : ''}`,
+        );
+      }
+      setShowWindowModal(false);
+      await refreshClassesOnly();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao aplicar a janela de inscrições'));
+    } finally {
+      setSavingWindow(false);
+    }
+  };
   // Etapas presentes nas turmas, na ordem do cadastro (ordering) quando conhecida
   const stageOrdering = new Map(stages.map((s, index) => [s.name, index]));
   const classStages = [...new Set(classes.map((k) => k.stage.name))].sort(
@@ -2568,7 +2648,18 @@ const CatechesisPage: React.FC = () => {
             {tab === 'stages' ? (
               <button className="btn-primary" onClick={() => setShowStageModal(true)}>+ Nova Etapa</button>
             ) : (
-              <button className="btn-primary" onClick={() => setShowClassModal(true)}>+ Nova Turma</button>
+              <>
+                {tab === 'classes' && classes.length > 0 && (
+                  <button
+                    className="btn-secondary"
+                    onClick={openWindowModal}
+                    title="Abrir/fechar inscrições, datas, regra de turma cheia e vagas de todas as turmas de um ano de uma vez"
+                  >
+                    📅 Janela de inscrições
+                  </button>
+                )}
+                <button className="btn-primary" onClick={() => setShowClassModal(true)}>+ Nova Turma</button>
+              </>
             )}
           </div>
         )}
@@ -4135,6 +4226,129 @@ const CatechesisPage: React.FC = () => {
               <div className="modal-actions">
                 <button type="button" className="btn-cancel" onClick={() => setShowEditClassModal(false)}>Cancelar</button>
                 <button type="submit" className="btn-submit" disabled={savingClass}>{savingClass ? 'Salvando…' : 'Salvar'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showWindowModal && (
+        <div className="module-modal-overlay" onClick={() => !savingWindow && setShowWindowModal(false)}>
+          <div className="module-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>Janela de inscrições em lote</h2>
+            <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0 0 0.9rem' }}>
+              Aplica de uma vez a todas as turmas ativas do recorte. Campos deixados em branco ou em “não alterar” não mexem no
+              que cada turma já tem.
+            </p>
+            <form onSubmit={submitWindow}>
+              <div className="form-row">
+                {communities.length > 1 && (
+                  <div className="form-group">
+                    <label>Comunidade</label>
+                    <select
+                      value={windowForm.communityId}
+                      onChange={(e) => setWindowForm({ ...windowForm, communityId: e.target.value })}
+                      required
+                    >
+                      <option value="">Selecione</option>
+                      {communities.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="form-group">
+                  <label>Ano das turmas</label>
+                  <select
+                    value={windowForm.year}
+                    onChange={(e) => setWindowForm({ ...windowForm, year: Number(e.target.value) })}
+                  >
+                    {(classYears.length ? classYears : [new Date().getFullYear()]).map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Etapa</label>
+                  <select value={windowForm.stageId} onChange={(e) => setWindowForm({ ...windowForm, stageId: e.target.value })}>
+                    <option value="">Todas as etapas</option>
+                    {stages.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p style={{ fontSize: '0.82rem', margin: '0 0 0.8rem', color: windowTargets.length ? '#0f172a' : '#b45309' }}>
+                <strong>{windowTargets.length}</strong> turma(s) ativa(s) serão afetadas
+                {windowTargets.length ? `: ${windowTargets.slice(0, 4).map((k) => k.name).join(', ')}${windowTargets.length > 4 ? '…' : ''}` : '.'}
+              </p>
+
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: '0.7rem 0.9rem', marginBottom: '0.6rem' }}>
+                <strong style={{ fontSize: '0.85rem' }}>Inscrições online</strong>
+                <div className="form-row" style={{ marginTop: 6 }}>
+                  <div className="form-group">
+                    <label>Situação</label>
+                    <select
+                      value={windowForm.open}
+                      onChange={(e) => setWindowForm({ ...windowForm, open: e.target.value as 'keep' | 'open' | 'closed' })}
+                    >
+                      <option value="keep">Não alterar</option>
+                      <option value="open">Abertas</option>
+                      <option value="closed">Fechadas (somem da inscrição do app)</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Abrem em</label>
+                    <input type="date" value={windowForm.opensAt} onChange={(e) => setWindowForm({ ...windowForm, opensAt: e.target.value })} />
+                  </div>
+                  <div className="form-group">
+                    <label>Encerram em</label>
+                    <input type="date" value={windowForm.closesAt} onChange={(e) => setWindowForm({ ...windowForm, closesAt: e.target.value })} />
+                  </div>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Quando a turma estiver cheia</label>
+                  <select
+                    value={windowForm.fullBehavior}
+                    onChange={(e) => setWindowForm({ ...windowForm, fullBehavior: e.target.value as '' | 'WAITLIST' | 'BLOCK' })}
+                  >
+                    <option value="">Não alterar</option>
+                    <option value="WAITLIST">Aceitar em fila de espera (a coordenação decide, abrindo +1 vaga)</option>
+                    <option value="BLOCK">Bloquear — avisar que a turma não aceita mais inscrições no ano</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: '0.7rem 0.9rem', marginBottom: '0.6rem' }}>
+                <strong style={{ fontSize: '0.85rem' }}>Vagas por turma</strong>
+                <div className="form-row" style={{ marginTop: 6 }}>
+                  <div className="form-group">
+                    <label>Limite de vagas (em branco = não alterar)</label>
+                    <input
+                      type="number"
+                      min={1}
+                      placeholder="Ex.: 20"
+                      value={windowForm.capacity}
+                      onChange={(e) => setWindowForm({ ...windowForm, capacity: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <label className="form-check">
+                  <input
+                    type="checkbox"
+                    checked={windowForm.onlyWithoutCapacity}
+                    onChange={(e) => setWindowForm({ ...windowForm, onlyWithoutCapacity: e.target.checked })}
+                    disabled={!windowForm.capacity.trim()}
+                  />
+                  Só nas turmas que ainda não têm limite (preserva as exceções já ajustadas)
+                </label>
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="btn-cancel" onClick={() => setShowWindowModal(false)} disabled={savingWindow}>Cancelar</button>
+                <button type="submit" className="btn-submit" disabled={savingWindow || !windowForm.communityId}>
+                  {savingWindow ? 'Aplicando…' : `Aplicar a ${windowTargets.length} turma(s)`}
+                </button>
               </div>
             </form>
           </div>
