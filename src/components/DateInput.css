@@ -51,10 +51,12 @@
   width: 100%;
   height: 100%;
   opacity: 0;
-  cursor: pointer;
   border: 0;
   padding: 0;
   margin: 0;
+  /* O clique vai sempre ao ícone (que chama showPicker) — se caísse no input
+     nativo, o Chrome só focava um segmento e o calendário abria na 2ª vez */
+  pointer-events: none;
 }
 
 .date-br__pick > input:disabled {

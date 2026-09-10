@@ -51,6 +51,21 @@ const validTime = (text: string): string | null => {
   return `${m[1]}:${m[2]}`;
 };
 
+/**
+ * Abre o seletor nativo no primeiro clique: sem isto, clicar sobre o input
+ * invisível só foca um segmento (dia/mês) — o calendário só abria na 2ª vez.
+ */
+const openNativePicker = (input: HTMLInputElement | null) => {
+  if (!input || input.disabled) return;
+  const picker = (input as HTMLInputElement & { showPicker?: () => void }).showPicker;
+  try {
+    if (typeof picker === 'function') picker.call(input);
+    else input.focus();
+  } catch {
+    input.focus();
+  }
+};
+
 const maskMonth = (raw: string): string => {
   const digits = raw.replace(/\D/g, '').slice(0, 6);
   return digits.length <= 2 ? digits : `${digits.slice(0, 2)}/${digits.slice(2)}`;
@@ -79,6 +94,7 @@ interface DateInputProps extends BaseProps {
 export const DateInput: React.FC<DateInputProps> = ({ value, onChange, min, max, className, style, placeholder, ...rest }) => {
   const [text, setText] = useState(isoToBr(value));
   const [invalid, setInvalid] = useState(false);
+  const nativeRef = useRef<HTMLInputElement>(null);
 
   // Valor mudou por fora (reset do formulário, carga da edição)
   useEffect(() => {
@@ -127,9 +143,18 @@ export const DateInput: React.FC<DateInputProps> = ({ value, onChange, min, max,
           }
         }}
       />
-      <span className="date-br__pick" title="Abrir calendário" aria-hidden={rest.disabled ? true : undefined}>
+      <span
+        className="date-br__pick"
+        title="Abrir calendário"
+        aria-hidden={rest.disabled ? true : undefined}
+        onClick={(e) => {
+          e.preventDefault();
+          openNativePicker(nativeRef.current);
+        }}
+      >
         📅
         <input
+          ref={nativeRef}
           type="date"
           tabIndex={-1}
           aria-label="Escolher no calendário"
@@ -275,6 +300,7 @@ export const MonthInput: React.FC<MonthInputProps> = ({ value, onChange, classNa
   };
   const [text, setText] = useState(toBr(value));
   const [invalid, setInvalid] = useState(false);
+  const nativeRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setText(toBr(value));
@@ -318,9 +344,17 @@ export const MonthInput: React.FC<MonthInputProps> = ({ value, onChange, classNa
           }
         }}
       />
-      <span className="date-br__pick" title="Escolher o mês">
+      <span
+        className="date-br__pick"
+        title="Escolher o mês"
+        onClick={(e) => {
+          e.preventDefault();
+          openNativePicker(nativeRef.current);
+        }}
+      >
         📅
         <input
+          ref={nativeRef}
           type="month"
           tabIndex={-1}
           aria-label="Escolher o mês"
