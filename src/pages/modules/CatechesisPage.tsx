@@ -3,7 +3,7 @@ import TitleIcon from '../../components/TitleIcon';
 import RoomSelect from '../../components/RoomSelect';
 import { DateInput, TimeInput } from '../../components/DateInput';
 import api, { getErrorMessage } from '../../services/api';
-import { notify } from '../../services/notification.service';
+import { notify, confirm } from '../../services/notification.service';
 import { useAuth } from '../../contexts/AuthContext';
 import './ModulePages.css';
 import './CatechesisPage.css';
@@ -51,6 +51,35 @@ interface CatechesisClass {
   pendingApprovalCount?: number;
   docsToReviewCount?: number;
 }
+
+/** Padrão da janela de inscrições por ano (comunidade, opcionalmente etapa). */
+interface EnrollmentPreset {
+  id: string;
+  year: number;
+  communityId: string;
+  stageId?: string | null;
+  scopeKey: string;
+  stage?: { id: string; name: string } | null;
+  enrollmentOpen?: boolean | null;
+  enrollmentOpensAt?: string | null;
+  enrollmentClosesAt?: string | null;
+  fullBehavior?: 'WAITLIST' | 'BLOCK' | null;
+  capacity?: number | null;
+}
+
+const presetSummary = (preset: EnrollmentPreset): string => {
+  const parts: string[] = [];
+  if (preset.enrollmentOpen === true) parts.push('inscrições abertas');
+  if (preset.enrollmentOpen === false) parts.push('inscrições fechadas');
+  const fmt = (iso: string) => new Date(iso).toLocaleDateString('pt-BR');
+  if (preset.enrollmentOpensAt && preset.enrollmentClosesAt) parts.push(`de ${fmt(preset.enrollmentOpensAt)} a ${fmt(preset.enrollmentClosesAt)}`);
+  else if (preset.enrollmentOpensAt) parts.push(`abrem em ${fmt(preset.enrollmentOpensAt)}`);
+  else if (preset.enrollmentClosesAt) parts.push(`encerram em ${fmt(preset.enrollmentClosesAt)}`);
+  if (preset.fullBehavior === 'WAITLIST') parts.push('turma cheia: fila de espera');
+  if (preset.fullBehavior === 'BLOCK') parts.push('turma cheia: bloqueio');
+  if (preset.capacity) parts.push(`${preset.capacity} vagas`);
+  return parts.length ? parts.join(' · ') : 'sem campos definidos';
+};
 
 /** Total de pendências acionáveis da turma (badge/filtro da lista). */
 const classAttention = (klass: CatechesisClass): number =>
@@ -556,9 +585,12 @@ const CatechesisPage: React.FC = () => {
   const [classesYearFilter, setClassesYearFilter] = useState<'all' | number>('all');
   // Filtro por etapa (chave = nome da etapa; as turmas não carregam o stageId)
   const [classesStageFilter, setClassesStageFilter] = useState<'all' | string>('all');
-  // Janela de inscrições em lote (todas as turmas de um ano/comunidade)
+  // Janela de inscrições em lote (todas as turmas de um ano/comunidade) +
+  // padrão do ano que as turmas novas herdam
   const [showWindowModal, setShowWindowModal] = useState(false);
   const [savingWindow, setSavingWindow] = useState(false);
+  const [saveAsDefault, setSaveAsDefault] = useState(true);
+  const [presets, setPresets] = useState<EnrollmentPreset[]>([]);
   const [windowForm, setWindowForm] = useState({
     communityId: '',
     year: new Date().getFullYear(),
@@ -2561,9 +2593,23 @@ const CatechesisPage: React.FC = () => {
   const classYears = [...new Set(classes.map((k) => k.year))].sort((a, b) => b - a);
   const classCommunityIds = [...new Set(classes.map((k) => k.communityId).filter((id): id is string => !!id))];
 
+  const loadPresets = async (communityId: string) => {
+    if (!communityId) {
+      setPresets([]);
+      return;
+    }
+    try {
+      const res = await api.get('/catechesis/enrollment-presets', { params: { communityId } });
+      setPresets(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setPresets([]);
+    }
+  };
+
   const openWindowModal = () => {
+    const communityId = (classCommunityIds.length === 1 ? classCommunityIds[0] : user?.communityId ?? classCommunityIds[0]) ?? '';
     setWindowForm({
-      communityId: (classCommunityIds.length === 1 ? classCommunityIds[0] : user?.communityId ?? classCommunityIds[0]) ?? '',
+      communityId,
       year: classesYearFilter !== 'all' ? classesYearFilter : classYears[0] ?? new Date().getFullYear(),
       stageId: '',
       open: 'keep',
@@ -2574,6 +2620,8 @@ const CatechesisPage: React.FC = () => {
       capacity: '',
       onlyWithoutCapacity: true,
     });
+    setSaveAsDefault(true);
+    void loadPresets(communityId);
     setShowWindowModal(true);
   };
 
@@ -2585,48 +2633,90 @@ const CatechesisPage: React.FC = () => {
       k.year === Number(windowForm.year) &&
       (!windowForm.stageId || k.stage.name === windowStageName),
   );
+  // Anos oferecidos: os que já têm turma, os que já têm padrão e os 2 próximos
+  const thisYear = new Date().getFullYear();
+  const windowYears = [...new Set([...classYears, ...presets.map((p) => p.year), thisYear, thisYear + 1, thisYear + 2])].sort((a, b) => b - a);
+  const currentPreset = presets.find(
+    (p) => p.communityId === windowForm.communityId && p.year === Number(windowForm.year) && p.scopeKey === (windowForm.stageId || 'all'),
+  );
+
+  const removePreset = async (preset: EnrollmentPreset) => {
+    if (!(await confirm.delete(`o padrão de ${preset.year}${preset.stage ? ` (${preset.stage.name})` : ''}`))) return;
+    try {
+      await api.delete(`/catechesis/enrollment-presets/${preset.id}`);
+      notify.success('Padrão removido — turmas novas voltam ao comportamento de sempre.');
+      await loadPresets(windowForm.communityId);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao remover o padrão'));
+    }
+  };
 
   const submitWindow = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload: Record<string, unknown> = { communityId: windowForm.communityId, year: Number(windowForm.year) };
-    if (windowForm.stageId) payload.stageId = windowForm.stageId;
-    if (windowForm.open !== 'keep') payload.enrollmentOpen = windowForm.open === 'open';
-    if (windowForm.opensAt) payload.enrollmentOpensAt = windowForm.opensAt;
-    if (windowForm.closesAt) payload.enrollmentClosesAt = windowForm.closesAt;
-    if (windowForm.fullBehavior) payload.fullBehavior = windowForm.fullBehavior;
+    const scope: Record<string, unknown> = { communityId: windowForm.communityId, year: Number(windowForm.year) };
+    if (windowForm.stageId) scope.stageId = windowForm.stageId;
+    const fields: Record<string, unknown> = {};
+    if (windowForm.open !== 'keep') fields.enrollmentOpen = windowForm.open === 'open';
+    if (windowForm.opensAt) fields.enrollmentOpensAt = windowForm.opensAt;
+    if (windowForm.closesAt) fields.enrollmentClosesAt = windowForm.closesAt;
+    if (windowForm.fullBehavior) fields.fullBehavior = windowForm.fullBehavior;
     if (windowForm.capacityMode === 'fixed') {
       if (!windowForm.capacity.trim() || Number(windowForm.capacity) < 1) {
         notify.warning('Informe o limite de vagas (número inteiro maior que zero).');
         return;
       }
-      payload.capacity = Number(windowForm.capacity);
-      payload.onlyWithoutCapacity = windowForm.onlyWithoutCapacity;
-    } else if (windowForm.capacityMode === 'current') {
-      payload.capacityFromOccupied = true;
-      payload.onlyWithoutCapacity = windowForm.onlyWithoutCapacity;
+      fields.capacity = Number(windowForm.capacity);
     }
-    if (Object.keys(payload).length <= (windowForm.stageId ? 3 : 2)) {
-      notify.warning('Escolha pelo menos um ajuste para aplicar às turmas.');
+    const useOccupied = windowForm.capacityMode === 'current';
+    if (Object.keys(fields).length === 0 && !useOccupied) {
+      notify.warning('Escolha pelo menos um ajuste para aplicar.');
       return;
     }
-    if (!windowTargets.length) {
-      notify.warning('Nenhuma turma ativa nesse recorte.');
+    if (!saveAsDefault && !windowTargets.length) {
+      notify.warning('Nenhuma turma ativa nesse recorte — marque "guardar como padrão" para valer para as turmas novas.');
       return;
     }
     setSavingWindow(true);
     try {
-      const { data } = await api.patch('/catechesis/classes/enrollment-window', payload);
-      notify.success(`${data.updated} turma(s) atualizada(s)${data.capacityUpdated ? ` · vagas em ${data.capacityUpdated}` : ''}.`);
-      if (data.emptySkipped) {
-        notify.info(`${data.emptySkipped} turma(s) sem catequizandos ficaram sem limite (0 vaga bloquearia a turma).`);
+      const report = (data: any) => {
+        if (!data) return;
+        if (data.updated) notify.success(`${data.updated} turma(s) atualizada(s)${data.capacityUpdated ? ` · vagas em ${data.capacityUpdated}` : ''}.`);
+        if (data.emptySkipped) notify.info(`${data.emptySkipped} turma(s) sem catequizandos ficaram sem limite (0 vaga bloquearia a turma).`);
+        if (Array.isArray(data.overfull) && data.overfull.length) {
+          notify.warning(
+            `${data.overfull.length} turma(s) já têm mais matriculados que o novo limite (ninguém foi removido): ${data.overfull
+              .slice(0, 3)
+              .map((o: { name: string; occupied: number }) => `${o.name} (${o.occupied})`)
+              .join(', ')}${data.overfull.length > 3 ? '…' : ''}`,
+          );
+        }
+      };
+      if (saveAsDefault && Object.keys(fields).length > 0) {
+        // Guarda o padrão do ano e (se houver turmas) aplica nelas na mesma chamada
+        const { data } = await api.put('/catechesis/enrollment-presets', {
+          ...scope,
+          ...fields,
+          applyToExisting: windowTargets.length > 0,
+          onlyWithoutCapacity: windowForm.onlyWithoutCapacity,
+        });
+        notify.success(`Padrão de ${windowForm.year}${windowStageName ? ` (${windowStageName})` : ''} guardado — turmas novas já nascem assim.`);
+        report(data?.applied);
+      } else if (windowTargets.length > 0 && Object.keys(fields).length > 0) {
+        const { data } = await api.patch('/catechesis/classes/enrollment-window', {
+          ...scope,
+          ...fields,
+          ...(fields.capacity !== undefined ? { onlyWithoutCapacity: windowForm.onlyWithoutCapacity } : {}),
+        });
+        report(data);
       }
-      if (Array.isArray(data.overfull) && data.overfull.length) {
-        notify.warning(
-          `${data.overfull.length} turma(s) já têm mais matriculados que o novo limite (ninguém foi removido): ${data.overfull
-            .slice(0, 3)
-            .map((o: { name: string; occupied: number }) => `${o.name} (${o.occupied})`)
-            .join(', ')}${data.overfull.length > 3 ? '…' : ''}`,
-        );
+      // "Número atual de catequizandos" só faz sentido nas turmas existentes
+      if (useOccupied && windowTargets.length > 0) {
+        const { data } = await api.patch('/catechesis/classes/enrollment-window', {
+          ...scope,
+          capacityFromOccupied: true,
+          onlyWithoutCapacity: windowForm.onlyWithoutCapacity,
+        });
+        report(data);
       }
       setShowWindowModal(false);
       await refreshClassesOnly();
@@ -4274,8 +4364,11 @@ const CatechesisPage: React.FC = () => {
                     value={windowForm.year}
                     onChange={(e) => setWindowForm({ ...windowForm, year: Number(e.target.value) })}
                   >
-                    {(classYears.length ? classYears : [new Date().getFullYear()]).map((y) => (
-                      <option key={y} value={y}>{y}</option>
+                    {windowYears.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
+                        {classes.some((k) => k.year === y && k.communityId === windowForm.communityId) ? '' : ' (sem turmas ainda)'}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -4289,10 +4382,25 @@ const CatechesisPage: React.FC = () => {
                   </select>
                 </div>
               </div>
-              <p style={{ fontSize: '0.82rem', margin: '0 0 0.8rem', color: windowTargets.length ? '#0f172a' : '#b45309' }}>
+              <p style={{ fontSize: '0.82rem', margin: '0 0 0.5rem', color: windowTargets.length ? '#0f172a' : '#64748b' }}>
                 <strong>{windowTargets.length}</strong> turma(s) ativa(s) serão afetadas
-                {windowTargets.length ? `: ${windowTargets.slice(0, 4).map((k) => k.name).join(', ')}${windowTargets.length > 4 ? '…' : ''}` : '.'}
+                {windowTargets.length
+                  ? `: ${windowTargets.slice(0, 4).map((k) => k.name).join(', ')}${windowTargets.length > 4 ? '…' : ''}`
+                  : ' — ainda não há turmas de ' + windowForm.year + '; o padrão vale para as que forem criadas.'}
               </p>
+              {currentPreset && (
+                <p style={{ fontSize: '0.8rem', margin: '0 0 0.8rem', color: '#075aa9' }}>
+                  Padrão atual de {currentPreset.year}
+                  {currentPreset.stage ? ` (${currentPreset.stage.name})` : ''}: {presetSummary(currentPreset)}.{' '}
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', padding: 0, color: '#c53b42', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}
+                    onClick={() => void removePreset(currentPreset)}
+                  >
+                    Remover padrão
+                  </button>
+                </p>
+              )}
 
               <div style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: '0.7rem 0.9rem', marginBottom: '0.6rem' }}>
                 <strong style={{ fontSize: '0.85rem' }}>Inscrições online</strong>
@@ -4375,10 +4483,23 @@ const CatechesisPage: React.FC = () => {
                 </label>
               </div>
 
+              <label className="form-check" style={{ margin: '0.4rem 0 0.2rem' }}>
+                <input type="checkbox" checked={saveAsDefault} onChange={(e) => setSaveAsDefault(e.target.checked)} />
+                Guardar como padrão de {windowForm.year}
+                {windowStageName ? ` (${windowStageName})` : ''} — turmas novas desse ano já nascem com estes ajustes (cada uma continua
+                editável)
+              </label>
+
               <div className="modal-actions">
                 <button type="button" className="btn-cancel" onClick={() => setShowWindowModal(false)} disabled={savingWindow}>Cancelar</button>
                 <button type="submit" className="btn-submit" disabled={savingWindow || !windowForm.communityId}>
-                  {savingWindow ? 'Aplicando…' : `Aplicar a ${windowTargets.length} turma(s)`}
+                  {savingWindow
+                    ? 'Aplicando…'
+                    : windowTargets.length === 0
+                      ? `Guardar padrão de ${windowForm.year}`
+                      : saveAsDefault
+                        ? `Aplicar a ${windowTargets.length} turma(s) e guardar padrão`
+                        : `Aplicar a ${windowTargets.length} turma(s)`}
                 </button>
               </div>
             </form>
