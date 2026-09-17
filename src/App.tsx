@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import api from './services/api';
 import AdminLayout from './components/AdminLayout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -85,18 +87,73 @@ const RoleProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles: st
   return <>{children}</>;
 };
 
+// Tela exclusiva da coordenação. Papel de base que chegue pela URL (o painel de
+// Escalas já foi o landing do fiel, então o endereço pode estar no histórico do
+// navegador) volta para a própria área em vez de ver a gestão ou um "Acesso Negado".
+const CoordinationOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <div>Carregando...</div>;
+  }
+
+  if (!user || !COORDINATION_ROLES.includes(user.role)) {
+    return <Navigate to="/admin" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+// Fiel/voluntário: o catequista entra pela turma dele (item em destaque do menu);
+// os demais, pela própria escala. Mesmos critérios do menu do AdminLayout: a
+// turma vem de /catechesis/my-classes e o módulo pode estar desligado para o
+// papel na matriz do SYSTEM_ADMIN. Qualquer falha cai em "Minha Escala".
+const BaseRoleLanding: React.FC<{ role: string }> = ({ role }) => {
+  const [target, setTarget] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      api.get('/catechesis/my-classes'),
+      api.get('/settings/module-access').catch(() => null),
+    ])
+      .then(([classes, access]) => {
+        if (!active) return;
+        const isCatechist = Array.isArray(classes.data) && classes.data.length > 0;
+        const catechesisOff = (access?.data?.disabled ?? []).some(
+          (d: { role: string; moduleKey: string }) => d.role === role && d.moduleKey === 'catechesis',
+        );
+        setTarget(isCatechist && !catechesisOff ? '/admin/catechesis' : '/admin/my-schedule');
+      })
+      .catch(() => {
+        if (active) setTarget('/admin/my-schedule');
+      });
+    return () => {
+      active = false;
+    };
+  }, [role]);
+
+  if (!target) {
+    return <div>Carregando...</div>;
+  }
+
+  return <Navigate to={target} replace />;
+};
+
 // Landing pós-login por papel: coordenador de pastoral caía em página de
 // admin com "Acesso Negado" — cada papel entra pela sua área de trabalho.
 const AdminIndexRedirect: React.FC = () => {
   const { user } = useAuth();
   const role = user?.role ?? '';
   // Coordenação cai nas pendências (Onda 4); administração segue na estrutura
-  const target = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN'].includes(role)
-    ? '/admin/communities'
-    : ['PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR'].includes(role)
-      ? '/admin/dashboard'
-      : '/admin/schedules';
-  return <Navigate to={target} replace />;
+  if (['SYSTEM_ADMIN', 'DIOCESAN_ADMIN'].includes(role)) {
+    return <Navigate to="/admin/communities" replace />;
+  }
+  if (['PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR'].includes(role)) {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
+  // Fiel/voluntário caía no painel de Escalas da coordenação, que não é dele
+  return <BaseRoleLanding role={role} />;
 };
 
 const App: React.FC = () => {
@@ -152,7 +209,11 @@ const App: React.FC = () => {
                 <FixedSchedulePage />
               </RoleProtectedRoute>
             } />
-            <Route path="schedules" element={<SchedulesPage />} />
+            <Route path="schedules" element={
+              <CoordinationOnlyRoute>
+                <SchedulesPage />
+              </CoordinationOnlyRoute>
+            } />
             <Route path="users" element={<UsersPage />} />
             {/* Governança de acesso (D4.7): segurança da conta e auditoria escopada */}
             <Route path="security" element={<SecurityPage />} />
