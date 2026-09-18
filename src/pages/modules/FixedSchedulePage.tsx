@@ -4,6 +4,13 @@ import api, { getErrorMessage } from '../../services/api';
 import { notify, confirm } from '../../services/notification.service';
 import SearchSelect from '../../components/SearchSelect';
 import { DateInput, TimeInput } from '../../components/DateInput';
+import {
+  descreverRecorrencia,
+  ehMensal,
+  proximaOcorrencia,
+  SEMANAS_DO_MES,
+  type MassRecurrence,
+} from '../../utils/recorrencia';
 import { useAuth } from '../../contexts/AuthContext';
 import './ModulePages.css';
 
@@ -38,7 +45,10 @@ interface MassPastoral {
 
 interface MassSchedule {
   id: string;
-  dayOfWeek: number;
+  dayOfWeek: number | null;
+  recurrence?: MassRecurrence;
+  weeksOfMonth?: number[];
+  dayOfMonth?: number | null;
   time: string;
   type: 'MASS' | 'CONFESSION' | 'ADORATION' | 'ROSARY';
   notes?: string | null;
@@ -65,14 +75,6 @@ const TYPE_META: Record<MassSchedule['type'], { label: string; color: string; ic
 
 const pastoralName = (p: CommunityPastoral) => p.globalPastoral?.name || p.name || 'Pastoral';
 
-/** Próxima data (YYYY-MM-DD) em que cai o dia da semana informado. */
-function nextOccurrence(dayOfWeek: number): string {
-  const today = new Date();
-  const d = new Date(today);
-  const diff = (dayOfWeek - today.getDay() + 7) % 7;
-  d.setDate(today.getDate() + diff);
-  return d.toISOString().slice(0, 10);
-}
 
 const FixedSchedulePage: React.FC = () => {
   const { user } = useAuth();
@@ -92,6 +94,9 @@ const FixedSchedulePage: React.FC = () => {
     communityId: '',
     type: 'MASS' as MassSchedule['type'],
     dayOfWeek: 0,
+    recurrence: 'WEEKLY' as MassRecurrence,
+    weeksOfMonth: [] as number[],
+    dayOfMonth: 13,
     time: '',
     notes: '',
     isSpecial: false,
@@ -185,7 +190,18 @@ const FixedSchedulePage: React.FC = () => {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ communityId: communityFilter || '', type: 'MASS', dayOfWeek: 0, time: '', notes: '', isSpecial: false, specialDate: '' });
+    setForm({
+      communityId: communityFilter || '',
+      type: 'MASS',
+      dayOfWeek: 0,
+      recurrence: 'WEEKLY',
+      weeksOfMonth: [],
+      dayOfMonth: 13,
+      time: '',
+      notes: '',
+      isSpecial: false,
+      specialDate: '',
+    });
     setSelectedPastorals([]);
     setShowModal(true);
   };
@@ -195,7 +211,10 @@ const FixedSchedulePage: React.FC = () => {
     setForm({
       communityId: schedule.community.id,
       type: schedule.type,
-      dayOfWeek: schedule.dayOfWeek,
+      dayOfWeek: schedule.dayOfWeek ?? 0,
+      recurrence: schedule.recurrence ?? 'WEEKLY',
+      weeksOfMonth: schedule.weeksOfMonth ?? [],
+      dayOfMonth: schedule.dayOfMonth ?? 13,
       time: schedule.time,
       notes: schedule.notes ?? '',
       isSpecial: schedule.isSpecial,
@@ -238,7 +257,10 @@ const FixedSchedulePage: React.FC = () => {
     const payload = {
       communityId: form.communityId,
       type: form.type,
-      dayOfWeek: Number(form.dayOfWeek),
+      recurrence: form.recurrence,
+      dayOfWeek: form.recurrence === 'MONTHLY_DAY' ? undefined : Number(form.dayOfWeek),
+      weeksOfMonth: form.recurrence === 'MONTHLY_NTH' ? form.weeksOfMonth : [],
+      dayOfMonth: form.recurrence === 'MONTHLY_DAY' ? Number(form.dayOfMonth) : undefined,
       time: form.time,
       notes: form.notes || undefined,
       isSpecial: form.isSpecial,
@@ -326,7 +348,7 @@ const FixedSchedulePage: React.FC = () => {
     setGenDate(
       schedule.isSpecial && schedule.specialDate
         ? schedule.specialDate.slice(0, 10)
-        : nextOccurrence(schedule.dayOfWeek),
+        : proximaOcorrencia(schedule),
     );
   };
 
@@ -365,8 +387,9 @@ const FixedSchedulePage: React.FC = () => {
       </div>
 
       <div className="privacy-note" style={{ background: '#eef6ff', borderColor: '#b6d4fe', color: '#084298' }}>
-        Horários fixos semanais (Missa, Confissão, Adoração, Terço) da comunidade. Aparecem no
-        <strong> calendário de Eventos</strong> semana após semana. Vincule as <strong>pastorais</strong> que
+        Horários fixos (Missa, Confissão, Adoração, Terço) da comunidade — toda semana ou uma vez
+        por mês, como <em>1º e 3º sábado</em> ou <em>todo dia 13</em>. Aparecem no
+        <strong> calendário de Eventos</strong> nas datas certas. Vincule as <strong>pastorais</strong> que
         servem em cada horário e use <strong>Gerar escala</strong> para criar a escala de uma data — as
         atribuições são feitas na página <strong>Escalas</strong>.
       </div>
@@ -412,7 +435,16 @@ const FixedSchedulePage: React.FC = () => {
                         <td>
                           {schedule.isSpecial && schedule.specialDate
                             ? `Especial · ${new Date(schedule.specialDate).toLocaleDateString('pt-BR')}`
-                            : WEEKDAYS[schedule.dayOfWeek]}
+                            : descreverRecorrencia(schedule)}
+                          {ehMensal(schedule) && (
+                            <span
+                              className="status-badge gray"
+                              style={{ marginLeft: 6 }}
+                              title="Acontece uma ou mais vezes por mês, não toda semana"
+                            >
+                              mensal
+                            </span>
+                          )}
                         </td>
                         <td><strong>{schedule.time}</strong></td>
                         <td>
@@ -571,12 +603,97 @@ const FixedSchedulePage: React.FC = () => {
                   <DateInput required value={form.specialDate} onChange={(value) => setForm({ ...form, specialDate: value })} />
                 </div>
               ) : (
-                <div className="form-group">
-                  <label>Dia da semana *</label>
-                  <select value={form.dayOfWeek} onChange={(e) => setForm({ ...form, dayOfWeek: Number(e.target.value) })}>
-                    {WEEKDAYS.map((day, i) => <option key={day} value={i}>{day}</option>)}
-                  </select>
-                </div>
+                <>
+                  <div className="form-group">
+                    <label>Com que frequência *</label>
+                    <select
+                      value={form.recurrence}
+                      onChange={(e) => setForm({ ...form, recurrence: e.target.value as MassRecurrence })}
+                    >
+                      <option value="WEEKLY">Toda semana</option>
+                      <option value="MONTHLY_NTH">Uma ou mais vezes por mês (ex.: 1º e 3º sábado)</option>
+                      <option value="MONTHLY_DAY">Em data fixa do mês (ex.: todo dia 13)</option>
+                    </select>
+                  </div>
+
+                  {form.recurrence === 'MONTHLY_DAY' ? (
+                    <div className="form-group">
+                      <label>Dia do mês *</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        value={form.dayOfMonth}
+                        onChange={(e) => setForm({ ...form, dayOfMonth: Number(e.target.value) })}
+                      />
+                      <small style={{ color: '#6b7785' }}>
+                        Meses sem esse dia são pulados — não empurramos para o mês seguinte.
+                      </small>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="form-group">
+                        <label>Dia da semana *</label>
+                        <select value={form.dayOfWeek} onChange={(e) => setForm({ ...form, dayOfWeek: Number(e.target.value) })}>
+                          {WEEKDAYS.map((day, i) => <option key={day} value={i}>{day}</option>)}
+                        </select>
+                      </div>
+
+                      {form.recurrence === 'MONTHLY_NTH' && (
+                        <div className="form-group">
+                          <label>Quais ocorrências do mês *</label>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                            {SEMANAS_DO_MES.map(({ valor, rotulo }) => {
+                              const marcada = form.weeksOfMonth.includes(valor);
+                              return (
+                                <label
+                                  key={valor}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 5,
+                                    padding: '6px 11px',
+                                    borderRadius: 999,
+                                    border: `1px solid ${marcada ? '#075aa9' : '#d8dee6'}`,
+                                    background: marcada ? '#075aa9' : '#fff',
+                                    color: marcada ? '#fff' : '#52606d',
+                                    fontWeight: 600,
+                                    fontSize: 13,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={marcada}
+                                    onChange={() =>
+                                      setForm({
+                                        ...form,
+                                        weeksOfMonth: marcada
+                                          ? form.weeksOfMonth.filter((n) => n !== valor)
+                                          : [...form.weeksOfMonth, valor],
+                                      })
+                                    }
+                                    style={{ margin: 0 }}
+                                  />
+                                  {rotulo}
+                                </label>
+                              );
+                            })}
+                          </div>
+                          <small style={{ color: '#6b7785' }}>
+                            {form.weeksOfMonth.length > 0
+                              ? descreverRecorrencia({
+                                  recurrence: 'MONTHLY_NTH',
+                                  dayOfWeek: form.dayOfWeek,
+                                  weeksOfMonth: form.weeksOfMonth,
+                                })
+                              : 'Escolha ao menos uma.'}
+                          </small>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
               )}
 
               <div className="form-group">
@@ -703,7 +820,7 @@ const FixedSchedulePage: React.FC = () => {
               {TYPE_META[linkTarget.type].label} ·{' '}
               {linkTarget.isSpecial && linkTarget.specialDate
                 ? `Especial ${new Date(linkTarget.specialDate).toLocaleDateString('pt-BR')}`
-                : WEEKDAYS[linkTarget.dayOfWeek]}{' '}
+                : descreverRecorrencia(linkTarget)}{' '}
               às <strong>{linkTarget.time}</strong> · {linkTarget.community.name}
             </p>
             <div className="form-group">
