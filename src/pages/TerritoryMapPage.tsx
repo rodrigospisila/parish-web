@@ -55,7 +55,7 @@ const CENTRO_BRASIL: [number, number] = [-14.8, -52.5];
 
 const PIN_LABEL: Record<PinKind, string> = {
   ok: 'pino próprio',
-  dup: 'coordenada repetida',
+  dup: 'pino aproximado (centro da cidade)',
   sem: 'sem pino',
 };
 const PIN_COR: Record<PinKind, string> = { ok: '#2E9D62', dup: '#C78216', sem: '#8B97A4' };
@@ -227,7 +227,11 @@ const TerritoryMapPage: React.FC = () => {
     setSalvando(true);
     setAviso('');
     try {
-      await api.patch(`/communities/${emEdicao.id}`, { latitude: rascunho.lat, longitude: rascunho.lng });
+      await api.patch(`/communities/${emEdicao.id}`, {
+        latitude: rascunho.lat,
+        longitude: rascunho.lng,
+        geoPrecision: 'MANUAL',
+      });
       setAviso('Pino salvo.');
       setRows((atual) =>
         atual.map((r) => (r.id === emEdicao.id ? { ...r, lat: rascunho.lat, lng: rascunho.lng, kind: 'ok' } : r)),
@@ -246,7 +250,7 @@ const TerritoryMapPage: React.FC = () => {
     setSalvando(true);
     setAviso('');
     try {
-      await api.patch(`/communities/${emEdicao.id}`, { latitude: null, longitude: null });
+      await api.patch(`/communities/${emEdicao.id}`, { latitude: null, longitude: null, geoPrecision: null });
       setRascunho(null);
       setAviso('Pino removido.');
       setRows((atual) => atual.map((r) => (r.id === emEdicao.id ? { ...r, lat: null, lng: null, kind: 'sem' } : r)));
@@ -287,11 +291,11 @@ const TerritoryMapPage: React.FC = () => {
           </div>
           <div className="tm-kpi tm-ok">
             <strong>{num(stats.ok)}</strong>
-            <span>com pino próprio</span>
+            <span>com pino preciso</span>
           </div>
           <div className="tm-kpi tm-dup">
             <strong>{num(stats.dup)}</strong>
-            <span>coordenada repetida</span>
+            <span>pino aproximado</span>
           </div>
           <div className="tm-kpi tm-sem">
             <strong>{num(stats.sem)}</strong>
@@ -305,7 +309,7 @@ const TerritoryMapPage: React.FC = () => {
           <div className="tm-barra-ok" style={{ width: `${(stats.ok / Math.max(stats.total, 1)) * 100}%` }} />
           <div className="tm-barra-dup" style={{ width: `${(stats.dup / Math.max(stats.total, 1)) * 100}%` }} />
           <span className="tm-barra-txt">
-            {cobertura}% com pino próprio · {num(stats.sem)} comunidades ainda sem localização
+            {cobertura}% com pino preciso · {num(stats.dup)} aproximados (centro da cidade) · {num(stats.sem)} sem pino
           </span>
         </div>
       )}
@@ -329,7 +333,7 @@ const TerritoryMapPage: React.FC = () => {
           {([
             ['todos', 'Todas'],
             ['ok', 'Com pino'],
-            ['dup', 'Coordenada repetida'],
+            ['dup', 'Pino aproximado'],
             ['sem', 'Sem pino'],
           ] as Array<[PinKind | 'todos', string]>).map(([valor, rotulo]) => (
             <button
