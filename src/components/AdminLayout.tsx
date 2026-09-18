@@ -270,6 +270,11 @@ const AdminLayout: React.FC = () => {
             </NavLink>
           )}
           {isSystemAdmin && (
+            <NavLink to="/admin/map" className="nav-link">
+              <NavIcon name="comunidade" /> Mapa do território
+            </NavLink>
+          )}
+          {isSystemAdmin && (
             <NavLink to="/admin/settings" className="nav-link">
               <NavIcon name="planejamento" /> Configurações
             </NavLink>

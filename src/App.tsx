@@ -14,6 +14,7 @@ import CommunitiesPage from './pages/CommunitiesPage';
 import MembersPage from './pages/MembersPage';
 import MyAccountPage from './pages/MyAccountPage';
 import SystemSettingsPage from './pages/SystemSettingsPage';
+import TerritoryMapPage from './pages/TerritoryMapPage';
 import MySchedulePage from './pages/MySchedulePage';
 import EventsPage from './pages/EventsPage';
 import UsersPage from './pages/UsersPage';
@@ -198,6 +199,11 @@ const App: React.FC = () => {
             <Route path="communities" element={<CommunitiesPage />} />
             <Route path="members" element={<MembersPage />} />
             <Route path="account" element={<MyAccountPage />} />
+            <Route path="map" element={
+              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
+                <TerritoryMapPage />
+              </RoleProtectedRoute>
+            } />
             <Route path="settings" element={
               <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
                 <SystemSettingsPage />
