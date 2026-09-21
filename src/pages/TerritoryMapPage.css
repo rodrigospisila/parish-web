@@ -31,7 +31,7 @@
 .territory-map .tm-kpi.tm-dup strong { color: #c78216; }
 .territory-map .tm-kpi.tm-sem strong { color: #8b97a4; }
 
-/* Barra de cobertura: verde = pino preciso, azul = centro do povoado/bairro, âmbar = centro da cidade */
+/* Barra de cobertura: verde = na porta, verde-claro = na rua, azul = centro do povoado/bairro, âmbar = centro da cidade */
 .territory-map .tm-barra {
   position: relative;
   height: 26px;
@@ -307,3 +307,94 @@
   .territory-map .tm-lista { max-height: 260px; }
   .territory-map .tm-editor { position: static; width: auto; margin-top: 10px; box-shadow: none; }
 }
+
+/* ── Pino "na rua": veio do CEP ou do Nominatim — meio do logradouro, não a porta ── */
+.territory-map .tm-kpi.tm-rua strong { color: #7d9c25; }
+.territory-map .tm-barra-rua { background: #9bbf3b; }
+.territory-map .tm-uf-rua { color: #7d9c25 !important; font-size: 11.5px; }
+
+/* ── Fila de revisão ── */
+.territory-map button.tm-kpi { text-align: left; cursor: pointer; font: inherit; }
+.territory-map .tm-kpi.tm-fila { border-color: #d9c2e6; background: #faf5fd; }
+.territory-map .tm-kpi.tm-fila strong { color: #8e44ad; }
+.territory-map .tm-kpi.tm-fila.on { border-color: #8e44ad; box-shadow: 0 0 0 2px rgba(142, 68, 173, 0.18); }
+.territory-map .tm-chip.tm-chip-fila { border-color: #d9c2e6; color: #8e44ad; }
+.territory-map .tm-chip.tm-chip-fila.on { background: #8e44ad; border-color: #8e44ad; color: #fff; }
+.territory-map .tm-fila-explica {
+  margin: -4px 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #faf5fd;
+  border: 1px solid #ead9f3;
+  font-size: 13px;
+  color: #4a3358;
+}
+.territory-map .tm-selos { display: flex !important; gap: 5px; margin-top: 3px; }
+.territory-map .tm-selo {
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.territory-map .tm-selo-missa { background: #e6f4ec; color: #1f7a4a; }
+.territory-map .tm-selo-sugestao { background: #f3e8f9; color: #8e44ad; }
+
+/* Letra dentro do marcador da sugestão (A, B...) */
+.leaflet-tooltip.tm-letra {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: #fff;
+  font-weight: 800;
+  font-size: 12px;
+  padding: 0;
+}
+.leaflet-tooltip.tm-letra::before { display: none; }
+
+/* Sugestões dentro do editor */
+.territory-map .tm-editor { max-height: calc(100% - 24px); overflow-y: auto; width: 320px; }
+.territory-map .tm-sugestoes {
+  margin-top: 10px;
+  padding: 9px;
+  border-radius: 10px;
+  background: #faf5fd;
+  border: 1px solid #ead9f3;
+}
+.territory-map .tm-sugestoes-titulo { margin: 0 0 7px; font-size: 12px; font-weight: 800; color: #8e44ad; }
+.territory-map .tm-sugestao { display: flex; gap: 8px; align-items: flex-start; }
+.territory-map .tm-sugestao + .tm-sugestao { margin-top: 9px; padding-top: 9px; border-top: 1px solid #ead9f3; }
+.territory-map .tm-sugestao-letra {
+  flex: 0 0 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #8e44ad;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.territory-map .tm-sugestao-txt { min-width: 0; flex: 1; }
+.territory-map .tm-sugestao-txt strong { display: block; font-size: 12.5px; color: #17324d; }
+.territory-map .tm-sugestao-txt small { display: block; font-size: 11.5px; color: #52606d; overflow-wrap: anywhere; }
+.territory-map .tm-sugestao-txt .tm-sugestao-detalhe { color: #7a6a86; font-style: italic; }
+.territory-map .tm-sugestao-acoes { display: flex; gap: 5px; margin-top: 6px; }
+.territory-map .tm-sugestao-acoes button {
+  flex: 1 1 auto;
+  padding: 5px 6px;
+  border-radius: 8px;
+  border: 1px solid #d8dee6;
+  background: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #52606d;
+  cursor: pointer;
+}
+.territory-map .tm-sugestao-acoes button:disabled { opacity: 0.55; cursor: default; }
+.territory-map .tm-sugestao-acoes .tm-primario { background: #8e44ad; border-color: #8e44ad; color: #fff; }
+.territory-map .tm-sugestao-acoes .tm-perigo { border-color: #c53b42; color: #c53b42; flex: 0 0 auto; }
+
+.territory-map .tm-google { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 700; color: #075aa9; text-decoration: none; }
+.territory-map .tm-google:hover { text-decoration: underline; }
