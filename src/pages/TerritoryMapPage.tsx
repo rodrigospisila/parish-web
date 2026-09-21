@@ -76,6 +76,7 @@ const ORIGEM: Record<string, string> = {
   overture: 'lugar na Overture Maps',
   'cnefe+overture': 'Censo 2022 e Overture Maps concordam',
   'cnefe-localidade': 'centro da localidade no Censo 2022 (IBGE)',
+  'cnefe-templo': 'templo católico do povoado no Censo 2022, sem padroeiro declarado',
   'ibge-municipio': 'centro do município (IBGE)',
   'legado-centro': 'pino antigo, empilhado no centro da cidade',
   legado: 'pino anterior ao controle de origem',
