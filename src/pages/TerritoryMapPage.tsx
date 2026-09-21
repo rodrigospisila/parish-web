@@ -16,7 +16,7 @@ import './TerritoryMapPage.css';
  * de 50 mil comunidades.
  */
 
-type PinKind = 'ok' | 'dup' | 'sem';
+type PinKind = 'ok' | 'local' | 'dup' | 'sem';
 
 interface MapRow {
   id: string;
@@ -29,16 +29,19 @@ interface MapRow {
   parish: string;
   diocese: string;
   kind: PinKind;
+  /** De onde veio a coordenada (cep, cnefe, manual...). */
+  source?: string | null;
 }
 
 interface Stats {
   total: number;
   sem: number;
+  local?: number;
   dup: number;
   ok: number;
   paroquias: number;
   dioceses: number;
-  porUf: Array<{ uf: string; total: number; sem: number; dup: number }>;
+  porUf: Array<{ uf: string; total: number; sem: number; local?: number; dup: number }>;
 }
 
 interface DioceseRow {
@@ -47,6 +50,7 @@ interface DioceseRow {
   uf: string;
   total: number;
   sem: number;
+  local?: number;
   dup: number;
 }
 
@@ -56,10 +60,27 @@ const CENTRO_BRASIL: [number, number] = [-14.8, -52.5];
 
 const PIN_LABEL: Record<PinKind, string> = {
   ok: 'pino próprio',
+  local: 'pino no centro do povoado ou bairro',
   dup: 'pino aproximado (centro da cidade)',
   sem: 'sem pino',
 };
-const PIN_COR: Record<PinKind, string> = { ok: '#2E9D62', dup: '#C78216', sem: '#8B97A4' };
+const PIN_COR: Record<PinKind, string> = { ok: '#2E9D62', local: '#2F7FC1', dup: '#C78216', sem: '#8B97A4' };
+
+/** Origem do pino (Community.geoSource) em linguagem de gente. */
+const ORIGEM: Record<string, string> = {
+  manual: 'posicionado à mão no mapa',
+  gps: 'GPS do celular, no local',
+  cep: 'CEP do endereço',
+  'osm-endereco': 'endereço encontrado no OpenStreetMap',
+  cnefe: 'templo no Censo 2022 (IBGE)',
+  overture: 'lugar na Overture Maps',
+  'cnefe+overture': 'Censo 2022 e Overture Maps concordam',
+  'cnefe-localidade': 'centro da localidade no Censo 2022 (IBGE)',
+  'ibge-municipio': 'centro do município (IBGE)',
+  'legado-centro': 'pino antigo, empilhado no centro da cidade',
+  legado: 'pino anterior ao controle de origem',
+};
+const origemDoPino = (s?: string | null) => (s ? ORIGEM[s] ?? s : null);
 
 const iconeEdicao = L.icon({
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
@@ -236,9 +257,9 @@ const TerritoryMapPage: React.FC = () => {
       });
       setAviso('Pino salvo.');
       setRows((atual) =>
-        atual.map((r) => (r.id === emEdicao.id ? { ...r, lat: rascunho.lat, lng: rascunho.lng, kind: 'ok' } : r)),
+        atual.map((r) => (r.id === emEdicao.id ? { ...r, lat: rascunho.lat, lng: rascunho.lng, kind: 'ok', source: 'manual' } : r)),
       );
-      setEmEdicao({ ...emEdicao, lat: rascunho.lat, lng: rascunho.lng, kind: 'ok' });
+      setEmEdicao({ ...emEdicao, lat: rascunho.lat, lng: rascunho.lng, kind: 'ok', source: 'manual' });
       api.get('/communities/map/stats').then((r) => setStats(r.data)).catch(() => undefined);
     } catch (e) {
       setAviso(getErrorMessage(e, 'Não foi possível salvar o pino.'));
@@ -255,7 +276,7 @@ const TerritoryMapPage: React.FC = () => {
       await api.patch(`/communities/${emEdicao.id}`, { latitude: null, longitude: null, geoPrecision: null });
       setRascunho(null);
       setAviso('Pino removido.');
-      setRows((atual) => atual.map((r) => (r.id === emEdicao.id ? { ...r, lat: null, lng: null, kind: 'sem' } : r)));
+      setRows((atual) => atual.map((r) => (r.id === emEdicao.id ? { ...r, lat: null, lng: null, kind: 'sem', source: null } : r)));
       api.get('/communities/map/stats').then((r) => setStats(r.data)).catch(() => undefined);
     } catch (e) {
       setAviso(getErrorMessage(e, 'Não foi possível salvar o pino.'));
@@ -295,9 +316,13 @@ const TerritoryMapPage: React.FC = () => {
             <strong>{num(stats.ok)}</strong>
             <span>com pino preciso</span>
           </div>
+          <div className="tm-kpi tm-local">
+            <strong>{num(stats.local ?? 0)}</strong>
+            <span>no povoado ou bairro</span>
+          </div>
           <div className="tm-kpi tm-dup">
             <strong>{num(stats.dup)}</strong>
-            <span>pino aproximado</span>
+            <span>no centro da cidade</span>
           </div>
           <div className="tm-kpi tm-sem">
             <strong>{num(stats.sem)}</strong>
@@ -307,11 +332,12 @@ const TerritoryMapPage: React.FC = () => {
       )}
 
       {stats && (
-        <div className="tm-barra" title={`${cobertura}% das comunidades têm pino próprio`}>
+        <div className="tm-barra" title={`${cobertura}% das comunidades têm pino preciso`}>
           <div className="tm-barra-ok" style={{ width: `${(stats.ok / Math.max(stats.total, 1)) * 100}%` }} />
+          <div className="tm-barra-local" style={{ width: `${((stats.local ?? 0) / Math.max(stats.total, 1)) * 100}%` }} />
           <div className="tm-barra-dup" style={{ width: `${(stats.dup / Math.max(stats.total, 1)) * 100}%` }} />
           <span className="tm-barra-txt">
-            {cobertura}% com pino preciso · {num(stats.dup)} aproximados (centro da cidade) · {num(stats.sem)} sem pino
+            {cobertura}% com pino preciso · {num(stats.local ?? 0)} no povoado ou bairro · {num(stats.dup)} no centro da cidade · {num(stats.sem)} sem pino
           </span>
         </div>
       )}
@@ -334,8 +360,9 @@ const TerritoryMapPage: React.FC = () => {
         <div className="tm-chips">
           {([
             ['todos', 'Todas'],
-            ['ok', 'Com pino'],
-            ['dup', 'Pino aproximado'],
+            ['ok', 'Pino preciso'],
+            ['local', 'No povoado/bairro'],
+            ['dup', 'Centro da cidade'],
             ['sem', 'Sem pino'],
           ] as Array<[PinKind | 'todos', string]>).map(([valor, rotulo]) => (
             <button
@@ -475,6 +502,12 @@ const TerritoryMapPage: React.FC = () => {
                     {emEdicao.city}/{emEdicao.state} · {emEdicao.parish} · {emEdicao.diocese}
                   </small>
                   {emEdicao.address && <small className="tm-endereco">{emEdicao.address}</small>}
+                  {emEdicao.lat != null && (
+                    <small className="tm-origem">
+                      <span className="tm-ponto" style={{ background: PIN_COR[emEdicao.kind] }} aria-hidden="true" />
+                      {PIN_LABEL[emEdicao.kind]}{origemDoPino(emEdicao.source) ? ` · ${origemDoPino(emEdicao.source)}` : ''}
+                    </small>
+                  )}
                 </div>
                 <button type="button" className="tm-fechar" onClick={() => setEmEdicao(null)} aria-label="Fechar">
                   ×
@@ -537,7 +570,9 @@ const TerritoryMapPage: React.FC = () => {
           <h2>Cobertura por estado</h2>
           <div className="tm-uf-grade">
             {(stats.porUf ?? []).map((linha) => {
-              const pct = Math.round(((linha.total - linha.sem) / Math.max(linha.total, 1)) * 100);
+              const base = Math.max(linha.total, 1);
+              const pct = Math.round(((linha.total - linha.sem - linha.dup - (linha.local ?? 0)) / base) * 100);
+              const pctLocal = Math.round(((linha.local ?? 0) / base) * 100);
               return (
                 <button
                   key={linha.uf}
@@ -547,7 +582,8 @@ const TerritoryMapPage: React.FC = () => {
                 >
                   <strong>{linha.uf}</strong>
                   <span>{num(linha.total)} comunidades</span>
-                  <span className={pct > 0 ? 'tm-uf-pct' : 'tm-uf-zero'}>{pct}% com pino</span>
+                  <span className={pct > 0 ? 'tm-uf-pct' : 'tm-uf-zero'}>{pct}% preciso</span>
+                  {pctLocal > 0 && <span className="tm-uf-local">+{pctLocal}% no povoado/bairro</span>}
                 </button>
               );
             })}

@@ -27,10 +27,11 @@
   color: #52606d;
 }
 .territory-map .tm-kpi.tm-ok strong { color: #2e9d62; }
+.territory-map .tm-kpi.tm-local strong { color: #2f7fc1; }
 .territory-map .tm-kpi.tm-dup strong { color: #c78216; }
 .territory-map .tm-kpi.tm-sem strong { color: #8b97a4; }
 
-/* Barra de cobertura: verde = pino próprio, âmbar = coordenada repetida */
+/* Barra de cobertura: verde = pino preciso, azul = centro do povoado/bairro, âmbar = centro da cidade */
 .territory-map .tm-barra {
   position: relative;
   height: 26px;
@@ -41,6 +42,7 @@
   display: flex;
 }
 .territory-map .tm-barra-ok { background: #2e9d62; }
+.territory-map .tm-barra-local { background: #2f7fc1; }
 .territory-map .tm-barra-dup { background: #c78216; }
 .territory-map .tm-barra-txt {
   position: absolute;
@@ -292,6 +294,11 @@
 .territory-map .tm-uf-item span { font-size: 11.5px; color: #6b7785; }
 .territory-map .tm-uf-pct { color: #2e9d62 !important; font-weight: 700; }
 .territory-map .tm-uf-zero { color: #8b97a4 !important; }
+.territory-map .tm-uf-local { color: #2f7fc1 !important; font-size: 11.5px; }
+
+/* Editor: de onde veio o pino atual */
+.territory-map .tm-editor-topo small.tm-origem { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; }
+.territory-map .tm-origem .tm-ponto { flex: 0 0 auto; width: 8px; height: 8px; }
 
 .territory-map .tm-rodape { font-size: 13px; color: #52606d; margin-top: 12px; }
 
