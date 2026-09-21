@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, Marker, useMapEvents, useMap } from 'react-leaflet';
+import BaseMapLayers from './BaseMapLayers';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
@@ -50,7 +51,7 @@ const Recenter: React.FC<{ value: LatLng | null }> = ({ value }) => {
 };
 
 /**
- * Mini-mapa de seleção de coordenadas (OpenStreetMap/Leaflet).
+ * Mini-mapa de seleção de coordenadas (Leaflet), com alternador Mapa | Satélite.
  * Clique no mapa ou arraste o pino para definir a posição.
  */
 const MapPicker: React.FC<MapPickerProps> = ({ value, onChange, height = 260 }) => {
@@ -63,10 +64,7 @@ const MapPicker: React.FC<MapPickerProps> = ({ value, onChange, height = 260 }) 
         style={{ height: '100%', width: '100%' }}
         scrollWheelZoom
       >
-        <TileLayer
-          attribution='&copy; OpenStreetMap contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <BaseMapLayers />
         <ClickHandler onChange={onChange} />
         <Recenter value={value} />
         {value && (

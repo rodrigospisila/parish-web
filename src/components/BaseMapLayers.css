@@ -1,0 +1,37 @@
+/* Alternador Mapa | Satélite, dentro do mapa (canto inferior esquerdo). */
+.base-map-toggle {
+  display: flex;
+  overflow: hidden;
+  margin: 0 0 22px 10px !important; /* acima da atribuição do Leaflet */
+  border-radius: 9px;
+  border: 1px solid rgba(11, 28, 44, 0.25);
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(11, 28, 44, 0.22);
+}
+
+.base-map-toggle button {
+  border: none;
+  background: #fff;
+  color: #52606d;
+  font: 700 12.5px/1 inherit;
+  padding: 8px 13px;
+  cursor: pointer;
+}
+
+.base-map-toggle button + button {
+  border-left: 1px solid #e3e8ef;
+}
+
+.base-map-toggle button:hover {
+  background: #f4f7fb;
+}
+
+.base-map-toggle button.on {
+  background: #075aa9;
+  color: #fff;
+}
+
+.base-map-toggle button:focus-visible {
+  outline: 2px solid #0a84ff;
+  outline-offset: -2px;
+}

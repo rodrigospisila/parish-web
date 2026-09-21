@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, Marker, Popup, CircleMarker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import TitleIcon from '../components/TitleIcon';
+import BaseMapLayers, { type BaseMap } from '../components/BaseMapLayers';
 import api, { getErrorMessage } from '../services/api';
 import './modules/ModulePages.css';
 import './TerritoryMapPage.css';
@@ -90,7 +91,7 @@ const ObservadorDeRecorte: React.FC<{ onChange: (bbox: string, zoom: number) => 
 const IrPara: React.FC<{ alvo: [number, number] | null; zoom?: number }> = ({ alvo, zoom }) => {
   const map = useMap();
   useEffect(() => {
-    if (alvo) map.setView(alvo, zoom ?? Math.max(map.getZoom(), 15));
+    if (alvo) map.setView(alvo, Math.max(map.getZoom(), zoom ?? 15));
   }, [alvo?.[0], alvo?.[1]]); // eslint-disable-line react-hooks/exhaustive-deps
   return null;
 };
@@ -120,6 +121,7 @@ const TerritoryMapPage: React.FC = () => {
   const [buscaAplicada, setBuscaAplicada] = useState('');
   const [bbox, setBbox] = useState('');
   const [zoom, setZoom] = useState(4);
+  const [baseMap, setBaseMap] = useState<BaseMap>('mapa');
 
   // Edição do pino
   const [emEdicao, setEmEdicao] = useState<MapRow | null>(null);
@@ -407,17 +409,14 @@ const TerritoryMapPage: React.FC = () => {
 
         <div className="tm-mapa">
           <MapContainer center={CENTRO_BRASIL} zoom={4} style={{ height: '100%', width: '100%' }}>
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
+            <BaseMapLayers onChange={setBaseMap} />
             <ObservadorDeRecorte
               onChange={(b, z) => {
                 setBbox(b);
                 setZoom(z);
               }}
             />
-            <IrPara alvo={alvoMapa} />
+            <IrPara alvo={alvoMapa} zoom={baseMap === 'satelite' ? 18 : undefined} />
             <CliqueDefinePino
               ativo={!!emEdicao}
               onPick={(lat, lng) => {
@@ -433,7 +432,7 @@ const TerritoryMapPage: React.FC = () => {
                 radius={zoom >= 10 ? 7 : 5}
                 pathOptions={{
                   color: '#fff',
-                  weight: 1.5,
+                  weight: baseMap === 'satelite' ? 2.5 : 1.5,
                   fillColor: PIN_COR[r.kind],
                   fillOpacity: emEdicao && emEdicao.id === r.id ? 1 : 0.85,
                 }}
