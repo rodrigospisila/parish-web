@@ -46,6 +46,9 @@ interface MapRow {
   source?: string | null;
   /** Tem sugestão de pino à espera de conferência. */
   review?: boolean;
+  /** Quando e por quem/o quê o pino foi conferido (nulo = palpite de máquina). */
+  verifiedAt?: string | null;
+  verifiedBy?: string | null;
   hasMass?: boolean;
   candidates?: Candidate[];
 }
@@ -109,6 +112,9 @@ const FONTE_DA_SUGESTAO: Record<string, string> = {
   cnefe: 'Censo 2022 — templo',
   overture: 'Overture Maps',
   'cnefe-endereco': 'Censo 2022 — endereço',
+  'site-paroquia': 'site da paróquia',
+  'site-diocese': 'site da diocese',
+  wikidata: 'Wikidata',
 };
 const MOTIVO_DA_SUGESTAO: Record<string, string> = {
   conflito: 'as fontes discordam entre si',
@@ -117,6 +123,30 @@ const MOTIVO_DA_SUGESTAO: Record<string, string> = {
   divergencia: 'o endereço aponta para outro lugar',
   'pino-suspeito': 'duas fontes desmentem o pino atual',
   'mesmo-ponto': 'mesmo ponto de outra comunidade',
+  evidencia: 'coordenada publicada pela própria paróquia',
+  'endereco-oficial': 'endereço oficial, localizado no Censo',
+};
+
+/** Quem conferiu o pino, em linguagem de gente. */
+const conferidoPor = (by?: string | null) => {
+  if (!by) return null;
+  if (by.startsWith('usuario')) return 'conferido por uma pessoa';
+  if (by.startsWith('evidencia:')) return `conferido pelo ${FONTE_DA_SUGESTAO[by.slice(10)] ?? by.slice(10)}`;
+  if (by === 'osm') return 'conferido pelo OpenStreetMap (templo com este nome no lugar)';
+  return `conferido: ${by}`;
+};
+/** Texto de detalhe da sugestão com o link clicável, quando há URL. */
+const Detalhe: React.FC<{ texto: string }> = ({ texto }) => {
+  const m = texto.match(/https?:\/\/\S+/);
+  if (!m) return <>{texto}</>;
+  const i = texto.indexOf(m[0]);
+  return (
+    <>
+      {texto.slice(0, i)}
+      <a href={m[0]} target="_blank" rel="noopener noreferrer">{m[0].replace(/^https?:\/\//, '').slice(0, 60)}</a>
+      {texto.slice(i + m[0].length)}
+    </>
+  );
 };
 
 const iconeEdicao = L.icon({
@@ -688,6 +718,9 @@ const TerritoryMapPage: React.FC = () => {
                       {PIN_LABEL[emEdicao.kind]}{origemDoPino(emEdicao.source) ? ` · ${origemDoPino(emEdicao.source)}` : ''}
                     </small>
                   )}
+                  {emEdicao.verifiedAt && (
+                    <small className="tm-conferido">✓ {conferidoPor(emEdicao.verifiedBy)} em {new Date(emEdicao.verifiedAt).toLocaleDateString('pt-BR')}</small>
+                  )}
                 </div>
                 <button type="button" className="tm-fechar" onClick={() => setEmEdicao(null)} aria-label="Fechar">
                   ×
@@ -709,7 +742,7 @@ const TerritoryMapPage: React.FC = () => {
                           {c.distanceKm != null ? `a ${distancia(c.distanceKm)} do pino atual · ` : ''}
                           {MOTIVO_DA_SUGESTAO[c.reason] ?? c.reason}
                         </small>
-                        {c.detail && <small className="tm-sugestao-detalhe">{c.detail}</small>}
+                        {c.detail && <small className="tm-sugestao-detalhe"><Detalhe texto={c.detail} /></small>}
                         <div className="tm-sugestao-acoes">
                           <button type="button" onClick={() => verCandidato(c)} disabled={salvando}>Ver</button>
                           <button type="button" className="tm-primario" onClick={() => void confirmarCandidato(c)} disabled={salvando}>Confirmar</button>
