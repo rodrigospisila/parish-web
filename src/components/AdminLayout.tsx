@@ -270,11 +270,6 @@ const AdminLayout: React.FC = () => {
             </NavLink>
           )}
           {isSystemAdmin && (
-            <NavLink to="/admin/map" className="nav-link">
-              <NavIcon name="comunidade" /> Mapa do território
-            </NavLink>
-          )}
-          {isSystemAdmin && (
             <NavLink to="/admin/settings" className="nav-link">
               <NavIcon name="planejamento" /> Configurações
             </NavLink>
@@ -283,6 +278,9 @@ const AdminLayout: React.FC = () => {
           {isSystemAdmin && (
             <>
               <span className="nav-section-label">Plataforma</span>
+              <NavLink to="/admin/map" className="nav-link">
+                <NavIcon name="comunidade" /> Mapa do território
+              </NavLink>
               <NavLink to="/admin/platform/suggestions" className="nav-link">
                 <NavIcon name="sino" /> Sugestões dos fiéis
               </NavLink>
