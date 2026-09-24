@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify, confirm } from '../../services/notification.service';
@@ -86,7 +87,9 @@ const FixedSchedulePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [schedules, setSchedules] = useState<MassSchedule[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
-  const [communityFilter, setCommunityFilter] = useState('');
+  // ?community=<id> abre já filtrado (atalho das Sugestões dos fiéis)
+  const [searchParams] = useSearchParams();
+  const [communityFilter, setCommunityFilter] = useState(() => searchParams.get('community') ?? '');
 
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<MassSchedule | null>(null);

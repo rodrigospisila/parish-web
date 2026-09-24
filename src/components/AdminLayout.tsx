@@ -280,6 +280,21 @@ const AdminLayout: React.FC = () => {
             </NavLink>
           )}
 
+          {isSystemAdmin && (
+            <>
+              <span className="nav-section-label">Plataforma</span>
+              <NavLink to="/admin/platform/suggestions" className="nav-link">
+                <NavIcon name="sino" /> Sugestões dos fiéis
+              </NavLink>
+              <NavLink to="/admin/platform/growth" className="nav-link">
+                <NavIcon name="membros" /> Crescimento
+              </NavLink>
+              <NavLink to="/admin/platform/plans" className="nav-link">
+                <NavIcon name="dizimo" /> Planos
+              </NavLink>
+            </>
+          )}
+
           <span className="nav-section-label">Conta</span>
           <NavLink to="/admin/account" className="nav-link">
             <NavIcon name="membros" /> Minha conta

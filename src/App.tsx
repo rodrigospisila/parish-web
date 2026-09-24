@@ -15,6 +15,9 @@ import MembersPage from './pages/MembersPage';
 import MyAccountPage from './pages/MyAccountPage';
 import SystemSettingsPage from './pages/SystemSettingsPage';
 import TerritoryMapPage from './pages/TerritoryMapPage';
+import SuggestionsPage from './pages/platform/SuggestionsPage';
+import GrowthPage from './pages/platform/GrowthPage';
+import PlansPage from './pages/platform/PlansPage';
 import MySchedulePage from './pages/MySchedulePage';
 import EventsPage from './pages/EventsPage';
 import UsersPage from './pages/UsersPage';
@@ -202,6 +205,22 @@ const App: React.FC = () => {
             <Route path="map" element={
               <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
                 <TerritoryMapPage />
+              </RoleProtectedRoute>
+            } />
+            {/* Plataforma (SYSTEM_ADMIN): sugestões dos fiéis, crescimento e planos */}
+            <Route path="platform/suggestions" element={
+              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
+                <SuggestionsPage />
+              </RoleProtectedRoute>
+            } />
+            <Route path="platform/growth" element={
+              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
+                <GrowthPage />
+              </RoleProtectedRoute>
+            } />
+            <Route path="platform/plans" element={
+              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
+                <PlansPage />
               </RoleProtectedRoute>
             } />
             <Route path="settings" element={

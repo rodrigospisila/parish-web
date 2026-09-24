@@ -235,6 +235,10 @@
 
 .main-content {
   flex: 1;
+  /* Sem isto o item flex cresce até a largura mínima do conteúdo (tabelas,
+     grades de cartões) e a página inteira ganha rolagem horizontal em telas
+     médias; com min-width: 0 a rolagem fica dentro de cada .table-container. */
+  min-width: 0;
   margin-left: 264px;
   min-height: 100vh;
 }

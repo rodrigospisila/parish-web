@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { MapContainer, Marker, Popup, CircleMarker, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -321,8 +322,9 @@ const TerritoryMapPage: React.FC = () => {
     if (naFila && primeira) setAlvoMapa([primeira.lat, primeira.lng]);
     else if (row.lat != null && row.lng != null) setAlvoMapa([row.lat, row.lng]);
     // Sem pino, o mapa continuaria no país inteiro e não haveria o que conferir:
-    // já pedimos a sugestão do endereço ao abrir, que é o caso mais comum aqui.
-    else if (row.address) void sugerirPeloEndereco(row, true);
+    // já pedimos a sugestão do endereço ao abrir, que é o caso mais comum aqui
+    // (com sugestão pendente, é ela que se confere — o endereço fica no botão).
+    else if (row.address && !row.candidates?.length) void sugerirPeloEndereco(row, true);
   };
 
   /** Sugere a coordenada pelo endereço. Diz com todas as letras quando o que achou foi só a rua. */
@@ -445,6 +447,59 @@ const TerritoryMapPage: React.FC = () => {
       setSalvando(false);
     }
   };
+
+  /**
+   * Abertura direta por endereço: /admin/map?community=<id>[&lat=..&lng=..]. Usado pelas
+   * Sugestões dos fiéis: abre o editor da comunidade com as sugestões de pino pendentes
+   * e, quando vêm lat/lng, leva o mapa até o ponto que o fiel sugeriu.
+   */
+  const [searchParams] = useSearchParams();
+  const comunidadeDaUrl = searchParams.get('community');
+  const latDaUrl = Number(searchParams.get('lat'));
+  const lngDaUrl = Number(searchParams.get('lng'));
+  useEffect(() => {
+    if (!comunidadeDaUrl) return;
+    let vivo = true;
+    (async () => {
+      try {
+        const { data: c } = await api.get(`/communities/${comunidadeDaUrl}`);
+        // A linha do mapa traz o tipo de pino e a origem; o detalhe é só o plano B
+        let row: MapRow | undefined;
+        try {
+          const { data } = await api.get('/communities/map', { params: { q: c.name, uf: c.state, pin: 'todos', limit: '200' } });
+          row = (Array.isArray(data?.rows) ? (data.rows as MapRow[]) : []).find((r) => r.id === comunidadeDaUrl);
+        } catch {
+          row = undefined;
+        }
+        if (!row) {
+          row = {
+            id: c.id,
+            name: c.name,
+            lat: c.latitude ?? null,
+            lng: c.longitude ?? null,
+            city: c.city,
+            state: c.state,
+            address: c.address ?? null,
+            parish: c.parish?.name ?? '',
+            diocese: c.parish?.diocese?.name ?? '',
+            kind: c.latitude == null ? 'sem' : 'dup',
+          };
+        }
+        const { data: cands } = await api.get(`/communities/${comunidadeDaUrl}/geo-candidates`).catch(() => ({ data: [] }));
+        if (!vivo) return;
+        const candidates: Candidate[] = Array.isArray(cands) ? cands : [];
+        abrirEdicao({ ...row, review: candidates.length > 0, candidates });
+        const perto = Number.isFinite(latDaUrl) && Number.isFinite(lngDaUrl) && (latDaUrl !== 0 || lngDaUrl !== 0);
+        if (perto) setAlvoMapa([latDaUrl, lngDaUrl]);
+        else if (candidates[0]) setAlvoMapa([candidates[0].lat, candidates[0].lng]);
+      } catch (e) {
+        if (vivo) setErro(getErrorMessage(e, 'Não foi possível abrir a comunidade indicada no endereço.'));
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [comunidadeDaUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const naPorta = stats?.ok ?? 0;
   const naRua = stats?.rua ?? 0;

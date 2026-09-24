@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import TitleIcon from '../components/TitleIcon';
 import axios from 'axios';
@@ -176,6 +177,32 @@ const CommunitiesPage: React.FC = () => {
     });
     setShowModal(true);
   };
+
+  // Atalho ?edit=<id> (Sugestões dos fiéis): abre o cadastro direto no formulário.
+  // A comunidade pode não estar na lista carregada — nesse caso vem do detalhe.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editFromUrl = searchParams.get('edit');
+  useEffect(() => {
+    if (!editFromUrl || loading || !canEditCommunity) return;
+    const open = (community: Community) => {
+      handleEdit(community);
+      const next = new URLSearchParams(searchParams);
+      next.delete('edit');
+      setSearchParams(next, { replace: true });
+    };
+    const found = communities.find((c) => c.id === editFromUrl);
+    if (found) {
+      open(found);
+      return;
+    }
+    axios
+      .get(`${API_URL}/communities/${editFromUrl}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      })
+      .then((res) => open(res.data))
+      .catch(() => notify.error('Não foi possível abrir a comunidade do atalho'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editFromUrl, loading]);
 
   const handleDelete = async (id: string) => {
     const confirmed = await confirm.delete('esta comunidade');
