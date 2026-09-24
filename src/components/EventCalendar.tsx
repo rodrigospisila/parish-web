@@ -52,6 +52,8 @@ interface EventCalendarProps {
   fixedOccurrences?: FixedOccurrence[];
   /** Notifica a página do período visível (para buscar as ocorrências fixas) */
   onRangeChange?: (from: Date, to: Date) => void;
+  /** Clique numa ocorrência da agenda fixa (mostra o detalhe) */
+  onFixedClick?: (occurrence: FixedOccurrence) => void;
 }
 
 export interface FixedOccurrence {
@@ -61,6 +63,11 @@ export interface FixedOccurrence {
   start: string;
   end: string;
   community?: { id: string; name: string } | null;
+  massScheduleId?: string;
+  notes?: string | null;
+  /** Suspensa nesta data ("Não haverá") */
+  cancelled?: boolean;
+  cancelReason?: string | null;
 }
 
 const EventCalendar: React.FC<EventCalendarProps> = ({
@@ -72,6 +79,7 @@ const EventCalendar: React.FC<EventCalendarProps> = ({
   focusDate,
   fixedOccurrences = [],
   onRangeChange,
+  onFixedClick,
 }) => {
   const calendarRef = useRef<FullCalendar>(null);
 
@@ -107,20 +115,30 @@ const EventCalendar: React.FC<EventCalendarProps> = ({
     backgroundColor: 'transparent',
     borderColor: FIXED_COLOR,
     editable: false, // agenda fixa não se arrasta; edite em "Agenda Fixa"
-    classNames: ['fc-fixed-occurrence'],
+    classNames: [
+      'fc-fixed-occurrence',
+      ...(occ.cancelled ? ['is-cancelled'] : []),
+      ...(onFixedClick ? ['is-clickable'] : []),
+    ],
     extendedProps: {
       isFixed: true,
       typeLabel: occ.title,
       location: null,
       community: occ.community,
+      cancelled: !!occ.cancelled,
+      cancelReason: occ.cancelReason ?? null,
+      occurrence: occ,
     },
   }));
 
   const allCalendarEvents = [...calendarEvents, ...fixedCalendarEvents];
 
   const handleEventClick = (clickInfo: any) => {
-    // Ocorrência fixa não abre o modal de evento (é virtual)
-    if (clickInfo.event.extendedProps?.isFixed) return;
+    // Ocorrência fixa não abre o modal de evento (é virtual): só o detalhe
+    if (clickInfo.event.extendedProps?.isFixed) {
+      onFixedClick?.(clickInfo.event.extendedProps.occurrence as FixedOccurrence);
+      return;
+    }
     const event = events.find((calendarEvent) => calendarEvent.id === clickInfo.event.id);
     if (event) {
       onEventClick(event);
@@ -187,18 +205,23 @@ const EventCalendar: React.FC<EventCalendarProps> = ({
           const icon = getEventTypeIcon(event.extendedProps.type);
 
           const isFixed = event.extendedProps.isFixed;
+          const isCancelled = isFixed && event.extendedProps.cancelled;
 
           // Visão mensal: linha compacta (estilo Google Calendar) — detalhes no
           // hover (tooltip) e no clique. Semana/dia/lista: conteúdo completo.
           if (arg.view.type === 'dayGridMonth') {
             return (
               <div
-                className={`fc-evt-compact ${isFixed ? 'is-fixed' : ''}`}
+                className={`fc-evt-compact ${isFixed ? 'is-fixed' : ''} ${isCancelled ? 'is-cancelled' : ''}`}
                 style={{ ['--evt-color' as any]: isFixed ? '#64748b' : event.backgroundColor }}
               >
                 {isFixed && <span className="fc-evt-fixed-icon">🕐</span>}
                 {arg.timeText && <span className="fc-evt-compact-time">{arg.timeText}</span>}
-                <span className="fc-evt-compact-title">{event.title}</span>
+                {isCancelled ? (
+                  <span className="fc-evt-cancel-tag">Não haverá</span>
+                ) : (
+                  <span className="fc-evt-compact-title">{event.title}</span>
+                )}
               </div>
             );
           }
@@ -206,13 +229,16 @@ const EventCalendar: React.FC<EventCalendarProps> = ({
           // Semana/dia/lista para a agenda fixa: conteúdo enxuto com relógio
           if (isFixed) {
             return (
-              <div className="fc-event-content-custom is-fixed">
+              <div className={`fc-event-content-custom is-fixed ${isCancelled ? 'is-cancelled' : ''}`}>
                 <div className="fc-event-header-custom">
                   <span className="fc-event-icon">🕐</span>
                   <span className="fc-event-time">{arg.timeText}</span>
                 </div>
                 <div className="fc-event-title-custom">{event.title}</div>
-                <div className="fc-event-type-badge">Agenda fixa</div>
+                {isCancelled && event.extendedProps.cancelReason && (
+                  <div className="fc-event-cancel-reason">{event.extendedProps.cancelReason}</div>
+                )}
+                <div className="fc-event-type-badge">{isCancelled ? 'Não haverá' : 'Agenda fixa'}</div>
               </div>
             );
           }
@@ -234,7 +260,11 @@ const EventCalendar: React.FC<EventCalendarProps> = ({
           const p = info.event.extendedProps as any;
           const lines = [
             `${info.timeText ? `${info.timeText} · ` : ''}${info.event.title}`,
-            p.isFixed ? 'Agenda fixa da comunidade' : [p.typeLabel, p.location].filter(Boolean).join(' · '),
+            p.isFixed
+              ? p.cancelled
+                ? `Não haverá${p.cancelReason ? ` — ${p.cancelReason}` : ''}`
+                : 'Agenda fixa da comunidade'
+              : [p.typeLabel, p.location].filter(Boolean).join(' · '),
             p.community?.name,
           ].filter(Boolean);
           info.el.setAttribute('title', lines.join('\n'));

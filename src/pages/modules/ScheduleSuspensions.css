@@ -1,0 +1,586 @@
+/* Suspensão de horários fixos por data ("Não haverá") — Agenda Fixa */
+
+/* ---------- Painel "Próximos 7 dias" ---------- */
+.susp-week {
+  background: #fff;
+  border: 1px solid #e8ecf1;
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+  padding: 1rem 1.25rem 1.25rem;
+  margin-bottom: 1.5rem;
+  min-width: 0;
+}
+
+.susp-week-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.module-page .susp-week-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: #2c3e50;
+}
+
+.susp-week-head p {
+  margin: 0;
+  color: #6b7785;
+  font-size: 0.88rem;
+}
+
+.susp-days {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.susp-day {
+  border: 1px solid #edf0f4;
+  border-radius: 12px;
+  background: #fafbfc;
+  padding: 0.6rem 0.7rem 0.4rem;
+  min-width: 0;
+}
+
+.module-page .susp-day-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #075aa9;
+}
+
+.susp-day-title span {
+  color: #8a97a6;
+  font-weight: 700;
+}
+
+.susp-occ-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.susp-occ {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid #edf0f4;
+}
+
+.susp-occ:first-child {
+  border-top: none;
+}
+
+.susp-occ-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.susp-occ-main {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.susp-occ-time {
+  font-weight: 800;
+  color: #1f2d3a;
+  font-variant-numeric: tabular-nums;
+}
+
+.susp-occ-type {
+  color: #33414f;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.susp-occ-comm {
+  color: #6b7785;
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.susp-occ.is-cancelled .susp-occ-time,
+.susp-occ.is-cancelled .susp-occ-type {
+  text-decoration: line-through;
+  color: #8a97a6;
+}
+
+.susp-occ-reason {
+  flex-basis: 100%;
+  margin-top: -0.1rem;
+  font-size: 0.8rem;
+  color: #842029;
+  overflow-wrap: anywhere;
+}
+
+.susp-occ-by {
+  display: block;
+  color: #8a97a6;
+  font-size: 0.74rem;
+}
+
+/* ---------- Interruptor ---------- */
+.susp-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  padding: 0.25rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.susp-switch:focus-visible {
+  outline: 3px solid #86b7fe;
+  outline-offset: 2px;
+}
+
+.susp-switch:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.susp-switch-track {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: #c9d1da;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.susp-switch-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s;
+}
+
+.susp-switch.is-on .susp-switch-track {
+  background: #198754;
+}
+
+.susp-switch.is-on .susp-switch-thumb {
+  transform: translateX(16px);
+}
+
+.susp-switch-text {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: #842029;
+  min-width: 64px;
+  text-align: left;
+}
+
+.susp-switch.is-on .susp-switch-text {
+  color: #0f5132;
+}
+
+/* ---------- Mensagens ---------- */
+.susp-error {
+  background: #fdecee;
+  border: 1px solid #f1aeb5;
+  color: #842029;
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.88rem;
+  margin: 0.5rem 0;
+}
+
+.susp-notice:empty {
+  display: none;
+}
+
+.susp-notice {
+  background: #e8f5ee;
+  border: 1px solid #a3cfbb;
+  color: #0f5132;
+  border-radius: 8px;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.88rem;
+  margin: 0.5rem 0;
+}
+
+.susp-muted {
+  color: #8a97a6;
+  font-size: 0.9rem;
+  padding: 0.5rem 0;
+}
+
+/* ---------- Selo na lista de horários ---------- */
+.module-page .susp-badge {
+  border: none;
+  cursor: pointer;
+  margin-left: 6px;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.module-page span.susp-badge {
+  cursor: default;
+}
+
+/* ---------- Diálogos ---------- */
+/* Seletor de alta especificidade: o genérico ".modal-content h2" de outras
+   páginas pode vencer no bundle. */
+.module-modal-overlay .module-modal.susp-modal h2.susp-title {
+  margin: 0 0 0.5rem;
+  color: #2c3e50;
+  font-size: 1.25rem;
+}
+
+.susp-modal:focus {
+  outline: none;
+}
+
+.susp-sub {
+  color: #52606d;
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+  line-height: 1.45;
+}
+
+.susp-reason {
+  border: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  min-width: 0;
+}
+
+.susp-reason legend {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #444;
+  margin-bottom: 0.4rem;
+  padding: 0;
+}
+
+.susp-optional {
+  font-weight: 400;
+  color: #8a97a6;
+  font-size: 0.82rem;
+}
+
+.susp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.susp-chip {
+  border: 1px solid #d8dee6;
+  background: #fff;
+  color: #33414f;
+  border-radius: 999px;
+  padding: 0.4rem 0.8rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.susp-chip:hover {
+  border-color: #075aa9;
+}
+
+.susp-chip.is-on {
+  background: #075aa9;
+  border-color: #075aa9;
+  color: #fff;
+}
+
+.susp-chip:focus-visible,
+.susp-link:focus-visible,
+.susp-btn-light:focus-visible,
+.susp-date input:focus-visible {
+  outline: 3px solid #86b7fe;
+  outline-offset: 2px;
+}
+
+.susp-reason-label {
+  display: block;
+  font-size: 0.8rem;
+  color: #6b7785;
+  margin-bottom: 0.25rem;
+}
+
+.susp-reason input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.95rem;
+}
+
+.susp-count {
+  display: block;
+  text-align: right;
+  color: #8a97a6;
+  font-size: 0.75rem;
+  margin-top: 0.2rem;
+}
+
+.module-modal .btn-submit.susp-danger {
+  background: #b02a37;
+}
+
+.module-modal .btn-submit.susp-danger:disabled {
+  background: #c9d1da;
+  color: #52606d;
+  opacity: 1;
+}
+
+.module-modal .btn-submit.susp-danger:hover:not(:disabled) {
+  background: #8f1f2b;
+}
+
+/* ---------- Modal "Suspender datas" ---------- */
+.susp-block {
+  border: 1px solid #edf0f4;
+  border-radius: 12px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  min-width: 0;
+}
+
+.susp-block-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.module-modal .susp-block h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #2c3e50;
+}
+
+.susp-block-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.susp-link {
+  background: none;
+  border: none;
+  padding: 0.2rem 0;
+  color: #075aa9;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.susp-dates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 0.4rem;
+  max-height: 232px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.susp-date {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  padding: 0.4rem 0.55rem;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.88rem;
+  color: #33414f;
+}
+
+.susp-date input {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: #b02a37;
+}
+
+.susp-date.is-checked {
+  border-color: #b02a37;
+  background: #fdf3f4;
+}
+
+.susp-date-text {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.susp-date.is-cancelled {
+  cursor: default;
+  background: #f4f5f7;
+  border-color: #e2e5ea;
+  color: #8a97a6;
+}
+
+.susp-date.is-cancelled .susp-date-text {
+  text-decoration: line-through;
+}
+
+.susp-date small {
+  width: 100%;
+  font-size: 0.7rem;
+  color: #842029;
+}
+
+.susp-range {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed #e2e5ea;
+  font-size: 0.88rem;
+  color: #52606d;
+}
+
+.susp-range-label {
+  font-weight: 600;
+}
+
+.susp-range-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.susp-range-field input[type='text'] {
+  width: 130px;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.susp-btn-light {
+  border: 1px solid #d8dee6;
+  background: #f4f6f8;
+  color: #1f2d3a;
+  border-radius: 8px;
+  padding: 0.45rem 0.8rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.susp-btn-light:hover:not(:disabled) {
+  background: #e9edf1;
+}
+
+.susp-btn-light:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.susp-submit-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0.25rem 0 1rem;
+}
+
+.susp-list ul {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.susp-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid #edf0f4;
+}
+
+.susp-list li:first-child {
+  border-top: none;
+}
+
+.susp-list-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.susp-list-info strong {
+  color: #1f2d3a;
+  font-size: 0.92rem;
+}
+
+.susp-list-reason {
+  color: #842029;
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+}
+
+.susp-list-info small {
+  color: #8a97a6;
+  font-size: 0.76rem;
+}
+
+@media (max-width: 600px) {
+  .susp-week {
+    padding: 0.85rem;
+  }
+
+  .susp-days {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Ações da linha do horário: botões de texto quebram entre si, ícones ficam ao lado */
+.fixed-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.fixed-actions-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.fixed-actions-main .btn-secondary {
+  white-space: nowrap;
+}

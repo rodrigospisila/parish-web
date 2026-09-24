@@ -643,6 +643,57 @@
   cursor: default !important;
 }
 
+.fc-fixed-occurrence.is-clickable {
+  cursor: pointer !important;
+}
+
 .fc-event-content-custom.is-fixed .fc-event-type-badge {
   background: #64748b;
+}
+
+/* Agenda fixa suspensa nesta data ("Não haverá"): riscada e esmaecida */
+.fc-fixed-occurrence.is-cancelled {
+  opacity: 0.75;
+  border-color: #c9a3a8 !important;
+}
+
+.fc-evt-compact.is-cancelled .fc-evt-compact-time,
+.fc-evt-compact.is-cancelled .fc-evt-compact-title,
+.fc-event-content-custom.is-cancelled .fc-event-time,
+.fc-event-content-custom.is-cancelled .fc-event-title-custom {
+  text-decoration: line-through;
+  color: #94a3b8;
+}
+
+.fc-evt-compact.is-cancelled {
+  overflow: hidden;
+}
+
+.fc-evt-cancel-tag {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.66rem;
+  font-weight: 800;
+  color: #842029;
+  background: #f8d7da;
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 1.5;
+}
+
+.fc-event-content-custom.is-fixed.is-cancelled .fc-event-type-badge {
+  background: #b02a37;
+}
+
+.fc-event-cancel-reason {
+  font-size: 0.72rem;
+  color: #842029;
+  overflow-wrap: anywhere;
+}
+
+.fc-evt-compact.is-fixed.is-cancelled {
+  border-left-color: #b02a37;
+  opacity: 0.85;
 }

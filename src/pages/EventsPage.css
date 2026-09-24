@@ -1213,3 +1213,37 @@
   background: #0d6efd;
   color: white;
 }
+
+/* Detalhe de uma ocorrência da agenda fixa (inclui "Não haverá") */
+.modal-overlay .modal-content.fixed-occ-modal {
+  max-width: 480px;
+}
+
+.modal-overlay .modal-content.fixed-occ-modal .event-detail-header {
+  padding-right: 40px;
+}
+
+/* Alta especificidade: o genérico ".modal-content h2" de outras páginas pode vencer no bundle */
+.modal-overlay .modal-content.fixed-occ-modal h2.fixed-occ-title {
+  color: #2c3e50;
+  font-size: 1.4rem;
+  margin: 0;
+}
+
+.fixed-occ-modal .detail-row.fixed-occ-cancelled {
+  background: #fdecee;
+  border: 1px solid #f1aeb5;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.fixed-occ-modal .detail-row.fixed-occ-cancelled strong,
+.fixed-occ-modal .detail-row.fixed-occ-cancelled span {
+  color: #842029;
+}
+
+.fixed-occ-hint {
+  font-size: 0.88rem;
+  color: #6b7785;
+  margin: 0;
+}

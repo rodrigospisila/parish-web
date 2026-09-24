@@ -13,6 +13,16 @@ import {
   type MassRecurrence,
 } from '../../utils/recorrencia';
 import { useAuth } from '../../contexts/AuthContext';
+import {
+  SuspendDatesModal,
+  TYPE_META,
+  UpcomingWeekPanel,
+  addDaysISO,
+  longDate,
+  occDate,
+  todayISO,
+  type FixedOccurrence,
+} from './ScheduleSuspensions';
 import './ModulePages.css';
 
 // Papéis que gerenciam a agenda fixa (criam/editam). O coordenador de pastoral
@@ -57,6 +67,8 @@ interface MassSchedule {
   specialDate?: string | null;
   community: { id: string; name: string; parish?: { name: string } | null };
   pastorals?: MassPastoral[];
+  /** Datas suspensas ("não haverá") de hoje a +60 dias */
+  upcomingCancellations?: { date: string; reason: string | null }[];
 }
 
 interface SelectedPastoral {
@@ -67,12 +79,8 @@ interface SelectedPastoral {
 
 const WEEKDAYS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
-const TYPE_META: Record<MassSchedule['type'], { label: string; color: string; icon: string }> = {
-  MASS: { label: 'Missa', color: 'blue', icon: '⛪' },
-  CONFESSION: { label: 'Confissão', color: 'yellow', icon: '🙏' },
-  ADORATION: { label: 'Adoração', color: 'green', icon: '✨' },
-  ROSARY: { label: 'Terço', color: 'gray', icon: '📿' },
-};
+/** Acima disso o painel da semana pede para escolher uma comunidade */
+const WEEK_PANEL_MAX_COMMUNITIES = 5;
 
 const pastoralName = (p: CommunityPastoral) => p.globalPastoral?.name || p.name || 'Pastoral';
 
@@ -125,6 +133,12 @@ const FixedSchedulePage: React.FC = () => {
   const [linkRequired, setLinkRequired] = useState('0');
   const [linking, setLinking] = useState(false);
 
+  // Suspensão por data ("não haverá")
+  const [suspendTarget, setSuspendTarget] = useState<MassSchedule | null>(null);
+  const [weekRefresh, setWeekRefresh] = useState(0);
+  // Contagem de datas suspensas quando a listagem não traz upcomingCancellations
+  const [fallbackCancelled, setFallbackCancelled] = useState<Record<string, { date: string; reason: string | null }[]>>({});
+
   useEffect(() => {
     if (!isPastoralCoord) return;
     api
@@ -141,6 +155,35 @@ const FixedSchedulePage: React.FC = () => {
       ]);
       setSchedules(schedulesRes.data);
       setCommunities(communitiesRes.data);
+
+      // Selo "N datas suspensas": usa upcomingCancellations; se a listagem não
+      // trouxer o campo, conta pelas ocorrências dos próximos 60 dias
+      const list: MassSchedule[] = schedulesRes.data ?? [];
+      const communityCount = new Set(list.map((s) => s.community.id)).size;
+      if (
+        list.some((s) => s.upcomingCancellations === undefined) &&
+        (communityFilter || (communityCount > 0 && communityCount <= WEEK_PANEL_MAX_COMMUNITIES))
+      ) {
+        const start = todayISO();
+        api
+          .get<FixedOccurrence[]>('/mass-schedules/occurrences', {
+            params: {
+              from: `${start}T00:00:00.000Z`,
+              to: `${addDaysISO(start, 60)}T23:59:59.000Z`,
+              communityId: communityFilter || undefined,
+            },
+          })
+          .then((res) => {
+            const map: Record<string, { date: string; reason: string | null }[]> = {};
+            for (const o of res.data ?? []) {
+              if (o.cancelled) (map[o.massScheduleId] ??= []).push({ date: occDate(o), reason: o.cancelReason ?? null });
+            }
+            setFallbackCancelled(map);
+          })
+          .catch(() => setFallbackCancelled({}));
+      } else {
+        setFallbackCancelled({});
+      }
 
       const from = new Date().toISOString().slice(0, 10);
       const to = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -372,6 +415,13 @@ const FixedSchedulePage: React.FC = () => {
     }
   };
 
+  const cancellationsOf = (schedule: MassSchedule) =>
+    schedule.upcomingCancellations ?? fallbackCancelled[schedule.id] ?? [];
+
+  // Painel "Próximos 7 dias": uma comunidade filtrada ou poucas no escopo
+  const scopeCommunities = new Set(schedules.map((s) => s.community.id)).size;
+  const weekPanelEnabled = !!communityFilter || scopeCommunities <= WEEK_PANEL_MAX_COMMUNITIES;
+
   // Agrupa por comunidade para exibição
   const grouped = schedules.reduce<Record<string, MassSchedule[]>>((acc, schedule) => {
     (acc[schedule.community.name] ??= []).push(schedule);
@@ -407,6 +457,22 @@ const FixedSchedulePage: React.FC = () => {
           searchPlaceholder="Buscar comunidade..."
         />
       </div>
+
+      {schedules.length > 0 &&
+        (weekPanelEnabled ? (
+          <UpcomingWeekPanel
+            communityId={communityFilter}
+            canManage={canManage}
+            showCommunity={!communityFilter && scopeCommunities > 1}
+            refreshKey={weekRefresh}
+            onChanged={() => void fetchData()}
+          />
+        ) : (
+          <div className="privacy-note" style={{ background: '#f4f6f8', borderColor: '#dde3ea', color: '#52606d' }}>
+            <strong>Próximos 7 dias:</strong> escolha uma comunidade no filtro acima para ver a semana e marcar
+            os horários que <strong>não vão acontecer</strong>.
+          </div>
+        ))}
 
       {Object.keys(grouped).length === 0 ? (
         <div className="empty-state">Nenhum horário fixo cadastrado ainda.</div>
@@ -448,6 +514,28 @@ const FixedSchedulePage: React.FC = () => {
                               mensal
                             </span>
                           )}
+                          {(() => {
+                            const suspended = cancellationsOf(schedule);
+                            if (suspended.length === 0) return null;
+                            const text = `⏸ ${suspended.length} ${suspended.length === 1 ? 'data suspensa' : 'datas suspensas'}`;
+                            const detail = suspended
+                              .map((c) => `${longDate(c.date.slice(0, 10))}${c.reason ? ` — ${c.reason}` : ''}`)
+                              .join('\n');
+                            return canManage ? (
+                              <button
+                                type="button"
+                                className="status-badge red susp-badge"
+                                title={`Não haverá:\n${detail}\n\nClique para ver ou reativar`}
+                                onClick={() => setSuspendTarget(schedule)}
+                              >
+                                {text}
+                              </button>
+                            ) : (
+                              <span className="status-badge red susp-badge" title={`Não haverá:\n${detail}`}>
+                                {text}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td><strong>{schedule.time}</strong></td>
                         <td>
@@ -525,7 +613,9 @@ const FixedSchedulePage: React.FC = () => {
                             );
                           })()}
                         </td>
-                        <td className="actions-cell">
+                        <td>
+                          <div className="fixed-actions">
+                          <div className="fixed-actions-main">
                           <button
                             className="btn-secondary"
                             style={{ padding: '4px 10px', fontSize: '0.8rem' }}
@@ -534,6 +624,17 @@ const FixedSchedulePage: React.FC = () => {
                           >
                             📋 Gerar escala
                           </button>
+                          {canManage && (
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              style={{ padding: '4px 10px', fontSize: '0.8rem' }}
+                              onClick={() => setSuspendTarget(schedule)}
+                              title="Marcar dias em que este horário não vai acontecer"
+                            >
+                              ⏸ Suspender datas
+                            </button>
+                          )}
                           {isPastoralCoord && myPastorals.length > 0 && (
                             <button
                               className="btn-secondary"
@@ -544,12 +645,14 @@ const FixedSchedulePage: React.FC = () => {
                               ➕ Minha pastoral
                             </button>
                           )}
+                          </div>
                           {canManage && (
                             <>
                               <button className="entity-icon-btn" onClick={() => openEdit(schedule)} title="Editar">✏️</button>
                               <button className="entity-icon-btn danger" onClick={() => handleDelete(schedule)} title="Excluir">🗑️</button>
                             </>
                           )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -858,6 +961,27 @@ const FixedSchedulePage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal de suspender datas ("não haverá") */}
+      {suspendTarget && (
+        <SuspendDatesModal
+          schedule={{
+            id: suspendTarget.id,
+            type: suspendTarget.type,
+            time: suspendTarget.time,
+            community: { id: suspendTarget.community.id, name: suspendTarget.community.name },
+            description:
+              suspendTarget.isSpecial && suspendTarget.specialDate
+                ? `Especial ${new Date(suspendTarget.specialDate).toLocaleDateString('pt-BR')}`
+                : descreverRecorrencia(suspendTarget),
+          }}
+          onClose={() => setSuspendTarget(null)}
+          onChanged={() => {
+            setWeekRefresh((k) => k + 1);
+            void fetchData();
+          }}
+        />
       )}
 
       {/* Modal de gerar escala */}

@@ -4,7 +4,8 @@ import axios from 'axios';
 import Calendar from 'react-calendar';
 import { useAuth } from '../contexts/AuthContext';
 import CreateEventModal from '../components/CreateEventModal';
-import EventCalendar from '../components/EventCalendar';
+import { Link } from 'react-router-dom';
+import EventCalendar, { type FixedOccurrence } from '../components/EventCalendar';
 import TimeInput24h from '../components/TimeInput24h';
 import {
   eventStatuses,
@@ -140,7 +141,9 @@ const EventsPage: React.FC = () => {
   const [miniDate, setMiniDate] = useState<Date | null>(null);
 
   // Agenda fixa (Missa/Confissão/Adoração/Terço) sobreposta ao calendário
-  const [fixedOccurrences, setFixedOccurrences] = useState<any[]>([]);
+  const [fixedOccurrences, setFixedOccurrences] = useState<FixedOccurrence[]>([]);
+  // Detalhe de uma ocorrência da agenda fixa (inclui "Não haverá" + motivo)
+  const [selectedFixed, setSelectedFixed] = useState<FixedOccurrence | null>(null);
   const [showFixed, setShowFixed] = useState(true);
   const [calendarRange, setCalendarRange] = useState<{ from: Date; to: Date } | null>(null);
 
@@ -673,6 +676,7 @@ const EventsPage: React.FC = () => {
               focusDate={miniDate}
               fixedOccurrences={showFixed ? fixedOccurrences : []}
               onRangeChange={(from, to) => setCalendarRange({ from, to })}
+              onFixedClick={setSelectedFixed}
             />
             {canDragEvents && (
               <p className="calendar-drag-hint">💡 Dica: arraste um evento para outra data para reagendá-lo.</p>
@@ -975,6 +979,91 @@ const EventsPage: React.FC = () => {
                   Excluir
                 </button>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {selectedFixed && (
+        <div className="modal-overlay" onClick={() => setSelectedFixed(null)}>
+          <div
+            className="modal-content event-detail-modal fixed-occ-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="fixed-occ-title"
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setSelectedFixed(null);
+            }}
+          >
+            <button
+              className="modal-close"
+              onClick={() => setSelectedFixed(null)}
+              aria-label="Fechar"
+              autoFocus
+            >
+              x
+            </button>
+            <div className="event-detail-header">
+              <h2 id="fixed-occ-title" className="fixed-occ-title">
+                {selectedFixed.title}
+              </h2>
+              <span
+                className="event-status-badge"
+                style={{ backgroundColor: selectedFixed.cancelled ? '#b02a37' : '#64748b' }}
+              >
+                {selectedFixed.cancelled ? 'Não haverá' : 'Agenda fixa'}
+              </span>
+            </div>
+            <div className="event-detail-body">
+              <div className="detail-row">
+                <strong>Data:</strong>
+                <span>
+                  {new Date(`${selectedFixed.start.slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR', {
+                    weekday: 'long',
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                  })}{' '}
+                  às {selectedFixed.start.slice(11, 16)}
+                </span>
+              </div>
+              {selectedFixed.community?.name && (
+                <div className="detail-row">
+                  <strong>Comunidade:</strong>
+                  <span>{selectedFixed.community.name}</span>
+                </div>
+              )}
+              {selectedFixed.cancelled ? (
+                <div className="detail-row fixed-occ-cancelled">
+                  <strong>Não haverá neste dia</strong>
+                  <span>Motivo: {selectedFixed.cancelReason || 'não informado'}</span>
+                </div>
+              ) : (
+                <div className="detail-row">
+                  <strong>Situação:</strong>
+                  <span>Acontece normalmente</span>
+                </div>
+              )}
+              {selectedFixed.notes && (
+                <div className="detail-row">
+                  <strong>Observação:</strong>
+                  <span>{selectedFixed.notes}</span>
+                </div>
+              )}
+            </div>
+            {canManageEvents && (
+              <p className="fixed-occ-hint">
+                Para suspender ou reativar este horário, use a{' '}
+                <Link
+                  to={`/admin/fixed-schedule${
+                    selectedFixed.community?.id ? `?community=${selectedFixed.community.id}` : ''
+                  }`}
+                >
+                  Agenda Fixa
+                </Link>
+                .
+              </p>
             )}
           </div>
         </div>
