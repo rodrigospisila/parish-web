@@ -116,6 +116,7 @@ const FONTE_DA_SUGESTAO: Record<string, string> = {
   'site-paroquia': 'site da paróquia',
   'site-diocese': 'site da diocese',
   wikidata: 'Wikidata',
+  usuario: 'fiel no app',
 };
 const MOTIVO_DA_SUGESTAO: Record<string, string> = {
   conflito: 'as fontes discordam entre si',
@@ -126,6 +127,7 @@ const MOTIVO_DA_SUGESTAO: Record<string, string> = {
   'mesmo-ponto': 'mesmo ponto de outra comunidade',
   evidencia: 'coordenada publicada pela própria paróquia',
   'endereco-oficial': 'endereço oficial, localizado no Censo',
+  'sugestao-usuario': 'sugestão de um fiel (confira antes de aceitar)',
 };
 
 /** Quem conferiu o pino, em linguagem de gente. */
