@@ -513,8 +513,8 @@ const FaixasEPrecos: React.FC<{ tiers: Tier[]; erro: string; carregando: boolean
     ev.preventDefault();
     if (!editando) return;
     const f = editando.form;
-    const key = f.key.trim();
-    if (!/^[a-z0-9][a-z0-9_-]*$/i.test(key)) return setErroForm('Chave: só letras, números, "-" e "_" (ex.: ate-100).');
+    const key = f.key.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(key)) return setErroForm('Chave: 2 a 40 letras minúsculas, números ou "-" (ex.: ate-100).');
     if (!f.name.trim()) return setErroForm('Dê um nome à faixa.');
     const mensal = campoParaCentavos(f.monthly);
     const anual = campoParaCentavos(f.yearly);
@@ -524,8 +524,8 @@ const FaixasEPrecos: React.FC<{ tiers: Tier[]; erro: string; carregando: boolean
     setSalvando(true);
     setErroForm('');
     try {
+      // a chave vai só no caminho (a API recusa campos que não conhece no corpo)
       await api.put(`/platform/tiers/${encodeURIComponent(key)}`, {
-        key,
         name: f.name.trim(),
         description: f.description.trim() || null,
         maxMembers: max,

@@ -60,8 +60,10 @@ export const centavosParaCampo = (cents: number | null | undefined) =>
 export const campoParaCentavos = (texto: string): number | null => {
   let t = texto.replace(/R\$\s*/i, '').replace(/\s/g, '').trim();
   if (!t) return null;
-  // Com vírgula, o ponto é separador de milhar; sem vírgula, o ponto é decimal
+  // Com vírgula, o ponto é separador de milhar; sem vírgula, o ponto só é
+  // decimal se não tiver cara de milhar ("1.990" = mil novecentos e noventa)
   if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
   const n = Number(t);
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
 };
