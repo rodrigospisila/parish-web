@@ -400,3 +400,40 @@
 .territory-map .tm-google:hover { text-decoration: underline; }
 .territory-map .tm-conferido { margin-top: 3px; color: #1f7a4a !important; font-weight: 700; }
 .territory-map .tm-sugestao-detalhe a { color: #075aa9; }
+
+/* ── Abas: pinos | propostas de dados ── */
+.territory-map .tm-abas {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #e3e8ef;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.territory-map .tm-aba {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  padding: 9px 14px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: #52606d;
+  cursor: pointer;
+}
+.territory-map .tm-aba:hover { color: #075aa9; }
+.territory-map .tm-aba.on { color: #075aa9; border-bottom-color: #075aa9; }
+.territory-map .tm-aba-contador {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #c78216;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 800;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}

@@ -6,6 +6,7 @@ import 'leaflet/dist/leaflet.css';
 import TitleIcon from '../components/TitleIcon';
 import BaseMapLayers, { type BaseMap } from '../components/BaseMapLayers';
 import api, { getErrorMessage } from '../services/api';
+import TerritoryProposals, { normalizarResumo, type ResumoPropostas } from './TerritoryProposals';
 import './modules/ModulePages.css';
 import './TerritoryMapPage.css';
 
@@ -16,6 +17,9 @@ import './TerritoryMapPage.css';
  * cadastro completo e esvaziar a FILA DE REVISÃO — as coordenadas que as cargas
  * automáticas acharam mas não gravaram sozinhas, à espera de um par de olhos.
  * A carga é por retângulo visível, porque são mais de 50 mil comunidades.
+ *
+ * Segunda aba (?proposals=1): PROPOSTAS DE DADOS — horários e correções de cadastro
+ * levantados em fonte oficial, à espera de aprovação (ver TerritoryProposals.tsx).
  */
 
 type PinKind = 'ok' | 'rua' | 'local' | 'dup' | 'sem';
@@ -224,6 +228,19 @@ async function procurarNoNominatim(row: MapRow): Promise<{ lat: number; lng: num
 }
 
 const TerritoryMapPage: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const modoPropostas = searchParams.get('proposals') === '1';
+  const [resumoPropostas, setResumoPropostas] = useState<ResumoPropostas | null>(null);
+  const carregarResumoPropostas = useCallback(() => {
+    // O contador da aba é conveniência: sem a rota no servidor, a aba mostra o erro dela
+    api
+      .get('/platform/data-proposals/summary')
+      .then((r) => setResumoPropostas(normalizarResumo(r.data)))
+      .catch(() => setResumoPropostas(null));
+  }, []);
+  useEffect(() => { carregarResumoPropostas(); }, [carregarResumoPropostas]);
+  const trocarAba = (propostas: boolean) => setSearchParams(propostas ? { proposals: '1' } : {}, { replace: true });
+
   const [stats, setStats] = useState<Stats | null>(null);
   const [dioceses, setDioceses] = useState<DioceseRow[]>([]);
   const [rows, setRows] = useState<MapRow[]>([]);
@@ -270,6 +287,7 @@ const TerritoryMapPage: React.FC = () => {
   }, [uf]);
 
   const carregar = useCallback(async () => {
+    if (modoPropostas) return;
     const meu = ++pedidoRef.current;
     setCarregando(true);
     setErro('');
@@ -302,7 +320,7 @@ const TerritoryMapPage: React.FC = () => {
     } finally {
       if (meu === pedidoRef.current) setCarregando(false);
     }
-  }, [uf, dioceseId, pin, naFila, buscaAplicada, naFila ? '' : bbox]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [uf, dioceseId, pin, naFila, buscaAplicada, naFila ? '' : bbox, modoPropostas]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { void carregar(); }, [carregar]);
 
@@ -453,12 +471,12 @@ const TerritoryMapPage: React.FC = () => {
    * Sugestões dos fiéis: abre o editor da comunidade com as sugestões de pino pendentes
    * e, quando vêm lat/lng, leva o mapa até o ponto que o fiel sugeriu.
    */
-  const [searchParams] = useSearchParams();
   const comunidadeDaUrl = searchParams.get('community');
   const latDaUrl = Number(searchParams.get('lat'));
   const lngDaUrl = Number(searchParams.get('lng'));
   useEffect(() => {
-    if (!comunidadeDaUrl) return;
+    // Na aba de propostas, ?community= escolhe a comunidade de lá, não abre o editor de pino
+    if (!comunidadeDaUrl || modoPropostas) return;
     let vivo = true;
     (async () => {
       try {
@@ -499,7 +517,7 @@ const TerritoryMapPage: React.FC = () => {
     return () => {
       vivo = false;
     };
-  }, [comunidadeDaUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [comunidadeDaUrl, modoPropostas]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const naPorta = stats?.ok ?? 0;
   const naRua = stats?.rua ?? 0;
@@ -515,9 +533,27 @@ const TerritoryMapPage: React.FC = () => {
           <TitleIcon name="comunidade" /> Mapa do território
         </h1>
         <p className="module-subtitle">
-          Todas as comunidades do país, a correção rápida do pino e a fila de sugestões à espera de conferência.
+          Todas as comunidades do país, a correção rápida do pino, a fila de sugestões à espera de conferência e as propostas de dados
+          levantadas em fonte oficial.
         </p>
       </header>
+
+      <nav className="tm-abas" aria-label="Modo do mapa">
+        <button type="button" className={`tm-aba${modoPropostas ? '' : ' on'}`} onClick={() => trocarAba(false)} aria-pressed={!modoPropostas}>
+          Pinos das comunidades
+        </button>
+        <button type="button" className={`tm-aba${modoPropostas ? ' on' : ''}`} onClick={() => trocarAba(true)} aria-pressed={modoPropostas}>
+          Propostas de dados
+          {resumoPropostas?.byStatus?.PENDING != null && (
+            <span className="tm-aba-contador" title="Propostas pendentes">{num(resumoPropostas.byStatus.PENDING)}</span>
+          )}
+        </button>
+      </nav>
+
+      {modoPropostas ? (
+        <TerritoryProposals resumo={resumoPropostas} recarregarResumo={carregarResumoPropostas} />
+      ) : (
+      <>
 
       {stats && (
         <section className="tm-kpis">
@@ -903,6 +939,8 @@ const TerritoryMapPage: React.FC = () => {
             ver a fila
           </button>
         </p>
+      )}
+      </>
       )}
     </div>
   );

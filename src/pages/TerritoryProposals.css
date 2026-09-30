@@ -1,0 +1,320 @@
+/* Mapa do território — aba "Propostas de dados" (SYSTEM_ADMIN).
+   Reaproveita as peças .pf-* da seção Plataforma; aqui só o que é da aba. */
+
+.platform-page.dp .dp-explica {
+  margin: -4px 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #eef5fd;
+  border: 1px solid #d3e4f7;
+  font-size: 13px;
+  color: #17324d;
+}
+.platform-page.dp .dp-filtros select { max-width: 240px; }
+.platform-page.dp .dp-filtros .pf-select-largo { max-width: 300px; }
+.platform-page.dp .dp-cidade { flex: 0 1 240px; }
+.platform-page.dp .dp-cidade input { min-width: 100px; }
+
+/* Corpo: lista de cartões à esquerda, mapa à direita */
+.platform-page.dp .dp-corpo {
+  display: grid;
+  grid-template-columns: minmax(360px, 460px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+/* A lista cresce com a página (sem rolagem própria); o mapa fica preso ao lado */
+.platform-page.dp .dp-lista {
+  border: 1px solid #e3e8ef;
+  border-radius: 12px;
+  background: #f6f8fb;
+  min-height: 480px;
+  padding: 8px;
+  min-width: 0;
+}
+.platform-page.dp .dp-mapa {
+  position: sticky;
+  top: 12px;
+  height: calc(100vh - 24px);
+  max-height: 900px;
+  min-height: 480px;
+  border: 1px solid #e3e8ef;
+  border-radius: 12px;
+  overflow: hidden;
+  z-index: 0; /* o Leaflet usa z-index altos; mantém o mapa abaixo do diálogo */
+  min-width: 0;
+}
+.platform-page.dp .dp-mapa-legenda {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  max-width: calc(100% - 70px);
+  box-sizing: border-box;
+  z-index: 800;
+  background: rgba(255, 255, 255, 0.93);
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-size: 12px;
+  color: #17324d;
+  box-shadow: 0 1px 5px rgba(11, 28, 44, 0.2);
+}
+.platform-page.dp .dp-mapa-erro {
+  background: #fdecec;
+  color: #a12b31;
+  border: 1px solid #f1b7b7;
+  border-radius: 8px;
+  padding: 6px 9px;
+  display: block;
+}
+
+/* Pino com a quantidade de propostas */
+.leaflet-marker-icon.dp-pino {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #17324d;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(11, 28, 44, 0.35);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+}
+.leaflet-marker-icon.dp-pino.on {
+  background: #075aa9;
+  border-color: #ffd23f;
+  border-width: 3px;
+  font-size: 13px;
+}
+
+/* Topo da lista */
+.platform-page.dp .dp-comunidade {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  justify-content: space-between;
+  background: #17324d;
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.platform-page.dp .dp-comunidade > div { min-width: 0; }
+.platform-page.dp .dp-comunidade small { display: block; font-size: 11.5px; color: rgba(255, 255, 255, 0.75); }
+.platform-page.dp .dp-comunidade strong { display: block; font-size: 15px; color: #fff; overflow-wrap: anywhere; }
+.platform-page.dp .dp-comunidade .dp-comunidade-obs { margin-top: 4px; color: #ffe08a; }
+.platform-page.dp .dp-comunidade .pf-btn { flex: 0 0 auto; }
+.platform-page.dp .dp-lista-topo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: #52606d;
+  padding: 2px 4px 8px;
+}
+.platform-page.dp .dp-marcar-todas { display: flex; align-items: center; gap: 5px; font-weight: 700; cursor: pointer; }
+/* Barra do lote + aviso da última ação: presos no topo enquanto a lista rola */
+.platform-page.dp .dp-fixo {
+  position: sticky;
+  top: 8px;
+  z-index: 2;
+}
+.platform-page.dp .dp-fixo:empty { display: none; }
+.platform-page.dp .dp-lote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid #075aa9;
+  border-radius: 10px;
+  padding: 9px 10px;
+  margin-bottom: 8px;
+  box-shadow: 0 4px 12px rgba(11, 28, 44, 0.1);
+  font-size: 13px;
+  color: #17324d;
+}
+.platform-page.dp .dp-lote input {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+.platform-page.dp .dp-aviso-ok,
+.platform-page.dp .dp-fixo > .pf-erro {
+  position: relative;
+  padding-right: 30px;
+  margin-bottom: 8px;
+  box-shadow: 0 4px 12px rgba(11, 28, 44, 0.1);
+}
+.platform-page.dp .dp-aviso-ok {
+  background: #eaf6ef;
+  border: 1px solid #bfe3cd;
+  color: #1f5f3a;
+  border-radius: 9px;
+  padding: 10px 30px 10px 12px;
+  font-size: 13px;
+}
+.platform-page.dp .dp-aviso-ok ul,
+.platform-page.dp .dp-fixo > .pf-erro ul { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; }
+.platform-page.dp .dp-aviso-fechar {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  background: none;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.7;
+  cursor: pointer;
+}
+
+/* Cartão da proposta */
+.platform-page.dp .dp-cartoes { display: flex; flex-direction: column; gap: 8px; }
+.platform-page.dp .dp-cartao {
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  border-radius: 12px;
+  padding: 11px 12px;
+  min-width: 0;
+}
+.platform-page.dp .dp-cartao.on { border-color: #075aa9; box-shadow: 0 0 0 2px rgba(7, 90, 169, 0.15); }
+.platform-page.dp .dp-cartao-feita { background: #fbfcfd; }
+.platform-page.dp .dp-cartao-topo { display: flex; gap: 9px; align-items: flex-start; }
+.platform-page.dp .dp-check { margin-top: 3px; width: 16px; height: 16px; flex: 0 0 auto; cursor: pointer; }
+.platform-page.dp .dp-cartao-titulo { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+.platform-page.dp .dp-kind {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.platform-page.dp .dp-kind-horario { background: #e8f1fb; color: #075aa9; }
+.platform-page.dp .dp-kind-cadastro { background: #fff4de; color: #8a5a00; }
+.platform-page.dp .dp-kind-site { background: #f3e8f9; color: #8e44ad; }
+.platform-page.dp .dp-alvo-nome { font-size: 14px; font-weight: 700; color: #17324d; overflow-wrap: anywhere; }
+.platform-page.dp .dp-alvo-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: #b8c7d6;
+  text-underline-offset: 3px;
+}
+.platform-page.dp .dp-alvo-link:hover { color: #075aa9; text-decoration-color: #075aa9; }
+.platform-page.dp .dp-alvo-sub { flex-basis: 100%; font-size: 11.5px; color: #6b7785; }
+
+.platform-page.dp .dp-mudanca { margin: 8px 0 0 25px; }
+.platform-page.dp .dp-sobre { display: block; font-size: 11.5px; font-weight: 700; color: #52606d; margin-bottom: 2px; }
+.platform-page.dp .dp-linha { display: flex; gap: 6px; margin: 2px 0; font-size: 13.5px; line-height: 1.4; }
+.platform-page.dp .dp-rotulo { flex: 0 0 34px; font-size: 11.5px; font-weight: 700; color: #8b97a4; padding-top: 2px; }
+.platform-page.dp .dp-de { color: #6b7785; overflow-wrap: anywhere; min-width: 0; }
+.platform-page.dp .dp-para { color: #17324d; font-weight: 700; overflow-wrap: anywhere; min-width: 0; }
+.platform-page.dp .dp-apagar { color: #c53b42; }
+.platform-page.dp .dp-nota { color: #8a5a00; font-weight: 600; overflow-wrap: anywhere; min-width: 0; }
+
+.platform-page.dp .dp-evidencia {
+  margin: 9px 0 0 25px;
+  padding: 7px 10px;
+  border-left: 3px solid #8e44ad;
+  background: #faf5fd;
+  border-radius: 0 8px 8px 0;
+  min-width: 0;
+}
+.platform-page.dp .dp-evidencia blockquote {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-style: italic;
+  color: #3e2a4c;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.platform-page.dp .dp-evidencia a,
+.platform-page.dp .dp-evidencia small {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #075aa9;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.platform-page.dp .dp-evidencia small { font-weight: 400; color: #52606d; }
+.platform-page.dp .dp-evidencia a:hover { text-decoration: underline; }
+.platform-page.dp .dp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin: 7px 0 0 25px;
+  font-size: 11.5px;
+  color: #6b7785;
+}
+.platform-page.dp .dp-meta strong { color: #17324d; }
+.platform-page.dp .dp-motivo { margin: 4px 0 0 25px; font-size: 12.5px; color: #3e4c59; overflow-wrap: anywhere; }
+.platform-page.dp .dp-revisada { margin: 7px 0 0 25px; font-size: 12px; font-weight: 700; }
+.platform-page.dp .dp-revisada-ok { color: #1f7a4a; }
+.platform-page.dp .dp-revisada-nao { color: #a12b31; }
+.platform-page.dp .dp-erro-cartao { margin: 8px 0 0 25px; font-size: 12.5px; padding: 7px 10px; }
+.platform-page.dp .dp-acoes { margin: 9px 0 0 25px; align-items: center; }
+.platform-page.dp .dp-precisa { flex-basis: 100%; font-size: 12px; font-weight: 700; color: #8a5a00; }
+.platform-page.dp .dp-rejeitar { margin: 9px 0 0 25px; }
+.platform-page.dp .dp-rejeitar .pf-campo { margin-bottom: 6px; }
+
+/* Diálogo "Editar e aprovar" (cabeçalho claro, título com seletor forte) */
+.platform-page.dp .module-modal.dp-modal { max-width: 560px; }
+.platform-page.dp form.module-modal.dp-modal h2 { margin: 0 0 4px; font-size: 1.2rem; color: #17324d; }
+.platform-page.dp .dp-modal-alvo { margin: 0 0 12px; font-size: 13px; color: #6b7785; }
+.platform-page.dp .dp-evidencia.dp-evidencia-modal { margin: 0 0 12px; }
+.platform-page.dp .dp-evidencia-modal small { display: block; font-size: 12.5px; color: #3e4c59; font-weight: 400; margin-bottom: 4px; }
+.platform-page.dp .dp-modal-hoje { margin: 0 0 12px; font-size: 13px; color: #3e4c59; }
+.platform-page.dp .dp-modal-previa {
+  margin: 0 0 1rem;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #eef5fd;
+  font-size: 13px;
+  color: #17324d;
+}
+.platform-page.dp .dp-semanas { display: flex; flex-wrap: wrap; gap: 8px; }
+.platform-page.dp .module-modal .form-group label.dp-semana {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid #d8dee6;
+  background: #fff;
+  color: #52606d;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.platform-page.dp .module-modal .form-group label.dp-semana.on { border-color: #075aa9; background: #075aa9; color: #fff; }
+.platform-page.dp .module-modal .form-group label.dp-semana input { margin: 0; padding: 0; width: auto; height: auto; min-height: 0; }
+.platform-page.dp .module-modal .btn-submit.dp-btn-aprovar { background: #2e9d62; font-weight: 700; }
+
+@media (max-width: 1180px) {
+  .platform-page.dp .dp-corpo { grid-template-columns: minmax(0, 1fr); }
+  .platform-page.dp .dp-mapa { order: -1; position: relative; top: 0; height: 380px; min-height: 0; }
+  .platform-page.dp .dp-lista { min-height: 0; }
+}
+@media (max-width: 600px) {
+  .platform-page.dp .dp-mudanca,
+  .platform-page.dp .dp-evidencia,
+  .platform-page.dp .dp-meta,
+  .platform-page.dp .dp-motivo,
+  .platform-page.dp .dp-acoes,
+  .platform-page.dp .dp-rejeitar,
+  .platform-page.dp .dp-revisada,
+  .platform-page.dp .dp-erro-cartao { margin-left: 0; }
+}
+.platform-page.dp .module-modal.dp-modal .form-check input { width: auto; height: auto; min-height: 0; padding: 0; }
