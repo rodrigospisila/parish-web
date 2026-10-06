@@ -376,6 +376,21 @@ const EventsPage: React.FC = () => {
 
   /** Exporta a agenda em .ics (Google Calendar, Outlook, Apple Calendar) */
   const handleExportIcs = async () => {
+    // Escopo amplo sem comunidade escolhida: o backend limita a agenda fixa
+    // (Missas, Confissões, Adoração, Terço) aos próximos 2 meses — avisa antes
+    const broadScope =
+      ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN'].includes(currentUser?.role ?? '') || communities.length > 1;
+    if (!filterCommunity && broadScope) {
+      const proceed = await confirm.action(
+        'Exportar todas as comunidades?',
+        'Com "Todas as comunidades", os horários fixos (Missas, Confissões, Adoração e Terço) saem só para os ' +
+          'próximos 2 meses; os eventos vão completos. Para a agenda fixa do ano inteiro, escolha uma comunidade ' +
+          'no filtro antes de exportar.',
+        'Exportar assim mesmo',
+        'Escolher comunidade',
+      );
+      if (!proceed) return;
+    }
     try {
       const token = localStorage.getItem('token');
       const res = await axios.get(`${API_URL}/events/export.ics`, {

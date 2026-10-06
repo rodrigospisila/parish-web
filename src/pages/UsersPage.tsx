@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { notify, confirm } from '../services/notification.service';
 import { avatarColor, initials } from '../components/SaintAvatar';
 import api, { getErrorMessage } from '../services/api';
+import { scopeCommunityIdOf } from '../utils/userScope';
 import './UsersPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -38,7 +39,29 @@ interface Pastoral {
   communityId: string;
   communityName?: string;
   membershipRole?: string;
+  /** Papel do vínculo na pastoral (GET /users): 'COORDINATOR'/'Coordenador' = coordenação */
+  role?: string;
+  /** Coordenação vigente (backend novo) */
+  isCoordinator?: boolean;
 }
+
+/** Valores de vínculo que significam coordenação (mesma regra do backend) */
+const COORDINATOR_MEMBERSHIP_ROLES = ['COORDINATOR', 'Coordenador'];
+
+/**
+ * Pastorais que a pessoa COORDENA — é com elas que o formulário de
+ * Coordenador de Pastoral começa. `pastoralIds` é participação: mandá-lo de
+ * volta no PATCH promovia cada participação a coordenação.
+ */
+const coordinatedPastoralIdsOf = (user: {
+  coordinatedPastoralIds?: string[];
+  pastorals?: Pastoral[];
+}): string[] => {
+  if (Array.isArray(user.coordinatedPastoralIds)) return user.coordinatedPastoralIds;
+  return (user.pastorals ?? [])
+    .filter((pastoral) => pastoral.isCoordinator || COORDINATOR_MEMBERSHIP_ROLES.includes(pastoral.role ?? ''))
+    .map((pastoral) => pastoral.id);
+};
 
 interface User {
   id: string;
@@ -54,6 +77,8 @@ interface User {
   communityId?: string;
   communities?: UserCommunity[];
   pastoralIds?: string[];
+  /** Pastorais que a pessoa coordena (backend novo) */
+  coordinatedPastoralIds?: string[];
   pastorals?: Pastoral[];
   createdAt: string;
 }
@@ -132,6 +157,38 @@ const UsersPage: React.FC = () => {
     return allRoles.filter(r => r.level > currentUserLevel);
   }, [currentUser]);
 
+  // Quem pode abrir a tela (mesmos papéis do GET /users no backend)
+  const canManageUsers = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(
+    currentUser?.role ?? '',
+  );
+  // Comunidade de ESCOPO (no backend novo, communityId do gestor é só a de fé)
+  const actorScopeCommunityId = scopeCommunityIdOf(currentUser);
+
+  /**
+   * Mesma regra do backend (assertUserScope): fora o administrador do sistema,
+   * só se gerencia quem tem papel ESTRITAMENTE abaixo do seu e está no seu
+   * escopo (diocese / paróquia / comunidade). Sem isso o painel mostrava
+   * Editar/Desativar/2FA/Excluir que terminavam em 403.
+   */
+  const canManageTarget = (target: User): boolean => {
+    if (!currentUser || !canManageUsers) return false;
+    if (currentUser.role === 'SYSTEM_ADMIN') return true;
+    if (target.id === currentUser.id) return false;
+    const actorLevel = allRoles.find((r) => r.value === currentUser.role)?.level;
+    const targetLevel = allRoles.find((r) => r.value === target.role)?.level;
+    if (actorLevel === undefined || targetLevel === undefined || targetLevel <= actorLevel) return false;
+    switch (currentUser.role) {
+      case 'DIOCESAN_ADMIN':
+        return !!currentUser.dioceseId && target.dioceseId === currentUser.dioceseId;
+      case 'PARISH_ADMIN':
+        return !!currentUser.parishId && target.parishId === currentUser.parishId;
+      case 'COMMUNITY_COORDINATOR':
+        return !!actorScopeCommunityId && target.communityId === actorScopeCommunityId;
+      default:
+        return false;
+    }
+  };
+
   // Filtrar dioceses disponíveis baseado no usuário logado
   const availableDioceses = useMemo(() => {
     if (!currentUser) return [];
@@ -191,16 +248,16 @@ const UsersPage: React.FC = () => {
     }
 
     if (currentUser.role === 'COMMUNITY_COORDINATOR') {
-      return pastorals.filter((pastoral) => pastoral.communityId === currentUser.communityId);
+      return pastorals.filter((pastoral) => pastoral.communityId === actorScopeCommunityId);
     }
 
-    const selectedCommunityId = formData.communityId || currentUser.communityId;
+    const selectedCommunityId = formData.communityId || actorScopeCommunityId;
     if (!selectedCommunityId) {
       return [];
     }
 
     return pastorals.filter((pastoral) => pastoral.communityId === selectedCommunityId);
-  }, [currentUser, formData.role, formData.communityId, pastorals]);
+  }, [currentUser, actorScopeCommunityId, formData.role, formData.communityId, pastorals]);
 
   const filteredAvailablePastorals = useMemo(() => {
     const term = pastoralSearch.trim().toLowerCase();
@@ -268,8 +325,14 @@ const UsersPage: React.FC = () => {
     [formData.role],
   );
   useEffect(() => {
+    // Sem permissão (ex.: URL aberta direto): não chama a API — a tela mostra
+    // só "Acesso Negado", sem o aviso de "Erro ao carregar dados" junto
+    if (!canManageUsers) {
+      setLoading(false);
+      return;
+    }
     fetchData();
-  }, []);
+  }, [canManageUsers]);
 
   // Reset página quando filtros mudam
   useEffect(() => {
@@ -357,12 +420,12 @@ const UsersPage: React.FC = () => {
       }
       
       if (formData.role === 'COMMUNITY_COORDINATOR') {
-        dataToSend.communityId = formData.communityId || currentUser?.communityId || null;
+        dataToSend.communityId = formData.communityId || actorScopeCommunityId || null;
         dataToSend.communityIds = formData.communityIds;
       }
 
       if (formData.role === 'PASTORAL_COORDINATOR') {
-        dataToSend.communityId = formData.communityId || currentUser?.communityId || null;
+        dataToSend.communityId = formData.communityId || actorScopeCommunityId || null;
         dataToSend.pastoralIds = formData.pastoralIds;
       }
 
@@ -405,7 +468,7 @@ const UsersPage: React.FC = () => {
       parishId: user.parishId || '',
       communityId: user.communityId || user.communities?.[0]?.community.id || '',
       communityIds: user.communities?.map((community) => community.community.id) || [],
-      pastoralIds: user.pastoralIds || user.pastorals?.map((pastoral) => pastoral.id) || [],
+      pastoralIds: coordinatedPastoralIdsOf(user),
       // Não sabemos o consentimento atual por aqui (não é exposto pela API de usuários).
       // Fica desmarcado por padrão; marcar concede consentimento, deixar desmarcado nunca o revoga.
       consentGiven: false,
@@ -440,11 +503,8 @@ const UsersPage: React.FC = () => {
     if (!confirmed) return;
 
     try {
-      const token = localStorage.getItem('token');
-      const endpoint = user.isActive ? 'deactivate' : 'activate';
-      await axios.patch(`${API_URL}/users/${user.id}/${endpoint}`, {}, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // O backend não tem /activate|/deactivate: o status vai no PATCH /users/:id
+      await api.patch(`/users/${user.id}`, { isActive: !user.isActive });
       notify.success(`Usuário ${action === 'desativar' ? 'desativado' : 'ativado'} com sucesso!`);
       fetchData();
     } catch (error: any) {
@@ -544,21 +604,23 @@ const UsersPage: React.FC = () => {
   // Ações em lote
   const handleBulkDeactivate = async () => {
     if (selectedUsers.length === 0) return;
+    // Só quem o logado pode gerenciar (o backend recusaria os demais com 403)
+    const targets = users.filter((user) => selectedUsers.includes(user.id) && user.isActive && canManageTarget(user));
+    if (targets.length === 0) {
+      notify.warning('Nenhum dos usuários selecionados pode ser desativado por você.');
+      return;
+    }
+    const skipped = selectedUsers.length - targets.length;
     const confirmed = await confirm.action(
       'Desativar usuários',
-      `Deseja desativar ${selectedUsers.length} usuário(s)?`
+      `Deseja desativar ${targets.length} usuário(s)?` +
+        (skipped > 0 ? ` ${skipped} selecionado(s) ficam de fora (já inativos ou fora da sua permissão).` : ''),
     );
     if (!confirmed) return;
 
     try {
-      const token = localStorage.getItem('token');
-      await Promise.all(
-        selectedUsers.map(id =>
-          axios.patch(`${API_URL}/users/${id}/deactivate`, {}, {
-            headers: { Authorization: `Bearer ${token}` },
-          })
-        )
-      );
+      // Mesma rota real do Ativar/Desativar individual (PATCH /users/:id)
+      await Promise.all(targets.map((user) => api.patch(`/users/${user.id}`, { isActive: false })));
       notify.success('Usuários desativados com sucesso!');
       setSelectedUsers([]);
       fetchData();
@@ -677,13 +739,6 @@ const UsersPage: React.FC = () => {
   }, [filteredAndSortedUsers, currentPage, itemsPerPage]);
 
   if (loading) return <div className="loading">Carregando...</div>;
-
-  // Verificar permissão de acesso
-  const canManageUsers = 
-    currentUser?.role === 'SYSTEM_ADMIN' || 
-    currentUser?.role === 'DIOCESAN_ADMIN' || 
-    currentUser?.role === 'PARISH_ADMIN' || 
-    currentUser?.role === 'COMMUNITY_COORDINATOR';
 
   if (!canManageUsers) {
     return (
@@ -905,26 +960,29 @@ const UsersPage: React.FC = () => {
                     </div>
                   )}
                 </div>
-                <div className="entity-card-footer">
-                  <button className="entity-btn primary" onClick={() => handleEdit(user)}>
-                    Editar
-                  </button>
-                  <button className="entity-btn accent" onClick={() => handleToggleActive(user)}>
-                    {user.isActive ? 'Desativar' : 'Ativar'}
-                  </button>
-                  {canResetTwoFactor && (
-                    <button
-                      className="entity-btn"
-                      onClick={() => handleResetTwoFactor(user)}
-                      title="Remover a autenticação em duas etapas deste usuário"
-                    >
-                      Redefinir 2FA
+                {/* Ações só para quem o logado pode gerenciar (papel abaixo e no escopo) */}
+                {canManageTarget(user) && (
+                  <div className="entity-card-footer">
+                    <button className="entity-btn primary" onClick={() => handleEdit(user)}>
+                      Editar
                     </button>
-                  )}
-                  <button className="entity-btn danger" onClick={() => handleDelete(user.id)}>
-                    Excluir
-                  </button>
-                </div>
+                    <button className="entity-btn accent" onClick={() => handleToggleActive(user)}>
+                      {user.isActive ? 'Desativar' : 'Ativar'}
+                    </button>
+                    {canResetTwoFactor && (
+                      <button
+                        className="entity-btn"
+                        onClick={() => handleResetTwoFactor(user)}
+                        title="Remover a autenticação em duas etapas deste usuário"
+                      >
+                        Redefinir 2FA
+                      </button>
+                    )}
+                    <button className="entity-btn danger" onClick={() => handleDelete(user.id)}>
+                      Excluir
+                    </button>
+                  </div>
+                )}
               </div>
             ))
           )}
@@ -995,28 +1053,34 @@ const UsersPage: React.FC = () => {
                     <td>{user.diocese?.name || '-'}</td>
                     <td>{new Date(user.createdAt).toLocaleDateString('pt-BR')}</td>
                     <td className="actions-cell">
-                      <button className="entity-icon-btn" onClick={() => handleEdit(user)} title="Editar">
-                        ✏️
-                      </button>
-                      <button
-                        className="entity-icon-btn"
-                        onClick={() => handleToggleActive(user)}
-                        title={user.isActive ? 'Desativar' : 'Ativar'}
-                      >
-                        {user.isActive ? '🚫' : '✅'}
-                      </button>
-                      {canResetTwoFactor && (
-                        <button
-                          className="entity-icon-btn"
-                          onClick={() => handleResetTwoFactor(user)}
-                          title="Redefinir 2FA"
-                        >
-                          🔐
-                        </button>
+                      {canManageTarget(user) ? (
+                        <>
+                          <button className="entity-icon-btn" onClick={() => handleEdit(user)} title="Editar">
+                            ✏️
+                          </button>
+                          <button
+                            className="entity-icon-btn"
+                            onClick={() => handleToggleActive(user)}
+                            title={user.isActive ? 'Desativar' : 'Ativar'}
+                          >
+                            {user.isActive ? '🚫' : '✅'}
+                          </button>
+                          {canResetTwoFactor && (
+                            <button
+                              className="entity-icon-btn"
+                              onClick={() => handleResetTwoFactor(user)}
+                              title="Redefinir 2FA"
+                            >
+                              🔐
+                            </button>
+                          )}
+                          <button className="entity-icon-btn danger" onClick={() => handleDelete(user.id)} title="Excluir">
+                            🗑️
+                          </button>
+                        </>
+                      ) : (
+                        <span title="Papel igual ou acima do seu, ou fora do seu escopo">—</span>
                       )}
-                      <button className="entity-icon-btn danger" onClick={() => handleDelete(user.id)} title="Excluir">
-                        🗑️
-                      </button>
                     </td>
                   </tr>
                 ))
@@ -1228,7 +1292,7 @@ const UsersPage: React.FC = () => {
                 </div>
               )}
 
-              {shouldShowPastoralField && (availablePastorals.length > 0 || currentUser?.communityId) && (
+              {shouldShowPastoralField && (availablePastorals.length > 0 || actorScopeCommunityId) && (
                 <div className="form-group">
                   <label>Pastoral(is) Vinculada(s) *</label>
                   {availablePastorals.length === 0 ? (

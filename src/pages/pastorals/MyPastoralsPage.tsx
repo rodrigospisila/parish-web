@@ -47,10 +47,18 @@ interface MyPastoral {
   _count?: { joinRequests?: number };
 }
 
+/** Pastoral em que a pessoa só participa (sem coordenação): aparece sem botão de gerir */
+interface ParticipatingPastoral {
+  id: string;
+  name: string;
+  communityName?: string;
+}
+
 const MyPastoralsPage: React.FC = () => {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const [pastorals, setPastorals] = useState<MyPastoral[]>([]);
+  const [participating, setParticipating] = useState<ParticipatingPastoral[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -73,6 +81,20 @@ const MyPastoralsPage: React.FC = () => {
       const myPastorals = pastoralsRes.data.filter((pastoral: any) => coordinated.has(pastoral.id));
 
       setPastorals(myPastorals);
+
+      // As que só PARTICIPA (sem gestão): vêm do próprio cadastro da sessão
+      const communityNames = new Map<string, string>(
+        pastoralsRes.data.map((pastoral: any) => [pastoral.communityId ?? pastoral.community?.id, pastoral.community?.name]),
+      );
+      setParticipating(
+        (currentUser?.pastorals ?? [])
+          .filter((pastoral) => !coordinated.has(pastoral.id))
+          .map((pastoral) => ({
+            id: pastoral.id,
+            name: pastoral.name,
+            communityName: communityNames.get(pastoral.communityId),
+          })),
+      );
 
       // Buscar reuniões próximas
       if (myPastorals.length > 0) {
@@ -148,14 +170,14 @@ const MyPastoralsPage: React.FC = () => {
         <div className="community-pastoral-section-header">
           <div className="community-pastoral-section-heading">
             <h2>Suas Pastorais</h2>
-            <p>Pastorais das quais você participa</p>
+            <p>Pastorais que você coordena</p>
           </div>
         </div>
 
         {pastorals.length === 0 ? (
           <div className="community-pastoral-empty-state">
-            <strong>Nenhuma pastoral vinculada</strong>
-            <p>Você ainda não participa de nenhuma pastoral — fale com a coordenação da sua comunidade.</p>
+            <strong>Nenhuma pastoral sob sua coordenação</strong>
+            <p>Você não coordena nenhuma pastoral no momento — fale com a coordenação da sua comunidade.</p>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '1.25rem' }}>
@@ -324,6 +346,34 @@ const MyPastoralsPage: React.FC = () => {
           </div>
         )}
       </section>
+
+      {/* Pastorais em que só participa: informativo, sem gestão */}
+      {participating.length > 0 && (
+        <section className="community-pastoral-section">
+          <div className="community-pastoral-section-header">
+            <div className="community-pastoral-section-heading">
+              <h2>Também participa</h2>
+              <p>Pastorais em que você é membro, sem coordenação — a gestão fica com quem as coordena</p>
+            </div>
+          </div>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
+            {participating.map((pastoral) => (
+              <li
+                key={pastoral.id}
+                style={{
+                  padding: '0.55rem 0.85rem', borderRadius: '10px', background: '#f8fafc',
+                  border: '1px solid #e8edf3', fontSize: '0.88rem', color: '#1a2b3c',
+                }}
+              >
+                <strong style={{ fontWeight: 700 }}>{pastoral.name}</strong>
+                {pastoral.communityName && (
+                  <span style={{ color: '#64748b' }}> · {pastoral.communityName}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Próximas Reuniões */}
       <section className="community-pastoral-section">

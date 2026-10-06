@@ -12,8 +12,18 @@ export interface User {
   role: string;
   dioceseId?: string;
   parishId?: string;
+  /**
+   * Comunidade do usuário. No gestor sem comunidade de escopo (PARISH_ADMIN,
+   * DIOCESAN_ADMIN...), o backend novo devolve aqui a comunidade de FÉ, só
+   * para exibição — o escopo real vem em `scopeCommunityId`.
+   */
   communityId?: string;
+  /** Comunidade de ESCOPO gravada (backend novo); ausente no servidor antigo */
+  scopeCommunityId?: string | null;
+  /** Pastorais em que participa (participação não dá gestão) */
   pastoralIds?: string[];
+  /** Pastorais que COORDENA (backend novo) — é isto que libera a gestão */
+  coordinatedPastoralIds?: string[];
   pastorals?: {
     id: string;
     name: string;

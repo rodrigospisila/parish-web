@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify, confirm } from '../../services/notification.service';
+import { useAuth } from '../../contexts/AuthContext';
+import { useCoordinatedPastoralIds } from '../../hooks/useCoordinatedPastoralIds';
 import './ModulePages.css';
 
 interface SwapRow {
@@ -10,9 +13,12 @@ interface SwapRow {
   message?: string | null;
   createdAt: string;
   requesterName?: string | null;
+  /** Convidado (troca direcionada); null = troca ABERTA à pastoral */
+  targetId?: string | null;
   targetName?: string | null;
   assignment?: {
     role: string;
+    communityPastoralId?: string | null;
     schedule?: { id: string; title: string; date: string } | null;
   } | null;
 }
@@ -24,10 +30,17 @@ interface MyAssignment {
   schedule: { id: string; title: string; date: string };
 }
 
-interface Member {
-  id: string;
+/** Quem pode receber o convite de troca desta escala (GET /swaps/candidates) */
+interface SwapCandidate {
+  memberId: string;
   fullName: string;
 }
+
+/**
+ * Estado da lista de convidáveis: 'unavailable' = servidor antigo (rota não
+ * existe) — some o "Convidar alguém" e fica só "Deixar aberto à pastoral".
+ */
+type CandidatesState = 'idle' | 'loading' | 'ready' | 'unavailable' | 'error';
 
 const SWAP_STATUS: Record<string, { label: string; color: string }> = {
   PENDING: { label: 'Pendente', color: 'yellow' },
@@ -37,13 +50,19 @@ const SWAP_STATUS: Record<string, { label: string; color: string }> = {
   EXPIRED: { label: 'Expirada', color: 'gray' },
 };
 
+/** Papéis com escopo para moderar qualquer troca das escalas que alcançam */
+const SWAP_MODERATOR_ROLES = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'];
+
 const SwapsPage: React.FC = () => {
+  const { user } = useAuth();
+  const coordinatedIds = useCoordinatedPastoralIds();
   const [loading, setLoading] = useState(true);
   const [requested, setRequested] = useState<SwapRow[]>([]);
   const [invited, setInvited] = useState<SwapRow[]>([]);
   const [hasMemberRecord, setHasMemberRecord] = useState(true);
   const [myAssignments, setMyAssignments] = useState<MyAssignment[]>([]);
-  const [members, setMembers] = useState<Member[]>([]);
+  const [candidates, setCandidates] = useState<SwapCandidate[]>([]);
+  const [candidatesState, setCandidatesState] = useState<CandidatesState>('idle');
 
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [requestForm, setRequestForm] = useState({ assignmentId: '', targetMemberId: '', message: '' });
@@ -67,8 +86,34 @@ const SwapsPage: React.FC = () => {
 
   useEffect(() => {
     fetchData();
-    api.get('/members').then((res) => setMembers(res.data)).catch(() => undefined);
   }, [fetchData]);
+
+  // Convidáveis dependem da escala escolhida (mesma pastoral/função). GET /members
+  // não serve: para o fiel ele devolve só o próprio cadastro.
+  useEffect(() => {
+    const assignmentId = requestForm.assignmentId;
+    setCandidates([]);
+    if (!assignmentId) {
+      setCandidatesState((current) => (current === 'unavailable' ? current : 'idle'));
+      return;
+    }
+    let alive = true;
+    setCandidatesState((current) => (current === 'unavailable' ? current : 'loading'));
+    api
+      .get<SwapCandidate[]>('/swaps/candidates', { params: { assignmentId } })
+      .then(({ data }) => {
+        if (!alive) return;
+        setCandidates((Array.isArray(data) ? data : []).filter((c) => c?.memberId && c?.fullName));
+        setCandidatesState('ready');
+      })
+      .catch((error) => {
+        if (!alive) return;
+        setCandidatesState(axios.isAxiosError(error) && error.response?.status === 404 ? 'unavailable' : 'error');
+      });
+    return () => {
+      alive = false;
+    };
+  }, [requestForm.assignmentId]);
 
   const handleRequest = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -120,6 +165,18 @@ const SwapsPage: React.FC = () => {
     }
   };
 
+  /**
+   * Recusar (regra do backend): o CONVIDADO da troca direcionada ou a
+   * coordenação com escopo. Troca ABERTA recusada por fiel dá 403 — para ele
+   * basta não assumir a escala.
+   */
+  const canReject = (swap: SwapRow) => {
+    if (swap.targetId) return true; // em "Convites para mim", troca direcionada = convite para mim
+    if (SWAP_MODERATOR_ROLES.includes(user?.role ?? '')) return true;
+    const pastoralId = swap.assignment?.communityPastoralId;
+    return user?.role === 'PASTORAL_COORDINATOR' && !!pastoralId && !!coordinatedIds?.has(pastoralId);
+  };
+
   const formatDateTime = (value?: string) =>
     value ? new Date(value).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -169,7 +226,15 @@ const SwapsPage: React.FC = () => {
                       {swap.status === 'PENDING' && (
                         <>
                           <button className="btn-small success" onClick={() => act(swap.id, 'accept')}>Aceitar</button>
-                          <button className="btn-small danger" onClick={() => act(swap.id, 'reject')}>Recusar</button>
+                          {canReject(swap) && (
+                            <button
+                              className="btn-small danger"
+                              onClick={() => act(swap.id, 'reject')}
+                              title={swap.targetId ? undefined : 'Encerra o pedido aberto para toda a pastoral'}
+                            >
+                              {swap.targetId ? 'Recusar' : 'Encerrar pedido'}
+                            </button>
+                          )}
                         </>
                       )}
                     </td>
@@ -222,7 +287,7 @@ const SwapsPage: React.FC = () => {
                 <select
                   required
                   value={requestForm.assignmentId}
-                  onChange={(e) => setRequestForm({ ...requestForm, assignmentId: e.target.value })}
+                  onChange={(e) => setRequestForm({ ...requestForm, assignmentId: e.target.value, targetMemberId: '' })}
                 >
                   <option value="">Selecione</option>
                   {myAssignments.map((assignment) => (
@@ -235,16 +300,29 @@ const SwapsPage: React.FC = () => {
                   <small style={{ color: '#888' }}>Você não tem escalas futuras para trocar.</small>
                 )}
               </div>
-              <div className="form-group">
-                <label>Convidar alguém (opcional)</label>
-                <select
-                  value={requestForm.targetMemberId}
-                  onChange={(e) => setRequestForm({ ...requestForm, targetMemberId: e.target.value })}
-                >
-                  <option value="">Deixar aberto à pastoral</option>
-                  {members.map((m) => <option key={m.id} value={m.id}>{m.fullName}</option>)}
-                </select>
-              </div>
+              {candidatesState !== 'unavailable' && (
+                <div className="form-group">
+                  <label>Convidar alguém (opcional)</label>
+                  <select
+                    value={requestForm.targetMemberId}
+                    disabled={candidatesState !== 'ready' || candidates.length === 0}
+                    onChange={(e) => setRequestForm({ ...requestForm, targetMemberId: e.target.value })}
+                  >
+                    <option value="">Deixar aberto à pastoral</option>
+                    {candidates.map((c) => <option key={c.memberId} value={c.memberId}>{c.fullName}</option>)}
+                  </select>
+                  {candidatesState === 'idle' && (
+                    <small style={{ color: '#888' }}>Escolha a escala para ver quem pode ser convidado.</small>
+                  )}
+                  {candidatesState === 'loading' && <small style={{ color: '#888' }}>Carregando quem pode cobrir…</small>}
+                  {candidatesState === 'ready' && candidates.length === 0 && (
+                    <small style={{ color: '#888' }}>Ninguém disponível para convite direto — o pedido fica aberto à pastoral.</small>
+                  )}
+                  {candidatesState === 'error' && (
+                    <small style={{ color: '#888' }}>Não foi possível carregar a lista — o pedido pode ficar aberto à pastoral.</small>
+                  )}
+                </div>
+              )}
               <div className="form-group">
                 <label>Mensagem</label>
                 <textarea

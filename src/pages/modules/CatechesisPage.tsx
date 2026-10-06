@@ -4,9 +4,33 @@ import RoomSelect from '../../components/RoomSelect';
 import { DateInput, TimeInput } from '../../components/DateInput';
 import api, { getErrorMessage } from '../../services/api';
 import { notify, confirm } from '../../services/notification.service';
-import { useAuth } from '../../contexts/AuthContext';
+import { useAuth, type User } from '../../contexts/AuthContext';
+import { scopeCommunityIdOf } from '../../utils/userScope';
 import './ModulePages.css';
 import './CatechesisPage.css';
+
+/** Pastoral da Catequese: mesma regra do backend (nome contém "catequ") */
+const CATECHESIS_PASTORAL_NAME = /catequ/i;
+/** Vínculo de coordenação (servidor antigo, sem coordinatedPastoralIds) */
+const COORDINATOR_MEMBERSHIP_ROLE = /^(coordinator|coordenador)$/i;
+
+/**
+ * Comunidades em que o COORDENADOR DE PASTORAL coordena a Catequese, pelo que
+ * a sessão já sabe (coordinatedPastoralIds do backend novo; no antigo, o papel
+ * do vínculo). Coordenar outra pastoral não dá gestão da catequese.
+ */
+function sessionCatechesisCoordCommunities(user: User | null | undefined): Set<string> {
+  const ids = new Set<string>();
+  if (user?.role !== 'PASTORAL_COORDINATOR') return ids;
+  const coordinated = Array.isArray(user.coordinatedPastoralIds) ? new Set(user.coordinatedPastoralIds) : null;
+  for (const pastoral of user.pastorals ?? []) {
+    const isCoordination = coordinated ? coordinated.has(pastoral.id) : COORDINATOR_MEMBERSHIP_ROLE.test(pastoral.role ?? '');
+    if (isCoordination && CATECHESIS_PASTORAL_NAME.test(pastoral.name ?? '') && pastoral.communityId) {
+      ids.add(pastoral.communityId);
+    }
+  }
+  return ids;
+}
 
 interface Stage {
   id: string;
@@ -683,8 +707,54 @@ const CatechesisPage: React.FC = () => {
   const [dioceseId, setDioceseId] = useState('');
   const isSystemAdmin = user?.role === 'SYSTEM_ADMIN';
 
+  // Coordenação DA CATEQUESE (regra do backend): administração com escopo,
+  // coordenação da comunidade, ou quem coordena a pastoral da Catequese
+  // daquela comunidade. Ser PASTORAL_COORDINATOR de outra pastoral não basta —
+  // o catequista continua vendo (e dando aula em) a própria turma.
+  const isScopeManager = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(user?.role ?? '');
+  const [catechesisCoordCommunityIds, setCatechesisCoordCommunityIds] = useState<Set<string>>(() =>
+    sessionCatechesisCoordCommunities(user),
+  );
+  useEffect(() => {
+    const fromSession = sessionCatechesisCoordCommunities(user);
+    setCatechesisCoordCommunityIds(fromSession);
+    if (user?.role !== 'PASTORAL_COORDINATOR') return;
+    // Coordenação vigente no banco (cobre quem virou coordenador depois do login)
+    let alive = true;
+    api
+      .get('/pastorals/community/coordinated-by-me')
+      .then(({ data }) => {
+        if (!alive) return;
+        const ids = new Set(fromSession);
+        for (const item of Array.isArray(data) ? data : []) {
+          const pastoral = item?.communityPastoral ?? item;
+          if (pastoral?.communityId && CATECHESIS_PASTORAL_NAME.test(pastoral?.globalPastoral?.name ?? '')) {
+            ids.add(pastoral.communityId);
+          }
+        }
+        setCatechesisCoordCommunityIds(ids);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [user]);
+  const isCoordinator = isScopeManager || catechesisCoordCommunityIds.size > 0;
+  /** Gestão da turma (equipe, matrícula, conclusão, edição, taxas...) */
+  const canManageClass = (klass?: { communityId?: string } | null) =>
+    isScopeManager || (!!klass?.communityId && catechesisCoordCommunityIds.has(klass.communityId));
+  const canManageSelected = canManageClass(selectedClass);
+  // Comunidades onde a pessoa coordena a catequese (Panorama, Encerramento, Janela, Nova turma)
+  const coordCommunities = isScopeManager
+    ? communities
+    : communities.filter((community) => catechesisCoordCommunityIds.has(community.id));
+  const scopeCommunityId = scopeCommunityIdOf(user);
+  const defaultCoordCommunityId =
+    (scopeCommunityId && coordCommunities.some((community) => community.id === scopeCommunityId)
+      ? scopeCommunityId
+      : coordCommunities[0]?.id) ?? '';
+
   // Panorama da comunidade (Onda 3): pendências consolidadas entre turmas
-  const isCoordinator = ['PASTORAL_COORDINATOR', 'COMMUNITY_COORDINATOR', 'PARISH_ADMIN', 'DIOCESAN_ADMIN', 'SYSTEM_ADMIN'].includes(user?.role ?? '');
   const [overviewRows, setOverviewRows] = useState<CommunityOverviewRow[] | null>(null);
   // Trocar a comunidade rápido: só a resposta da ÚLTIMA requisição vale
   const overviewSeq = useRef(0);
@@ -1923,7 +1993,7 @@ const CatechesisPage: React.FC = () => {
   const openPanoramaTab = () => {
     setTab('panorama');
     // Coordenador usa a própria comunidade; admin escolhe no seletor
-    const communityId = overviewCommunityId || user?.communityId || communities[0]?.id || '';
+    const communityId = overviewCommunityId || defaultCoordCommunityId;
     if (!overviewCommunityId && communityId) setOverviewCommunityId(communityId);
     if (communityId) loadCommunityOverview(communityId);
   };
@@ -2487,7 +2557,7 @@ const CatechesisPage: React.FC = () => {
 
   const openYearEndTab = () => {
     setTab('encerramento');
-    const communityId = yearEndCommunityId || user?.communityId || communities[0]?.id || '';
+    const communityId = yearEndCommunityId || defaultCoordCommunityId;
     if (!yearEndCommunityId && communityId) setYearEndCommunityId(communityId);
     if (communityId) loadYearEnd(communityId);
   };
@@ -2607,7 +2677,14 @@ const CatechesisPage: React.FC = () => {
   };
 
   const openWindowModal = () => {
-    const communityId = (classCommunityIds.length === 1 ? classCommunityIds[0] : user?.communityId ?? classCommunityIds[0]) ?? '';
+    // Só comunidades em que a pessoa coordena a catequese
+    const manageable = classCommunityIds.filter((id) => isScopeManager || catechesisCoordCommunityIds.has(id));
+    const communityId =
+      (manageable.length === 1
+        ? manageable[0]
+        : scopeCommunityId && manageable.includes(scopeCommunityId)
+          ? scopeCommunityId
+          : manageable[0]) ?? '';
     setWindowForm({
       communityId,
       year: classesYearFilter !== 'all' ? classesYearFilter : classYears[0] ?? new Date().getFullYear(),
@@ -2799,7 +2876,7 @@ const CatechesisPage: React.FC = () => {
 
       {tab === 'panorama' && (
         <>
-          {communities.length > 1 && (
+          {coordCommunities.length > 1 && (
             <div className="inline-form" style={{ marginBottom: '1rem' }}>
               <select
                 className="filter-select"
@@ -2809,7 +2886,7 @@ const CatechesisPage: React.FC = () => {
                   if (e.target.value) loadCommunityOverview(e.target.value);
                 }}
               >
-                {communities.map((community) => (
+                {coordCommunities.map((community) => (
                   <option key={community.id} value={community.id}>{community.name}</option>
                 ))}
               </select>
@@ -2872,7 +2949,7 @@ const CatechesisPage: React.FC = () => {
 
       {tab === 'encerramento' && (
         <>
-          {communities.length > 1 && (
+          {coordCommunities.length > 1 && (
             <div className="inline-form" style={{ marginBottom: '1rem' }}>
               <select
                 className="filter-select"
@@ -2885,7 +2962,7 @@ const CatechesisPage: React.FC = () => {
                   if (e.target.value) loadYearEnd(e.target.value);
                 }}
               >
-                {communities.map((community) => (
+                {coordCommunities.map((community) => (
                   <option key={community.id} value={community.id}>{community.name}</option>
                 ))}
               </select>
@@ -3449,7 +3526,7 @@ const CatechesisPage: React.FC = () => {
                       <span className="cate-chip__avatar">{initials(catechist.fullName)}</span>
                       {catechist.fullName}
                       <span className="cate-chip__role">{catechist.role}</span>
-                      {isCoordinator && (
+                      {canManageSelected && (
                         <button
                           className="cate-chip__remove"
                           title="Remover da turma"
@@ -3460,7 +3537,7 @@ const CatechesisPage: React.FC = () => {
                       )}
                     </span>
                   ))}
-                  {isCoordinator && (
+                  {canManageSelected && (
                     <button className="cate-btn cate-btn--ghost" onClick={() => void openCatechistModal()}>
                       + Catequista
                     </button>
@@ -3471,7 +3548,7 @@ const CatechesisPage: React.FC = () => {
 
             <div className="cate-toolbar">
               <div className="cate-toolbar__primary">
-                {isCoordinator && (
+                {canManageSelected && (
                   <button
                     className="cate-btn cate-btn--primary"
                     onClick={() => {
@@ -3499,7 +3576,7 @@ const CatechesisPage: React.FC = () => {
                 <div className="cate-actiongroup">
                   <span className="cate-actiongroup__label">Turma</span>
                   <div className="cate-actiongroup__btns">
-                    {isCoordinator && (
+                    {canManageSelected && (
                       <button className="cate-btn" onClick={openEditClass}>
                         ✏️ Editar
                       </button>
@@ -3518,14 +3595,14 @@ const CatechesisPage: React.FC = () => {
                     <button className="cate-btn" onClick={() => void openTopicsModal()}>
                       📝 Planejar temas
                     </button>
-                    {isCoordinator && (
+                    {canManageSelected && (
                       <button className="cate-btn" title="Quais documentos a turma pede na inscrição e se são obrigatórios" onClick={() => void openDocReqModal()}>
                         📎 Docs da inscrição
                       </button>
                     )}
                   </div>
                 </div>
-                {isCoordinator && (
+                {canManageSelected && (
                 <div className="cate-actiongroup">
                   <span className="cate-actiongroup__label">Ciclo do ano</span>
                   <div className="cate-actiongroup__btns">
@@ -3547,7 +3624,7 @@ const CatechesisPage: React.FC = () => {
                     <button className="cate-btn" onClick={() => void openSentNotices()}>
                       ✉ Avisos enviados
                     </button>
-                    {isCoordinator && (
+                    {canManageSelected && (
                       <button
                         className="cate-btn"
                         onClick={() => {
@@ -3984,7 +4061,7 @@ const CatechesisPage: React.FC = () => {
                                           >
                                             📄 Declaração
                                           </button>
-                                          {isCoordinator && (
+                                          {canManageSelected && (
                                           <button
                                             className="cate-mini cate-mini--ok"
                                             onClick={() => handleComplete(student.enrollmentId, student.member.fullName)}
@@ -3992,7 +4069,7 @@ const CatechesisPage: React.FC = () => {
                                             Concluir
                                           </button>
                                           )}
-                                          {isCoordinator && (
+                                          {canManageSelected && (
                                           <select
                                             className="cate-select"
                                             // Controlado em "": o valor não fica preso após erro e a
@@ -4130,7 +4207,7 @@ const CatechesisPage: React.FC = () => {
                 <label>Comunidade *</label>
                 <select required value={classForm.communityId} onChange={(e) => setClassForm({ ...classForm, communityId: e.target.value })}>
                   <option value="">Selecione</option>
-                  {communities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {coordCommunities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
               <div className="form-row">
@@ -4343,7 +4420,7 @@ const CatechesisPage: React.FC = () => {
             </p>
             <form onSubmit={submitWindow}>
               <div className="form-row">
-                {communities.length > 1 && (
+                {coordCommunities.length > 1 && (
                   <div className="form-group">
                     <label>Comunidade</label>
                     <select
@@ -4352,7 +4429,7 @@ const CatechesisPage: React.FC = () => {
                       required
                     >
                       <option value="">Selecione</option>
-                      {communities.map((c) => (
+                      {coordCommunities.map((c) => (
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>
