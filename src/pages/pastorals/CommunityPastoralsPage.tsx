@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import TitleIcon from '../../components/TitleIcon';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useCoordinatedPastoralIds } from '../../hooks/useCoordinatedPastoralIds';
 import { useAuth } from '../../contexts/AuthContext';
 import { notify, confirm } from '../../services/notification.service';
 import { initials } from '../../components/SaintAvatar';
@@ -48,6 +49,7 @@ interface CommunityPastoral {
 const CommunityPastoralsPage: React.FC = () => {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
+  const coordinatedIds = useCoordinatedPastoralIds();
   const [pastorals, setPastorals] = useState<CommunityPastoral[]>([]);
   const [globalPastorals, setGlobalPastorals] = useState<GlobalPastoral[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -86,8 +88,9 @@ const CommunityPastoralsPage: React.FC = () => {
 
   // Filtrar pastorais disponíveis baseado no role
   const scopedPastorals = pastorals.filter((pastoral) => {
-    if (currentUser?.role === 'PASTORAL_COORDINATOR' && currentUser.pastoralIds?.length) {
-      return currentUser.pastoralIds.includes(pastoral.id);
+    if (currentUser?.role === 'PASTORAL_COORDINATOR') {
+      // Só as que coordena: participar não dá gestão no backend
+      return !!coordinatedIds?.has(pastoral.id);
     }
     if (currentUser?.role === 'COMMUNITY_COORDINATOR') {
       return pastoral.community.id === currentUser.communityId;

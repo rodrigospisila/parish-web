@@ -44,7 +44,8 @@ const ParishesPage: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingParish, setEditingParish] = useState<Parish | null>(null);
   
-  const canDelete = currentUser?.role === 'SYSTEM_ADMIN' || currentUser?.role === 'DIOCESAN_ADMIN';
+  // Excluir paróquia apaga em cascata: só o administrador do sistema
+  const canDelete = currentUser?.role === 'SYSTEM_ADMIN';
   const [searchTerm, setSearchTerm] = useState('');
   const [currentUserRole, setCurrentUserRole] = useState<string>('');
 

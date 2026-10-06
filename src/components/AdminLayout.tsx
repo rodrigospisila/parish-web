@@ -149,7 +149,7 @@ const AdminLayout: React.FC = () => {
           {(modOn('members') || modOn('events') || modOn('swaps') || (canManageSchedules && (modOn('fixed-schedule') || modOn('schedules')))) && (
             <span className="nav-section-label">Comunidade</span>
           )}
-          {modOn('members') && (
+          {modOn('members') && isCoordination && (
             <NavLink to="/admin/members" className="nav-link">
               <NavIcon name="membros" /> Membros
             </NavLink>

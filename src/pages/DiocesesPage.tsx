@@ -5,6 +5,7 @@ import { notify, confirm } from '../services/notification.service';
 import PatronSaintsManager, { usePatronSaints, PatronSaintsBadge } from '../components/PatronSaintsManager';
 import { avatarColor, initials } from '../components/SaintAvatar';
 import './DiocesesPage.css';
+import { useAuth } from '../contexts/AuthContext';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -21,6 +22,9 @@ interface Diocese {
 }
 
 const DiocesesPage: React.FC = () => {
+  const { user: currentUser } = useAuth();
+  // Criar e excluir diocese: só o administrador do sistema (o diocesano edita a própria)
+  const isSystemAdmin = currentUser?.role === 'SYSTEM_ADMIN';
   const [dioceses, setDioceses] = useState<Diocese[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -145,9 +149,11 @@ const DiocesesPage: React.FC = () => {
     <div className="dioceses-page">
       <div className="page-header">
         <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="diocese" /> Dioceses</h1>
-        <button className="btn-primary" onClick={() => setShowModal(true)}>
-          + Nova Diocese
-        </button>
+        {isSystemAdmin && (
+          <button className="btn-primary" onClick={() => setShowModal(true)}>
+            + Nova Diocese
+          </button>
+        )}
       </div>
 
       <div className="filters">
@@ -207,9 +213,11 @@ const DiocesesPage: React.FC = () => {
                 <button className="entity-btn accent" onClick={() => setPatronTarget(diocese)}>
                   🕊️ Padroeiro
                 </button>
-                <button className="entity-btn danger" onClick={() => handleDelete(diocese.id)}>
-                  Excluir
-                </button>
+                {isSystemAdmin && (
+                  <button className="entity-btn danger" onClick={() => handleDelete(diocese.id)}>
+                    Excluir
+                  </button>
+                )}
               </div>
             </div>
           ))

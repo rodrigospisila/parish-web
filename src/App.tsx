@@ -200,7 +200,13 @@ const App: React.FC = () => {
               </RoleProtectedRoute>
             } />
             <Route path="communities" element={<CommunitiesPage />} />
-            <Route path="members" element={<MembersPage />} />
+            {/* Cadastro de membros: só coordenação (o backend já devolve ao fiel
+                apenas o próprio cadastro e os dependentes) */}
+            <Route path="members" element={
+              <CoordinationOnlyRoute>
+                <MembersPage />
+              </CoordinationOnlyRoute>
+            } />
             <Route path="account" element={<MyAccountPage />} />
             <Route path="map" element={
               <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>

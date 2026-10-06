@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { eventStatuses, eventTypes } from '../constants/eventOptions';
+import { useCoordinatedPastoralIds } from '../hooks/useCoordinatedPastoralIds';
 import { notify } from '../services/notification.service';
 import { applyDuration, generateRecurrenceDates, getEventDuration } from '../utils/recurrenceHelper';
 import RecurrenceForm from './RecurrenceForm';
@@ -113,6 +114,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
   initialStartDate = '',
 }) => {
   const { user: currentUser } = useAuth();
+  const coordinatedIds = useCoordinatedPastoralIds();
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<EventFormData>(buildInitialForm());
@@ -170,8 +172,9 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
 
     let scopedPastorals = pastorals.filter((pastoral) => pastoral.communityId === selectedCommunityId);
 
-    if (currentUser?.role === 'PASTORAL_COORDINATOR' && currentUser.pastoralIds?.length) {
-      scopedPastorals = scopedPastorals.filter((pastoral) => currentUser.pastoralIds?.includes(pastoral.id));
+    if (currentUser?.role === 'PASTORAL_COORDINATOR') {
+      // Só as que coordena: participar não dá gestão no backend
+      scopedPastorals = scopedPastorals.filter((pastoral) => !!coordinatedIds?.has(pastoral.id));
     }
 
     if (pastoralSearch.trim()) {
@@ -180,7 +183,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
     }
 
     return scopedPastorals;
-  }, [currentUser, formData.communityId, pastoralSearch, pastorals]);
+  }, [currentUser, coordinatedIds, formData.communityId, pastoralSearch, pastorals]);
 
   const closeAndReset = () => {
     setFormData(buildInitialForm(currentUser?.communityId || '', initialStartDate));

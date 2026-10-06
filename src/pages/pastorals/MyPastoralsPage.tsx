@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import TitleIcon from '../../components/TitleIcon';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { loadCoordinatedPastoralIds } from '../../hooks/useCoordinatedPastoralIds';
 import { useAuth } from '../../contexts/AuthContext';
 import { notify } from '../../services/notification.service';
 import './PastoralsPage.css';
@@ -67,10 +68,9 @@ const MyPastoralsPage: React.FC = () => {
         headers,
       });
 
-      // Filtrar apenas as pastorais do coordenador
-      const myPastorals = pastoralsRes.data.filter((pastoral: any) =>
-        currentUser?.pastoralIds?.includes(pastoral.id)
-      );
+      // Só as pastorais que ele COORDENA (participar não dá gestão no backend)
+      const coordinated = await loadCoordinatedPastoralIds(currentUser);
+      const myPastorals = pastoralsRes.data.filter((pastoral: any) => coordinated.has(pastoral.id));
 
       setPastorals(myPastorals);
 
