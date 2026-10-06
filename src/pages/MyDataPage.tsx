@@ -161,9 +161,32 @@ const MyDataPage: React.FC = () => {
     });
     if (!result.isConfirmed) return;
 
+    // O servidor exige a senha atual para excluir a conta (reautenticação):
+    // só a sessão aberta no navegador não basta
+    const confirmation = await Swal.fire({
+      title: 'Confirme a sua senha',
+      text: 'Por segurança, digite a sua senha atual para excluir a conta.',
+      input: 'password',
+      inputPlaceholder: 'Senha atual',
+      inputAttributes: { autocomplete: 'current-password', autocapitalize: 'off', autocorrect: 'off' },
+      showCancelButton: true,
+      confirmButtonText: 'Excluir definitivamente',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#dc3545',
+      reverseButtons: true,
+      preConfirm: (value: string) => {
+        if (!value) {
+          Swal.showValidationMessage('Digite a sua senha atual');
+          return false;
+        }
+        return value;
+      },
+    });
+    if (!confirmation.isConfirmed || typeof confirmation.value !== 'string') return;
+
     setDeleting(true);
     try {
-      await api.delete('/users/me');
+      await api.delete('/users/me', { data: { password: confirmation.value } });
       notify.success('Sua conta foi excluída.');
       logout();
     } catch (error) {

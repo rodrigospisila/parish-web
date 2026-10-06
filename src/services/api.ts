@@ -79,6 +79,14 @@ type RefreshOutcome =
 
 /** Espera padrão antes de tentar renovar de novo após falha temporária sem Retry-After */
 const TEMPORARY_REFRESH_BACKOFF_MS = 15_000;
+/**
+ * Prazo do POST /auth/refresh: sem ele, uma conexão pendurada prendia a
+ * trava entre abas (e todas as requisições na fila) indefinidamente. Vencido,
+ * conta como falha temporária (a sessão fica).
+ */
+const REFRESH_TIMEOUT_MS = 15_000;
+/** Sem Web Locks: quanto esperar, na recusa, até outra aba gravar o par novo. */
+const NO_LOCK_RECHECK_MS = 1_000;
 /** Até quando não vale a pena tentar o refresh de novo (falha temporária recente) */
 let refreshBlockedUntil = 0;
 let refreshPromise: Promise<RefreshOutcome> | null = null;
@@ -103,6 +111,10 @@ export function getRetryAfterMs(error: unknown): number | null {
  * refresh (B38). O Web Locks serializa a renovação entre as abas; sem ele
  * (navegador antigo) a renovação segue sem trava e a releitura abaixo cobre.
  */
+function hasWebLocks(): boolean {
+  return typeof navigator !== 'undefined' && typeof (navigator as any).locks?.request === 'function';
+}
+
 async function withRefreshLock<T>(task: () => Promise<T>): Promise<T> {
   const locks = (navigator as Navigator & { locks?: { request: (name: string, cb: () => Promise<T>) => Promise<T> } }).locks;
   if (!locks?.request) return task();
@@ -135,6 +147,7 @@ async function doRefresh(): Promise<RefreshOutcome> {
       `${import.meta.env.VITE_API_URL}/auth/refresh`,
       { refreshToken: stored },
       // Instância "crua" sem interceptors não é necessária: a rota é excluída abaixo
+      { timeout: REFRESH_TIMEOUT_MS },
     );
     const { accessToken, refreshToken } = response.data || {};
     if (!accessToken) return { kind: 'rejected' };
@@ -147,9 +160,21 @@ async function doRefresh(): Promise<RefreshOutcome> {
     const status = axios.isAxiosError(error) ? error.response?.status : undefined;
     if (status === 401 || status === 403) {
       // Outra aba trocou o refresh token enquanto este pedido ia: a sessão segue com o dela
-      const latestRefresh = localStorage.getItem('refreshToken');
-      const latestAccess = localStorage.getItem('token');
-      if (latestRefresh && latestRefresh !== stored && latestAccess) return { kind: 'ok', token: latestAccess };
+      const rotatedElsewhere = () => {
+        const latestRefresh = localStorage.getItem('refreshToken');
+        const latestAccess = localStorage.getItem('token');
+        return latestRefresh && latestRefresh !== stored && latestAccess ? latestAccess : null;
+      };
+      const adopted = rotatedElsewhere();
+      if (adopted) return { kind: 'ok', token: adopted };
+      // Sem Web Locks (Safari < 15.4): a aba que ganhou a corrida pode ainda
+      // não ter gravado o par novo — espera um pouco e relê antes de deslogar
+      // todas as abas
+      if (!hasWebLocks()) {
+        await new Promise((resolve) => setTimeout(resolve, NO_LOCK_RECHECK_MS));
+        const late = rotatedElsewhere();
+        if (late) return { kind: 'ok', token: late };
+      }
       // Refresh recusado de verdade (expirado, revogado, de outro aparelho): sessão acabou
       return { kind: 'rejected' };
     }
@@ -161,7 +186,36 @@ async function doRefresh(): Promise<RefreshOutcome> {
 }
 
 // Rotas de autenticação: um 401 aqui é "credencial/código inválido", não sessão expirada
-const AUTH_ROUTES = ['/auth/login', '/auth/2fa/login', '/auth/refresh'];
+const AUTH_ROUTES = ['/auth/login', '/auth/2fa/login', '/auth/refresh', '/auth/logout/refresh'];
+
+/**
+ * Encerra NO SERVIDOR a sessão deste navegador (best-effort, nunca lança).
+ * Instância sem interceptors: o local já foi limpo e um 401 aqui não pode
+ * disparar refresh nem redirecionar. Com o access token vencido o POST
+ * /auth/logout é recusado (401) antes de encerrar a sessão — então o refresh
+ * token encerra a sessão por POST /auth/logout/refresh (servidor antigo, sem
+ * a rota: 404 ignorado; a sessão vence sozinha).
+ */
+export async function endServerSession(accessToken: string | null, refreshToken: string | null): Promise<void> {
+  const bare = axios.create({ baseURL: API_BASE, timeout: REFRESH_TIMEOUT_MS });
+  if (accessToken) {
+    try {
+      await bare.post('/auth/logout', refreshToken ? { refreshToken } : {}, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      return;
+    } catch (error) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      if (status !== 401 || !refreshToken) return;
+    }
+  }
+  if (!refreshToken) return;
+  try {
+    await bare.post('/auth/logout/refresh', { refreshToken });
+  } catch {
+    // best-effort
+  }
+}
 
 /** Código do 403 quando a conta precisa trocar a senha antes de qualquer outra coisa (M18). */
 export const PASSWORD_CHANGE_REQUIRED = 'PASSWORD_CHANGE_REQUIRED';

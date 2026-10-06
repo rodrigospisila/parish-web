@@ -99,8 +99,12 @@ interface OnlineIntent {
   feeAmount: number;
   /** Já devolvido ao pagador no provedor (estorno parcial ou total) */
   refundedAmount?: number;
-  /** Backend diz se a tesouraria pode confirmar à mão (inclui cobrança morta no provedor) */
+  /** Backend diz se a tesouraria pode confirmar à mão (inclui cobrança morta no provedor já liberada) */
   manualConfirm?: boolean;
+  /** Cobrança do provedor morta lá (expirada/apagada): o provedor informa que NÃO recebeu */
+  providerNotReceived?: boolean;
+  /** Quando a tesouraria liberou a conferência manual (reabriu / "conferir à mão") */
+  reopenedAt?: string | null;
   /** Meio escolhido pelo fiel; cartão e boleto só existem com o Asaas (confirmação por webhook) */
   paymentMethod: 'PIX' | 'CARD' | 'BOLETO';
   /** Página de pagamento do Asaas (cartão/boleto); null no Pix e nas ofertas anônimas */
@@ -184,9 +188,18 @@ const isMismatch = (intent: OnlineIntent) => intent.method === 'GATEWAY' && inte
 // chegou a existir lá (sem providerRef). O backend manda `manualConfirm`.
 const needsManualCheck = (intent: OnlineIntent) =>
   intent.manualConfirm ??
-  (isOpenIntent(intent) && (intent.method !== 'GATEWAY' || isMismatch(intent) || !intent.providerRef || intent.providerStatus === 'cancelled'));
-// Lote só para conferência simples; divergência de valor exige olhar item a item
-const canBatchConfirm = (intent: OnlineIntent) => needsManualCheck(intent) && !isMismatch(intent);
+  (isOpenIntent(intent) &&
+    (intent.method !== 'GATEWAY' ||
+      isMismatch(intent) ||
+      !intent.providerRef ||
+      (intent.providerStatus === 'cancelled' && (!!intent.reopenedAt || !!intent.contestedAt))));
+// Cobrança do provedor (com referência lá): a confirmação à mão é sempre individual, com o valor digitado
+const isProviderCharge = (intent: OnlineIntent) => intent.method === 'GATEWAY' && !!intent.providerRef;
+// O provedor informa que não recebeu (cobrança expirada/apagada lá)
+const providerNotReceived = (intent: OnlineIntent) =>
+  intent.providerNotReceived ?? (isProviderCharge(intent) && intent.providerStatus === 'cancelled');
+// Lote só para Pix estático (conferência simples); provedor e divergência exigem olhar item a item
+const canBatchConfirm = (intent: OnlineIntent) => needsManualCheck(intent) && !isMismatch(intent) && !isProviderCharge(intent);
 // Consulta ao provedor: em aberto (webhook pode ter atrasado) ou já confirmada (detectar estorno/chargeback)
 const canSyncProvider = (intent: OnlineIntent) =>
   intent.method === 'GATEWAY' && !!intent.providerRef && (intent.status === 'CONFIRMED' || (isOpenIntent(intent) && !isMismatch(intent)));
@@ -428,7 +441,8 @@ const FinancePage: React.FC = () => {
     setConfirmForm({
       date: new Date(first.declaredAt ?? first.createdAt).toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' }),
       receiptNumber: '',
-      amountPaid: targets.length === 1 ? String(first.amount) : '',
+      // Pix do provedor: o valor que caiu é digitado, nunca o gerado
+      amountPaid: targets.length === 1 && !isProviderCharge(first) ? String(first.amount) : '',
       referenceMonth: targets.length === 1 ? first.referenceMonth : '',
     });
     setConfirmTargets(targets);
@@ -441,20 +455,27 @@ const FinancePage: React.FC = () => {
       notify.error('Informe a data em que o pagamento caiu no extrato');
       return;
     }
+    if (confirmTargets.some(isProviderCharge) && (confirmTargets.length !== 1 || !(Number(confirmForm.amountPaid) > 0))) {
+      notify.error('Pix do provedor: confirme um a um, informando o valor exato que caiu no extrato');
+      return;
+    }
     setBusyIntent('batch');
     // Item a item, sem abortar na primeira falha: um Pix que já foi confirmado por
     // outra pessoa (ou pelo webhook) não trava o resto do lote
     let done = 0;
     let alreadyClosed = 0;
+    let feeWarning: string | null = null;
     const failures: string[] = [];
     for (const intent of confirmTargets) {
       try {
-        await api.post(`/tithe/intents/${intent.id}/confirm`, {
+        const response = await api.post(`/tithe/intents/${intent.id}/confirm`, {
           date: confirmForm.date,
           receiptNumber: confirmForm.receiptNumber.trim() || undefined,
           amountPaid: confirmTargets.length === 1 && confirmForm.amountPaid ? Number(confirmForm.amountPaid) : undefined,
           referenceMonth: confirmForm.referenceMonth || undefined,
         });
+        // Conciliação de cobrança paga no provedor sem o líquido: a taxa fica para lançar à mão
+        if (typeof response.data?.feeWarning === 'string') feeWarning = response.data.feeWarning;
         done += 1;
       } catch (error) {
         const message = getErrorMessage(error, '');
@@ -478,6 +499,7 @@ const FinancePage: React.FC = () => {
     } else {
       notify.success(summary);
     }
+    if (feeWarning) notify.warning(feeWarning);
     setConfirmTargets(null);
     setSelectedIds({});
     await fetchOnline();
@@ -514,10 +536,23 @@ const FinancePage: React.FC = () => {
   };
 
   const reopenIntent = async (intent: OnlineIntent) => {
+    // Ainda aberto: é a liberação da conferência manual de cobrança morta no provedor
+    const release = isOpenIntent(intent);
+    if (
+      release &&
+      !window.confirm(
+        `O provedor informa que NÃO recebeu este ${methodName(intent)} (a cobrança expirou ou foi apagada lá). ` +
+          'Libere a conferência manual só se o valor caiu na conta por fora do provedor — a confirmação vai pedir o valor exato do extrato.',
+      )
+    ) {
+      return;
+    }
     setBusyIntent(intent.id);
     try {
-      await api.post(`/tithe/intents/${intent.id}/reopen`, {});
-      notify.success('Contribuição reaberta — volta para a fila de conferência');
+      const { data } = await api.post(`/tithe/intents/${intent.id}/reopen`, {});
+      if (data?.status === 'CONFIRMED') notify.success('O provedor já tinha recebido: confirmado automaticamente');
+      else if (release) notify.success('Conferência manual liberada — confirme informando o valor do extrato');
+      else notify.success('Contribuição reaberta — volta para a fila de conferência');
       await fetchOnline();
     } catch (error) {
       notify.error(friendlyError(error, 'Erro ao reabrir'));
@@ -1327,6 +1362,9 @@ const FinancePage: React.FC = () => {
                         {isMismatch(intent) && intent.note ? (
                           <div style={{ fontSize: '0.75rem', color: '#b45309', fontWeight: 600 }}>⚠ Provedor informou: {intent.note}</div>
                         ) : null}
+                        {isOpenIntent(intent) && providerNotReceived(intent) ? (
+                          <div style={{ fontSize: '0.75rem', color: '#b45309', fontWeight: 600 }}>⚠ O provedor informa que não recebeu</div>
+                        ) : null}
                       </td>
                       <td className="actions-cell">
                         {needsManualCheck(intent) && (
@@ -1358,7 +1396,14 @@ const FinancePage: React.FC = () => {
                         )}
                         {/* Reabrir: a regra vem do backend (canReopen), sem condição local extra */}
                         {intent.canReopen && (
-                          <button className="btn-small" disabled={busyIntent !== null} onClick={() => void reopenIntent(intent)}>Reabrir</button>
+                          <button
+                            className="btn-small"
+                            disabled={busyIntent !== null}
+                            title={isOpenIntent(intent) ? 'O provedor informa que não recebeu; libera a confirmação manual com o valor do extrato' : undefined}
+                            onClick={() => void reopenIntent(intent)}
+                          >
+                            {isOpenIntent(intent) ? 'Conferir à mão' : 'Reabrir'}
+                          </button>
                         )}
                         {intent.status === 'CONFIRMED' && intent.member.id && (
                           <button aria-label="Baixar comprovante" title="Baixar comprovante" className="btn-small" onClick={() => downloadBlob(`/tithe/intents/${intent.id}/receipt.pdf`, 'comprovante.pdf')}>🧾</button>
@@ -1485,6 +1530,12 @@ const FinancePage: React.FC = () => {
                     ⚠ Provedor informou: {confirmTargets[0].note} — confira o valor que caiu antes de lançar.
                   </p>
                 ) : null}
+                {confirmTargets.length === 1 && providerNotReceived(confirmTargets[0]) ? (
+                  <p style={{ fontSize: '0.85rem', color: '#b45309', fontWeight: 600 }}>
+                    ⚠ O provedor informa que não recebeu este pagamento (a cobrança expirou ou foi apagada lá). Confirme só se o valor caiu
+                    na conta por fora do provedor, e informe o valor exato do extrato.
+                  </p>
+                ) : null}
                 <form onSubmit={submitConfirm}>
                   <div className="form-row">
                     <div className="form-group">
@@ -1499,8 +1550,15 @@ const FinancePage: React.FC = () => {
                   {confirmTargets.length === 1 && (
                     <div className="form-row">
                       <div className="form-group">
-                        <label>Valor que caiu (R$)</label>
-                        <input type="number" step="0.01" min="1" value={confirmForm.amountPaid} onChange={(e) => setConfirmForm({ ...confirmForm, amountPaid: e.target.value })} />
+                        <label>Valor que caiu (R$){isProviderCharge(confirmTargets[0]) ? ' *' : ''}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="1"
+                          required={isProviderCharge(confirmTargets[0])}
+                          value={confirmForm.amountPaid}
+                          onChange={(e) => setConfirmForm({ ...confirmForm, amountPaid: e.target.value })}
+                        />
                       </div>
                       <div className="form-group">
                         <label>Mês de referência</label>

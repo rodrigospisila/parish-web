@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import api, { adoptTokens, getErrorMessage } from '../services/api';
+import api, { adoptTokens, endServerSession, getErrorMessage } from '../services/api';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -171,15 +171,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     // Encerra no servidor SÓ a sessão deste navegador (best-effort). Token e
-    // refresh vão explícitos: o interceptor roda depois de o local ser limpo.
+    // refresh vão explícitos (o local é limpo logo abaixo); com o access
+    // token vencido, a sessão é encerrada pelo refresh token
     const currentToken = localStorage.getItem('token');
     const currentRefresh = localStorage.getItem('refreshToken');
-    if (currentToken) {
-      void api
-        .post('/auth/logout', currentRefresh ? { refreshToken: currentRefresh } : {}, {
-          headers: { Authorization: `Bearer ${currentToken}` },
-        })
-        .catch(() => undefined);
+    if (currentToken || currentRefresh) {
+      void endServerSession(currentToken, currentRefresh);
     }
     setToken(null);
     setUser(null);

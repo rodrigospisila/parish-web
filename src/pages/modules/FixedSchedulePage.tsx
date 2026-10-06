@@ -84,6 +84,12 @@ const WEEK_PANEL_MAX_COMMUNITIES = 5;
 
 const pastoralName = (p: CommunityPastoral) => p.globalPastoral?.name || p.name || 'Pastoral';
 
+/** "7:30" → "07:30" (horário legado sem o zero à esquerda); o resto fica como está. */
+const normalizarHora = (time: string | null | undefined) => {
+  const valor = String(time ?? '').trim();
+  return /^\d:\d{2}$/.test(valor) ? `0${valor}` : valor;
+};
+
 
 const FixedSchedulePage: React.FC = () => {
   const { user } = useAuth();
@@ -261,7 +267,9 @@ const FixedSchedulePage: React.FC = () => {
       recurrence: schedule.recurrence ?? 'WEEKLY',
       weeksOfMonth: schedule.weeksOfMonth ?? [],
       dayOfMonth: schedule.dayOfMonth ?? 13,
-      time: schedule.time,
+      // Horário legado "7:30" (carga antiga) vira "07:30": o campo de hora e a
+      // validação HH:MM do servidor não aceitam sem o zero (R3#49)
+      time: normalizarHora(schedule.time),
       notes: schedule.notes ?? '',
       isSpecial: schedule.isSpecial,
       specialDate: schedule.specialDate ? schedule.specialDate.slice(0, 10) : '',
@@ -307,7 +315,7 @@ const FixedSchedulePage: React.FC = () => {
       dayOfWeek: form.recurrence === 'MONTHLY_DAY' ? undefined : Number(form.dayOfWeek),
       weeksOfMonth: form.recurrence === 'MONTHLY_NTH' ? form.weeksOfMonth : [],
       dayOfMonth: form.recurrence === 'MONTHLY_DAY' ? Number(form.dayOfMonth) : undefined,
-      time: form.time,
+      time: normalizarHora(form.time),
       notes: form.notes || undefined,
       isSpecial: form.isSpecial,
       specialDate: form.isSpecial && form.specialDate ? new Date(form.specialDate).toISOString() : undefined,

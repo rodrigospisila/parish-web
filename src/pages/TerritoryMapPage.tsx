@@ -204,6 +204,9 @@ const CliqueDefinePino: React.FC<{ ativo: boolean; onPick: (lat: number, lng: nu
   return null;
 };
 
+/** Status HTTP de um erro do axios (0 quando não houve resposta). */
+const statusDe = (e: unknown): number => Number((e as { response?: { status?: number } })?.response?.status ?? 0);
+
 /**
  * Consulta o OpenStreetMap (Nominatim) PELO SERVIDOR (`GET /geocoding/search`: cache, fila de
  * 1 req/s e timeout — o navegador nunca chama o provedor direto). Primeiro ESTRUTURADA
@@ -218,7 +221,16 @@ async function procurarNoNominatim(row: MapRow): Promise<{ lat: number; lng: num
   if (row.address) tentativas.push([{ q: [row.address, row.city, row.state, 'Brasil'].join(', ') }, false]);
   tentativas.push([{ q: [row.city, row.state, 'Brasil'].join(', ') }, true]);
   for (const [params, soCidade] of tentativas) {
-    const { data } = await api.get<Array<{ latitude: number; longitude: number; rank?: number | null }>>('/geocoding/search', { params });
+    let data: Array<{ latitude: number; longitude: number; rank?: number | null }> | undefined;
+    try {
+      ({ data } = await api.get<Array<{ latitude: number; longitude: number; rank?: number | null }>>('/geocoding/search', { params }));
+    } catch (e) {
+      // 400 (ex.: cidade com menos de 2 letras na estruturada): essa forma não
+      // serve, mas as buscas livres seguintes ainda podem achar (R3#59).
+      // 429/503 e o resto sobem para quem chamou avisar
+      if (statusDe(e) === 400) continue;
+      throw e;
+    }
     const achado = Array.isArray(data) ? data[0] : undefined;
     if (!achado) continue;
     const rank = achado.rank ?? 0;
@@ -367,8 +379,15 @@ const TerritoryMapPage: React.FC = () => {
             ? 'Achei só a RUA: o mapa aberto não conhece o número, então o pino foi para o meio dela. Arraste até a igreja — o satélite ajuda.'
             : 'Não achei o endereço: o mapa foi para o centro da cidade. Marque onde fica a igreja.',
       );
-    } catch {
-      if (!automatico) setAviso('Não foi possível consultar o endereço agora.');
+    } catch (e) {
+      // 429 (limite por minuto) e 503 (fila do provedor cheia) passam sozinhos:
+      // avisa para esperar, inclusive na sugestão automática ao abrir (R3#59)
+      const status = statusDe(e);
+      if (status === 429 || status === 503) {
+        setAviso('Muitas buscas de endereço seguidas. Aguarde alguns segundos e clique em "Buscar pelo endereço" de novo.');
+      } else if (!automatico) {
+        setAviso('Não foi possível consultar o endereço agora.');
+      }
     } finally {
       setBuscandoEndereco(false);
     }

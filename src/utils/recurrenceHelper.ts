@@ -24,7 +24,7 @@ export function generateRecurrenceDates(
   let currentDate = new Date(start);
   let occurrences = 1;
 
-  const endDate = config.endDate ? new Date(config.endDate) : null;
+  const endDate = config.endDate ? endOfLocalDay(config.endDate) : null;
 
   while (occurrences < maxOccurrences) {
     let nextDate: Date | null = null;
@@ -84,6 +84,27 @@ export function generateRecurrenceDates(
   }
 
   return dates;
+}
+
+/**
+ * Fim (23:59:59.999 local) do dia de término — o último dia ENTRA na série.
+ * 'AAAA-MM-DD' (o DateInput) é dia civil: new Date('2026-10-10') é meia-noite
+ * UTC = 21:00 do dia 09 em Brasília, e a ocorrência das 19:00 do dia 10 ficava
+ * de fora (R3#54). Com hora, vale o dia local daquele instante.
+ */
+export function endOfLocalDay(value: string): Date | null {
+  const raw = String(value).trim();
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  if (ymd) return new Date(Number(ymd[1]), Number(ymd[2]) - 1, Number(ymd[3]), 23, 59, 59, 999);
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 23, 59, 59, 999);
+}
+
+/** 'AAAA-MM-DD' (ou instante) → 'dd/mm/aaaa' do dia de término, sem voltar um dia. */
+export function formatEndDateBR(value: string): string {
+  const end = endOfLocalDay(value);
+  return end ? end.toLocaleDateString('pt-BR') : '';
 }
 
 /**

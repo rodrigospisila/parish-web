@@ -31,3 +31,7 @@ dist-ssr
 .env.production.local
 
 *.tsbuildinfo
+
+# Despejos do Git Bash no Windows
+*.stackdump
+pnpm-lock.yaml

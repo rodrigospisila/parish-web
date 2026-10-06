@@ -27,6 +27,8 @@ jobs:
       # "tsc && vite build"
       - run: npm run build
       - name: vercel.json válido (cabeçalhos de segurança)
-        run: node -e "const v=require('./vercel.json');const h=v.headers?.[0]?.headers?.map(x=>x.key)||[];for(const k of ['Content-Security-Policy','X-Frame-Options','X-Content-Type-Options'])if(!h.includes(k)){console.error('faltando '+k);process.exit(1)}"
+        run: node -e "const v=require('./vercel.json');const h=v.headers?.[0]?.headers?.map(x=>x.key)||[];for(const k of ['Content-Security-Policy','X-Frame-Options','X-Content-Type-Options'])if(!h.includes(k)){console.error('faltando '+k);process.exit(1)};const csp=v.headers[0].headers.find(x=>x.key==='Content-Security-Policy').value;const api=new URL(process.env.VITE_API_URL).origin;const cs=(csp.match(/connect-src([^;]*)/)||[])[1]||'';if(!cs.split(/\s+/).includes(api)){console.error('connect-src da CSP não inclui a API '+api);process.exit(1)}"
+      # Aviso, não bloqueio: um alerta novo publicado não pode derrubar um commit que não mexeu em nada
       - name: Dependências de produção sem vulnerabilidade alta
+        continue-on-error: true
         run: npm audit --omit=dev --audit-level=high

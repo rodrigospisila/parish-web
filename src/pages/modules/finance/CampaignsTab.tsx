@@ -80,7 +80,8 @@ interface CampaignEntry {
   /** Positivo para INCOME, negativo para EXPENSE */
   amount: number;
   type: 'INCOME' | 'EXPENSE';
-  source: 'MANUAL' | 'REVERSAL';
+  /** GUEST = oferta de visitante (página pública, pelo provedor): só leitura — o estorno vem do provedor */
+  source: 'MANUAL' | 'REVERSAL' | 'GUEST';
   description: string | null;
   community: string | null;
   /** Lançamento manual que já foi estornado */
@@ -124,7 +125,7 @@ const STATUS_BADGE: Record<CampaignStatus, { label: string; color: string }> = {
   CLOSED: { label: 'Encerrada', color: 'blue' },
 };
 const KIND_LABEL: Record<CampaignKind, string> = { CAMPAIGN: 'Campanha', FUND: 'Fundo' };
-const METHOD_LABEL: Record<string, string> = { PIX: 'Pix', CARD: 'Cartão', BOLETO: 'Boleto', MANUAL: 'Lançamento manual' };
+const METHOD_LABEL: Record<string, string> = { PIX: 'Pix', CARD: 'Cartão', BOLETO: 'Boleto', MANUAL: 'Lançamento manual', GUEST: 'Visitantes (página pública)' };
 const methodLabel = (method: string | null | undefined): string => (method ? METHOD_LABEL[method.toUpperCase()] ?? method : '—');
 const ENTRY_METHODS = ['Dinheiro', 'Pix', 'Cartão', 'Transferência', 'Outro'] as const;
 
@@ -852,9 +853,9 @@ const CampaignsTab: React.FC<CampaignsTabProps> = ({ communities, parishIdParam,
           </div>
 
           <div className="detail-section">
-            <h4>Lançamentos manuais</h4>
+            <h4>Lançamentos manuais e de visitantes</h4>
             {report.entries.length === 0 ? (
-              <p style={{ fontSize: '0.85rem', color: '#888', margin: 0 }}>Nenhum lançamento feito à mão.</p>
+              <p style={{ fontSize: '0.85rem', color: '#888', margin: 0 }}>Nenhum lançamento feito à mão nem oferta de visitante.</p>
             ) : (
               <div className="table-container">
                 <table className="data-table">
@@ -870,12 +871,18 @@ const CampaignsTab: React.FC<CampaignsTabProps> = ({ communities, parishIdParam,
                           </td>
                           <td>
                             {isReversal && <span className="status-badge gray" style={{ marginRight: '0.4rem' }}>Estorno</span>}
+                            {row.source === 'GUEST' && (
+                              <span className="status-badge blue" style={{ marginRight: '0.4rem' }} title="Oferta de visitante pelo provedor: o estorno é feito no provedor e chega sozinho">
+                                Visitante
+                              </span>
+                            )}
                             {row.reversed && <span className="status-badge yellow" style={{ marginRight: '0.4rem' }}>estornado</span>}
                             {row.description || (isReversal ? 'Estorno de lançamento manual' : '—')}
                           </td>
                           <td>{row.community ?? '—'}</td>
                           {canManage(report.campaign) && (
                             <td className="actions-cell">
+                              {/* Só lançamento manual: oferta de visitante é estornada no provedor (estornar aqui tiraria duas vezes) */}
                               {row.source === 'MANUAL' && !row.reversed && (
                                 <button
                                   type="button"

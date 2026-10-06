@@ -58,6 +58,21 @@ const NEXT_STATUS: Record<string, string | null> = {
   CANCELLED: null,
 };
 
+/** Com responseType 'blob' o erro do backend também vem como Blob — recupera a mensagem real. */
+const blobErrorMessage = async (error: any, fallback: string): Promise<string> => {
+  try {
+    if (error?.response?.data instanceof Blob) {
+      const parsed = JSON.parse(await error.response.data.text());
+      if (parsed?.message) {
+        return Array.isArray(parsed.message) ? parsed.message.join(', ') : parsed.message;
+      }
+    }
+  } catch {
+    // corpo não-JSON — segue para o genérico
+  }
+  return getErrorMessage(error, fallback);
+};
+
 const SacramentProcessesPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [processes, setProcesses] = useState<SacramentProcess[]>([]);
@@ -174,7 +189,8 @@ const SacramentProcessesPage: React.FC = () => {
       link.click();
       URL.revokeObjectURL(url);
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao emitir certidão'));
+      // responseType 'blob': o 400/403 também chega como Blob — lê a mensagem real
+      notify.error(await blobErrorMessage(error, 'Erro ao emitir certidão'));
     }
   };
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import { DateInput } from './DateInput';
+import { formatEndDateBR } from '../utils/recurrenceHelper';
 import './RecurrenceForm.css';
 
 interface RecurrenceFormProps {
@@ -129,7 +130,7 @@ const RecurrenceForm: React.FC<RecurrenceFormProps> = ({
             .map((day: number) => weekDays.find((weekDay) => weekDay.value === day)?.label)
             .join(', ')}`}
         {!recurrenceType && 'Selecione uma recorrência'}
-        {recurrenceEndDate && ` até ${new Date(recurrenceEndDate).toLocaleDateString('pt-BR')}`}
+        {recurrenceEndDate && ` até ${formatEndDateBR(recurrenceEndDate)}`}
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
 import { notify } from '../../services/notification.service';
 import { DateTimeInput } from '../../components/DateInput';
+import { useAuth } from '../../contexts/AuthContext';
 import './ModulePages.css';
 
 interface Room {
@@ -19,7 +20,18 @@ interface Reservation {
   startTime: string;
   endTime: string;
   status: string;
+  requesterUserId?: string | null;
 }
+
+/** Reserva aguardando aprovação (GET /rooms/reservations/pending). */
+interface PendingReservation extends Reservation {
+  room: { id: string; name: string; communityId: string };
+  requesterName?: string | null;
+  mine?: boolean;
+}
+
+/** Quem aprova/recusa reservas: coordenação da comunidade para cima. */
+const APPROVER_ROLES = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'];
 
 interface Community {
   id: string;
@@ -40,7 +52,12 @@ function startOfToday(): string {
 }
 
 const RoomsPage: React.FC = () => {
+  const { user } = useAuth();
+  // Coordenador de pastoral PEDE a reserva (nasce pendente) e só cancela as
+  // próprias; aprovar/recusar é da coordenação da comunidade (backend valida)
+  const canApprove = APPROVER_ROLES.includes(user?.role ?? '');
   const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState<PendingReservation[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [communityFilter, setCommunityFilter] = useState('');
@@ -74,6 +91,23 @@ const RoomsPage: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Pendências: quem aprova vê as do escopo; o coordenador de pastoral, os
+  // próprios pedidos. Servidor antigo (sem a rota) → lista vazia, sem erro
+  const loadPending = useCallback(async () => {
+    try {
+      const res = await api.get('/rooms/reservations/pending', { params: { communityId: communityFilter || undefined } });
+      setPending(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      setPending([]);
+    }
+  }, [communityFilter]);
+
+  useEffect(() => {
+    loadPending();
+  }, [loadPending]);
+
+  const isMine = (reservation: Reservation) => !!user?.id && reservation.requesterUserId === user.id;
 
   const loadAgenda = useCallback(async (room: Room, from: string) => {
     setAgendaLoading(true);
@@ -138,6 +172,7 @@ const RoomsPage: React.FC = () => {
       setShowReserveModal(false);
       setReserveForm({ title: '', startTime: '', endTime: '' });
       loadAgenda(selectedRoom, agendaFrom);
+      loadPending();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao reservar — verifique conflito de horário'));
     }
@@ -148,6 +183,7 @@ const RoomsPage: React.FC = () => {
       await api.patch(`/rooms/reservations/${reservationId}/status`, { status });
       notify.success('Status da reserva atualizado!');
       if (selectedRoom) loadAgenda(selectedRoom, agendaFrom);
+      loadPending();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao atualizar reserva'));
     }
@@ -169,9 +205,11 @@ const RoomsPage: React.FC = () => {
     <div className="module-page">
       <div className="page-header">
         <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="espacos" /> Reserva de Espaços</h1>
-        <div className="header-actions">
-          <button className="btn-primary" onClick={() => setShowRoomModal(true)}>+ Novo Espaço</button>
-        </div>
+        {canApprove && (
+          <div className="header-actions">
+            <button className="btn-primary" onClick={() => setShowRoomModal(true)}>+ Novo Espaço</button>
+          </div>
+        )}
       </div>
 
       <div className="filters">
@@ -180,6 +218,53 @@ const RoomsPage: React.FC = () => {
           {communities.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </div>
+
+      {pending.length > 0 && (
+        <div className="detail-panel">
+          <h2>{canApprove ? 'Reservas aguardando aprovação' : 'Meus pedidos aguardando aprovação'}</h2>
+          {!canApprove && (
+            <p style={{ color: '#777', fontSize: '0.85rem' }}>
+              A coordenação da comunidade foi avisada e aprova ou recusa o pedido.
+            </p>
+          )}
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Espaço</th>
+                  <th>Início</th>
+                  <th>Fim</th>
+                  <th>Atividade</th>
+                  {canApprove && <th>Pedido por</th>}
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pending.map((reservation) => (
+                  <tr key={reservation.id}>
+                    <td>{reservation.room?.name ?? '—'}</td>
+                    <td>{formatDateTime(reservation.startTime)}</td>
+                    <td>{formatDateTime(reservation.endTime)}</td>
+                    <td><strong>{reservation.title}</strong></td>
+                    {canApprove && <td>{reservation.requesterName ?? '—'}</td>}
+                    <td className="actions-cell">
+                      {canApprove && (
+                        <>
+                          <button className="btn-small success" onClick={() => handleReservationStatus(reservation.id, 'APPROVED')}>Aprovar</button>
+                          <button className="btn-small danger" onClick={() => handleReservationStatus(reservation.id, 'REJECTED')}>Recusar</button>
+                        </>
+                      )}
+                      {(canApprove || reservation.mine || isMine(reservation)) && (
+                        <button className="btn-small warning" onClick={() => handleReservationStatus(reservation.id, 'CANCELLED')}>Cancelar</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="module-grid">
         {rooms.map((room) => (
@@ -233,13 +318,13 @@ const RoomsPage: React.FC = () => {
                         <td><strong>{reservation.title}</strong></td>
                         <td><span className={`status-badge ${st.color}`}>{st.label}</span></td>
                         <td className="actions-cell">
-                          {reservation.status === 'PENDING' && (
+                          {canApprove && reservation.status === 'PENDING' && (
                             <>
                               <button className="btn-small success" onClick={() => handleReservationStatus(reservation.id, 'APPROVED')}>Aprovar</button>
                               <button className="btn-small danger" onClick={() => handleReservationStatus(reservation.id, 'REJECTED')}>Recusar</button>
                             </>
                           )}
-                          {(reservation.status === 'PENDING' || reservation.status === 'APPROVED') && (
+                          {(reservation.status === 'PENDING' || reservation.status === 'APPROVED') && (canApprove || isMine(reservation)) && (
                             <button className="btn-small warning" onClick={() => handleReservationStatus(reservation.id, 'CANCELLED')}>Cancelar</button>
                           )}
                         </td>
