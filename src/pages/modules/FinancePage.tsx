@@ -97,6 +97,10 @@ interface OnlineIntent {
   providerRef: string | null;
   chargedAmount: number | null;
   feeAmount: number;
+  /** Já devolvido ao pagador no provedor (estorno parcial ou total) */
+  refundedAmount?: number;
+  /** Backend diz se a tesouraria pode confirmar à mão (inclui cobrança morta no provedor) */
+  manualConfirm?: boolean;
   /** Meio escolhido pelo fiel; cartão e boleto só existem com o Asaas (confirmação por webhook) */
   paymentMethod: 'PIX' | 'CARD' | 'BOLETO';
   /** Página de pagamento do Asaas (cartão/boleto); null no Pix e nas ofertas anônimas */
@@ -175,10 +179,12 @@ const isOpenIntent = (intent: OnlineIntent) => intent.status === 'DECLARED' || i
 // Provedor apontou pagamento com valor/ref diferente do declarado: só conciliação individual
 const isMismatch = (intent: OnlineIntent) => intent.method === 'GATEWAY' && intent.providerStatus === 'mismatch';
 // Cobrança do provedor em aberto é confirmada pelo webhook/consulta — a tesouraria só
-// mexe manualmente no Pix estático, quando o provedor apontou divergência de valor ou
-// quando a cobrança nem chegou a existir no provedor (sem providerRef)
+// mexe manualmente no Pix estático, quando o provedor apontou divergência de valor,
+// quando a cobrança morreu no provedor (reaberta depois de expirar) ou quando nem
+// chegou a existir lá (sem providerRef). O backend manda `manualConfirm`.
 const needsManualCheck = (intent: OnlineIntent) =>
-  isOpenIntent(intent) && (intent.method !== 'GATEWAY' || isMismatch(intent) || !intent.providerRef);
+  intent.manualConfirm ??
+  (isOpenIntent(intent) && (intent.method !== 'GATEWAY' || isMismatch(intent) || !intent.providerRef || intent.providerStatus === 'cancelled'));
 // Lote só para conferência simples; divergência de valor exige olhar item a item
 const canBatchConfirm = (intent: OnlineIntent) => needsManualCheck(intent) && !isMismatch(intent);
 // Consulta ao provedor: em aberto (webhook pode ter atrasado) ou já confirmada (detectar estorno/chargeback)
@@ -1283,6 +1289,9 @@ const FinancePage: React.FC = () => {
                         {intent.amountPaid != null && intent.amountPaid !== intent.amount && (
                           <div style={{ fontSize: '0.78rem', color: '#666' }}>pago {formatBRL(intent.amountPaid)}</div>
                         )}
+                        {!!intent.refundedAmount && intent.refundedAmount > 0 && (
+                          <div style={{ fontSize: '0.78rem', color: '#b45309' }}>estornado {formatBRL(intent.refundedAmount)}</div>
+                        )}
                         {intent.chargedAmount != null && Math.round(intent.chargedAmount * 100) !== Math.round(intent.amount * 100) && (
                           <div style={{ fontSize: '0.78rem', color: '#666' }}>
                             cobrado {formatBRL(intent.chargedAmount)} (taxa {formatBRL(intent.feeAmount ?? Math.max(0, intent.chargedAmount - intent.amount))})
@@ -1352,7 +1361,7 @@ const FinancePage: React.FC = () => {
                           <button className="btn-small" disabled={busyIntent !== null} onClick={() => void reopenIntent(intent)}>Reabrir</button>
                         )}
                         {intent.status === 'CONFIRMED' && intent.member.id && (
-                          <button className="btn-small" onClick={() => downloadBlob(`/tithe/intents/${intent.id}/receipt.pdf`, 'comprovante.pdf')}>🧾</button>
+                          <button aria-label="Baixar comprovante" title="Baixar comprovante" className="btn-small" onClick={() => downloadBlob(`/tithe/intents/${intent.id}/receipt.pdf`, 'comprovante.pdf')}>🧾</button>
                         )}
                       </td>
                     </tr>

@@ -7,8 +7,45 @@ export const AVATAR_UPDATED_EVENT = 'parish:avatar-updated';
 export const announceAvatarUpdated = () => window.dispatchEvent(new Event(AVATAR_UPDATED_EVENT));
 
 /**
- * Avatar com a foto de perfil do usuário (busca autenticada); sem foto (404)
- * cai nas iniciais coloridas de sempre.
+ * Busca compartilhada entre os avatares (achado B50). ?optional=1 faz o backend
+ * responder 204 quando não há foto (o 404 sujava o console a cada avatar), e o
+ * "sem foto" fica lembrado na sessão: a mesma pessoa em 20 linhas de uma lista,
+ * ou em cada troca de tela, não gera 20 requisições. Fotos não ficam aqui (o
+ * cache HTTP de 1 h do backend já atende) — só a busca em andamento e o "sem foto".
+ */
+let avatarVersion = 0;
+const avatarLookups = new Map<string, Promise<Blob | null>>();
+
+const fetchAvatar = (userId: string): Promise<Blob | null> => {
+  const cached = avatarLookups.get(userId);
+  if (cached) return cached;
+  const lookup = api
+    .get<Blob>(`/users/${userId}/avatar`, {
+      responseType: 'blob',
+      params: { t: avatarVersion, optional: 1 },
+    })
+    .then((res) => (res.status === 204 || !res.data?.size ? null : res.data))
+    .catch(() => null) // 404 de backend antigo ou falha de rede: iniciais
+    .then((blob) => {
+      if (blob) avatarLookups.delete(userId); // só o "sem foto" fica lembrado
+      return blob;
+    });
+  avatarLookups.set(userId, lookup);
+  return lookup;
+};
+
+// Registrado no carregamento do módulo, antes dos listeners dos componentes:
+// quando eles re-buscam, o cache já foi limpo e a versão (?t=) já mudou.
+if (typeof window !== 'undefined') {
+  window.addEventListener(AVATAR_UPDATED_EVENT, () => {
+    avatarVersion += 1;
+    avatarLookups.clear();
+  });
+}
+
+/**
+ * Avatar com a foto de perfil do usuário (busca autenticada); sem foto cai nas
+ * iniciais coloridas de sempre.
  */
 const UserPhotoAvatar: React.FC<{
   userId?: string | null;
@@ -29,16 +66,11 @@ const UserPhotoAvatar: React.FC<{
     if (!userId) return;
     let cancelled = false;
     let objectUrl: string | null = null;
-    api
-      .get(`/users/${userId}/avatar`, { responseType: 'blob', params: { t: version } })
-      .then((res) => {
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(res.data);
-        setSrc(objectUrl);
-      })
-      .catch(() => {
-        if (!cancelled) setSrc(null);
-      });
+    void fetchAvatar(userId).then((blob) => {
+      if (cancelled) return;
+      objectUrl = blob ? URL.createObjectURL(blob) : null;
+      setSrc(objectUrl);
+    });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);

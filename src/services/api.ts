@@ -98,7 +98,36 @@ export function getRetryAfterMs(error: unknown): number | null {
   return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
 }
 
-async function refreshAccessToken(): Promise<RefreshOutcome> {
+/**
+ * Várias abas compartilham o localStorage, mas cada uma tem a sua fila de
+ * refresh (B38). O Web Locks serializa a renovação entre as abas; sem ele
+ * (navegador antigo) a renovação segue sem trava e a releitura abaixo cobre.
+ */
+async function withRefreshLock<T>(task: () => Promise<T>): Promise<T> {
+  const locks = (navigator as Navigator & { locks?: { request: (name: string, cb: () => Promise<T>) => Promise<T> } }).locks;
+  if (!locks?.request) return task();
+  try {
+    return await locks.request('parish-refresh', task);
+  } catch {
+    return task();
+  }
+}
+
+/**
+ * `sentToken`: o access token que a requisição recusada levou. Se outra aba
+ * já renovou (o token guardado mudou), usa o novo em vez de renovar de novo —
+ * mandar o mesmo refresh duas vezes faria a segunda receber 401 e deslogar
+ * todas as abas.
+ */
+async function refreshAccessToken(sentToken: string | null): Promise<RefreshOutcome> {
+  return withRefreshLock(async () => {
+    const current = localStorage.getItem('token');
+    if (current && sentToken && current !== sentToken) return { kind: 'ok', token: current };
+    return doRefresh();
+  });
+}
+
+async function doRefresh(): Promise<RefreshOutcome> {
   const stored = localStorage.getItem('refreshToken');
   if (!stored) return { kind: 'rejected' };
   try {
@@ -116,8 +145,14 @@ async function refreshAccessToken(): Promise<RefreshOutcome> {
     return { kind: 'ok', token: accessToken };
   } catch (error) {
     const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-    // Refresh recusado de verdade (expirado, revogado, de outro aparelho): sessão acabou
-    if (status === 401 || status === 403) return { kind: 'rejected' };
+    if (status === 401 || status === 403) {
+      // Outra aba trocou o refresh token enquanto este pedido ia: a sessão segue com o dela
+      const latestRefresh = localStorage.getItem('refreshToken');
+      const latestAccess = localStorage.getItem('token');
+      if (latestRefresh && latestRefresh !== stored && latestAccess) return { kind: 'ok', token: latestAccess };
+      // Refresh recusado de verdade (expirado, revogado, de outro aparelho): sessão acabou
+      return { kind: 'rejected' };
+    }
     // 429, 5xx, rede ou qualquer outra resposta: falha temporária — mantém a sessão
     const retryAfterMs = getRetryAfterMs(error) ?? TEMPORARY_REFRESH_BACKOFF_MS;
     refreshBlockedUntil = Date.now() + retryAfterMs;
@@ -127,6 +162,10 @@ async function refreshAccessToken(): Promise<RefreshOutcome> {
 
 // Rotas de autenticação: um 401 aqui é "credencial/código inválido", não sessão expirada
 const AUTH_ROUTES = ['/auth/login', '/auth/2fa/login', '/auth/refresh'];
+
+/** Código do 403 quando a conta precisa trocar a senha antes de qualquer outra coisa (M18). */
+export const PASSWORD_CHANGE_REQUIRED = 'PASSWORD_CHANGE_REQUIRED';
+export const CHANGE_PASSWORD_PATH = '/trocar-senha';
 
 function endSession() {
   localStorage.removeItem('token');
@@ -145,6 +184,17 @@ function attachRefreshInterceptor(instance: { interceptors: any }) {
       const status = error.response?.status;
       const url: string = original?.url || '';
       const isAuthRoute = AUTH_ROUTES.some((route) => url.includes(route));
+      // Troca de senha obrigatória ligada no servidor: leva à tela de troca
+      if (status === 403 && error.response?.data?.code === PASSWORD_CHANGE_REQUIRED) {
+        try {
+          const stored = JSON.parse(localStorage.getItem('user') || 'null');
+          if (stored) localStorage.setItem('user', JSON.stringify({ ...stored, forcePasswordChange: true }));
+        } catch {
+          // usuário guardado ilegível: só redireciona
+        }
+        if (!window.location.pathname.startsWith(CHANGE_PASSWORD_PATH)) window.location.href = CHANGE_PASSWORD_PATH;
+        return Promise.reject(error);
+      }
       if (status !== 401 || isAuthRoute || !original || original._retried) {
         return Promise.reject(error);
       }
@@ -156,8 +206,11 @@ function attachRefreshInterceptor(instance: { interceptors: any }) {
         return Promise.reject(error);
       }
 
+      const headers = original.headers;
+      const sentAuth = String((typeof headers?.get === 'function' ? headers.get('Authorization') : headers?.Authorization) ?? '');
+      const sentToken = sentAuth.startsWith('Bearer ') ? sentAuth.slice(7) : null;
       if (!refreshPromise) {
-        refreshPromise = refreshAccessToken().finally(() => {
+        refreshPromise = refreshAccessToken(sentToken).finally(() => {
           refreshPromise = null;
         });
       }

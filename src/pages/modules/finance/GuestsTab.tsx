@@ -22,6 +22,10 @@ export interface GuestGift {
   cpfMasked: string | null;
   amount: number;
   amountPaid: number | null;
+  /** Taxa real do provedor (vira despesa "Taxas de pagamento" no Financeiro) */
+  feeAmount?: number;
+  /** Já devolvido ao visitante no provedor (estorno parcial ou total) */
+  refundedAmount?: number;
   /** Mensagem/intenção deixada pelo visitante */
   message: string | null;
   campaign: { id: string; name: string } | null;
@@ -358,6 +362,10 @@ const GuestsTab: React.FC<GuestsTabProps> = ({ parishId, onDataChanged }) => {
                           {formatBRL(gift.amount)}
                           {gift.amountPaid != null && Math.round(gift.amountPaid * 100) !== Math.round(gift.amount * 100) && (
                             <div style={smallStyle}>pago {formatBRL(gift.amountPaid)}</div>
+                          )}
+                          {!!gift.feeAmount && gift.feeAmount > 0 && <div style={smallStyle}>taxa {formatBRL(gift.feeAmount)}</div>}
+                          {!!gift.refundedAmount && gift.refundedAmount > 0 && (
+                            <div style={{ ...smallStyle, color: '#b45309' }}>estornado {formatBRL(gift.refundedAmount)}</div>
                           )}
                         </td>
                         <td>{gift.campaign?.name ?? '—'}</td>

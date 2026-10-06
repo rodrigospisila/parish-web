@@ -139,6 +139,9 @@ interface Community {
   city?: string;
 }
 
+/** Papéis que o backend deixa moderar o mural (RolesGuard hierárquico a partir de COMMUNITY_COORDINATOR). */
+const PRAYER_MODERATOR_ROLES = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'] as const;
+
 const PRAYER_CATEGORY: Record<string, string> = {
   HEALTH: 'Saúde',
   FAMILY: 'Família',
@@ -240,6 +243,9 @@ const DashboardPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isAdmin = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN'].includes(user?.role ?? '');
+  // GET /prayer-requests/pending exige COMMUNITY_COORDINATOR ou acima: para os
+  // demais papéis a chamada só gerava um 403 a cada carregamento (achado B50)
+  const canModeratePrayers = (PRAYER_MODERATOR_ROLES as readonly string[]).includes(user?.role ?? '');
 
   const [overview, setOverview] = useState<Overview | null>(null);
   const [insights, setInsights] = useState<Insights | null>(null);
@@ -256,7 +262,9 @@ const DashboardPage: React.FC = () => {
       const [overviewRes, insightsRes, prayersRes] = await Promise.all([
         api.get('/dashboard/coordinator', { params }),
         api.get('/dashboard/coordinator/insights', { params }).catch(() => ({ data: null })),
-        api.get('/prayer-requests/pending', { params }).catch(() => ({ data: [] })),
+        canModeratePrayers
+          ? api.get('/prayer-requests/pending', { params }).catch(() => ({ data: [] }))
+          : Promise.resolve({ data: [] }),
       ]);
       setOverview(overviewRes.data);
       setInsights(insightsRes.data);
@@ -277,7 +285,7 @@ const DashboardPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canModeratePrayers]);
 
   useEffect(() => {
     if (isAdmin) {

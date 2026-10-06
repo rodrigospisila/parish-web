@@ -193,7 +193,12 @@ const SwapsPage: React.FC = () => {
       <div className="page-header">
         <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="trocas-escala" /> Trocas de Escala</h1>
         <div className="header-actions">
-          <button className="btn-primary" onClick={() => setShowRequestModal(true)} disabled={!hasMemberRecord}>
+          <button
+            className="btn-primary"
+            onClick={() => setShowRequestModal(true)}
+            disabled={!hasMemberRecord}
+            title={hasMemberRecord ? undefined : 'Disponível depois que a secretaria vincular seu usuário a um cadastro de membro'}
+          >
             + Pedir troca
           </button>
         </div>

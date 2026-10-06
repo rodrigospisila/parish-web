@@ -327,6 +327,17 @@ const FixedSchedulePage: React.FC = () => {
       setShowModal(false);
       fetchData();
     } catch (error) {
+      // 409: já existe horário igual (mesmo tipo, dia e hora) na comunidade —
+      // mostra a orientação do servidor e mantém o formulário aberto para ajuste
+      if ((error as { response?: { status?: number } })?.response?.status === 409) {
+        notify.warning(
+          getErrorMessage(
+            error,
+            'Já existe um horário igual nesta comunidade (mesmo tipo, dia e hora). Edite o horário existente em vez de criar outro.',
+          ),
+        );
+        return;
+      }
       notify.error(getErrorMessage(error, 'Erro ao salvar horário'));
     }
   };
@@ -481,7 +492,7 @@ const FixedSchedulePage: React.FC = () => {
           <div key={communityName} className="detail-section">
             <h4 style={{ color: '#555', textTransform: 'uppercase', fontSize: '0.9rem' }}>{communityName}</h4>
             <div className="table-container entity-table">
-              <table className="data-table">
+              <table className="data-table fixed-table">
                 <thead>
                   <tr>
                     <th>Tipo</th>
@@ -549,7 +560,7 @@ const FixedSchedulePage: React.FC = () => {
                                 return (
                                   <span
                                     key={p.id}
-                                    className="status-badge blue"
+                                    className="status-badge blue fixed-pastoral-badge"
                                     style={{ fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: 4 }}
                                     title={
                                       p.communityPastoral.communityId &&
@@ -568,6 +579,7 @@ const FixedSchedulePage: React.FC = () => {
                                       <button
                                         type="button"
                                         title="Desvincular a minha pastoral deste horário"
+                                        aria-label="Desvincular a minha pastoral deste horário"
                                         style={{
                                           border: 'none',
                                           background: 'transparent',
@@ -648,8 +660,8 @@ const FixedSchedulePage: React.FC = () => {
                           </div>
                           {canManage && (
                             <>
-                              <button className="entity-icon-btn" onClick={() => openEdit(schedule)} title="Editar">✏️</button>
-                              <button className="entity-icon-btn danger" onClick={() => handleDelete(schedule)} title="Excluir">🗑️</button>
+                              <button className="entity-icon-btn" onClick={() => openEdit(schedule)} title="Editar" aria-label="Editar horário">✏️</button>
+                              <button className="entity-icon-btn danger" onClick={() => handleDelete(schedule)} title="Excluir" aria-label="Excluir horário">🗑️</button>
                             </>
                           )}
                           </div>

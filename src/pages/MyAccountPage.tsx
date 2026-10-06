@@ -281,6 +281,30 @@ const MyAccountPage: React.FC = () => {
         </Link>
       </div>
 
+      {/* Direitos do titular (LGPD — B62): consentimentos, exportação e exclusão */}
+      <div
+        style={{
+          background: '#fff',
+          border: '1px solid #e4ebf4',
+          borderRadius: 14,
+          padding: '1.2rem 1.4rem',
+          marginBottom: '1rem',
+          maxWidth: 760,
+        }}
+      >
+        <h3 style={{ margin: '0 0 0.4rem' }}>🛡️ Privacidade e meus dados</h3>
+        <p style={{ margin: '0 0 0.8rem', color: '#66788c', fontSize: '0.9rem' }}>
+          Revogue consentimentos, saia das comunicações, baixe os seus dados ou exclua a conta.
+        </p>
+        <Link
+          to="/admin/my-data"
+          className="btn-small btn-surface"
+          style={{ display: 'inline-block', textDecoration: 'none' }}
+        >
+          Abrir Privacidade
+        </Link>
+      </div>
+
       <div
         style={{
           background: '#fff',

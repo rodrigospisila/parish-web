@@ -584,3 +584,23 @@
 .fixed-actions-main .btn-secondary {
   white-space: nowrap;
 }
+
+/* B53: em notebook (1000–1440 px) a tabela cabia só com rolagem e a coluna
+   Ações ficava cortada — os nomes das pastorais quebram linha e os botões de
+   texto empilham, com os ícones (editar/excluir) logo abaixo */
+.fixed-table .fixed-pastoral-badge {
+  white-space: normal;
+  text-align: left;
+  line-height: 1.3;
+  max-width: 260px;
+}
+
+.fixed-table .fixed-actions {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.fixed-table .fixed-actions-main {
+  flex-direction: column;
+  align-items: stretch;
+}

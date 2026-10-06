@@ -1,0 +1,32 @@
+# CI do painel (achado B55): a Vercel publica a cada push; este workflow avisa
+# quando o commit quebra o type-check ou o build.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VITE_API_URL: https://parish-backend-production.up.railway.app/api/v1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # "tsc && vite build"
+      - run: npm run build
+      - name: vercel.json válido (cabeçalhos de segurança)
+        run: node -e "const v=require('./vercel.json');const h=v.headers?.[0]?.headers?.map(x=>x.key)||[];for(const k of ['Content-Security-Policy','X-Frame-Options','X-Content-Type-Options'])if(!h.includes(k)){console.error('faltando '+k);process.exit(1)}"
+      - name: Dependências de produção sem vulnerabilidade alta
+        run: npm audit --omit=dev --audit-level=high

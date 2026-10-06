@@ -477,7 +477,13 @@ const UsersPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    const confirmed = await confirm.delete('este usuário');
+    // A conta é desativada e anonimizada (não some do histórico); o cadastro
+    // de membro continua na tela de Membros
+    const confirmed = await confirm.action(
+      'Excluir usuário',
+      'A conta será desativada e os dados de acesso (nome, e-mail, telefone) apagados. O cadastro de membro, se houver, continua em Membros. Esta ação não pode ser desfeita.',
+      'Sim, excluir',
+    );
     if (!confirmed) return;
 
     try {
@@ -861,25 +867,25 @@ const UsersPage: React.FC = () => {
               {filterCommunityId && (
                 <span className="filter-tag">
                   Comunidade: {getSelectedCommunityName()}
-                  <button onClick={() => setFilterCommunityId('')} className="remove-filter">x</button>
+                  <button aria-label="Remover filtro de comunidade" onClick={() => setFilterCommunityId('')} className="remove-filter">x</button>
                 </span>
               )}
               {filterRole && (
                 <span className="filter-tag">
                   Função: {getSelectedRoleName()}
-                  <button onClick={() => setFilterRole('')} className="remove-filter">x</button>
+                  <button aria-label="Remover filtro de papel" onClick={() => setFilterRole('')} className="remove-filter">x</button>
                 </span>
               )}
               {filterStatus && (
                 <span className="filter-tag">
                   Status: {filterStatus === 'active' ? 'Ativos' : 'Inativos'}
-                  <button onClick={() => setFilterStatus('')} className="remove-filter">x</button>
+                  <button aria-label="Remover filtro de status" onClick={() => setFilterStatus('')} className="remove-filter">x</button>
                 </span>
               )}
               {searchTerm && (
                 <span className="filter-tag">
                   Busca: "{searchTerm}"
-                  <button onClick={() => setSearchTerm('')} className="remove-filter">x</button>
+                  <button aria-label="Limpar busca" onClick={() => setSearchTerm('')} className="remove-filter">x</button>
                 </span>
               )}
             </div>
@@ -1093,14 +1099,14 @@ const UsersPage: React.FC = () => {
       {/* Paginação */}
       {totalPages > 1 && (
         <div className="pagination">
-          <button
+          <button aria-label="Primeira página"
             className="pagination-btn"
             disabled={currentPage === 1}
             onClick={() => setCurrentPage(1)}
           >
             {'<<'}
           </button>
-          <button
+          <button aria-label="Página anterior"
             className="pagination-btn"
             disabled={currentPage === 1}
             onClick={() => setCurrentPage(currentPage - 1)}
@@ -1112,14 +1118,14 @@ const UsersPage: React.FC = () => {
             Página {currentPage} de {totalPages}
           </span>
           
-          <button
+          <button aria-label="Próxima página"
             className="pagination-btn"
             disabled={currentPage === totalPages}
             onClick={() => setCurrentPage(currentPage + 1)}
           >
             {'>'}
           </button>
-          <button
+          <button aria-label="Última página"
             className="pagination-btn"
             disabled={currentPage === totalPages}
             onClick={() => setCurrentPage(totalPages)}

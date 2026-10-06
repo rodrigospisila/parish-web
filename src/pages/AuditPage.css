@@ -90,8 +90,20 @@
   margin-top: 0.25rem;
 }
 
+/* Resumo legível: quebra em até 2 linhas em vez de esticar a tabela */
 .audit-meta {
-  max-width: 360px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  max-width: 340px;
+  min-width: 180px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  background: transparent;
+  padding: 0;
 }
 
 .audit-toggle {

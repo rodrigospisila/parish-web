@@ -269,26 +269,38 @@ const CommunitiesPage: React.FC = () => {
     }
   };
 
-  // Extrai lat/long de um link do Google Maps ou de um texto "lat, long".
-  const parseCoords = (input: string): { lat: number; lng: number } | null => {
+  // Extrai lat/long de um texto "lat, long" ou de um link do OpenStreetMap
+  // (?mlat=..&mlon=.. ou #map=zoom/lat/lon). Google Maps/Places é proibido
+  // como fonte de posição (contrato): link do Google é recusado.
+  const parseCoords = (input: string): { lat: number; lng: number } | 'google' | null => {
     const s = (input || '').trim();
     if (!s) return null;
-    // 1) Pino do lugar no Google Maps: !3d<lat>!4d<lng> (mais preciso)
-    let m = s.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
-    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
-    // 2) Centro do mapa / query: @lat,lng · q=lat,lng · ll=lat,lng
-    m = s.match(/[@?&](?:q=|ll=)?(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)/);
-    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    if (/google\.[a-z.]+\/maps|maps\.google\.|goo\.gl\/maps|maps\.app\.goo\.gl/i.test(s)) return 'google';
+    const ok = (lat: number, lng: number) =>
+      Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0)
+        ? { lat, lng }
+        : null;
+    // 1) Pino do OpenStreetMap: mlat=<lat>&mlon=<lon>
+    const mlat = s.match(/[?&]mlat=(-?\d{1,3}(?:\.\d+)?)/);
+    const mlon = s.match(/[?&]mlon=(-?\d{1,3}(?:\.\d+)?)/);
+    if (mlat && mlon) return ok(parseFloat(mlat[1]), parseFloat(mlon[1]));
+    // 2) Centro do mapa do OpenStreetMap: #map=<zoom>/<lat>/<lon>
+    let m = s.match(/#map=\d{1,2}\/(-?\d{1,3}\.\d+)\/(-?\d{1,3}\.\d+)/);
+    if (m) return ok(parseFloat(m[1]), parseFloat(m[2]));
     // 3) Texto simples "lat, long"
     m = s.match(/^\s*(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*$/);
-    if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+    if (m) return ok(parseFloat(m[1]), parseFloat(m[2]));
     return null;
   };
 
   const applyPastedLocation = () => {
     const coords = parseCoords(locInput);
-    if (!coords || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) {
-      notify.warning('Cole um link do Google Maps ou coordenadas no formato "-25.108, -50.126".');
+    if (coords === 'google') {
+      notify.warning('Links do Google Maps não podem ser usados. Cole as coordenadas "lat, long" ou um link do OpenStreetMap — ou ajuste o pino no mapa.');
+      return;
+    }
+    if (!coords) {
+      notify.warning('Cole coordenadas no formato "-25.108, -50.126" ou um link do OpenStreetMap.');
       return;
     }
     setFormData((prev) => ({ ...prev, latitude: coords.lat, longitude: coords.lng }));
@@ -654,14 +666,14 @@ const CommunitiesPage: React.FC = () => {
       {/* Paginação */}
       {totalPages > 1 && (
         <div className="pagination">
-          <button
+          <button aria-label="Primeira página"
             className="pagination-btn"
             onClick={() => setCurrentPage(1)}
             disabled={currentPage === 1}
           >
             «
           </button>
-          <button
+          <button aria-label="Página anterior"
             className="pagination-btn"
             onClick={() => setCurrentPage(currentPage - 1)}
             disabled={currentPage === 1}
@@ -671,14 +683,14 @@ const CommunitiesPage: React.FC = () => {
           <span className="pagination-info">
             Página {currentPage} de {totalPages} ({sortedCommunities.length} comunidades)
           </span>
-          <button
+          <button aria-label="Próxima página"
             className="pagination-btn"
             onClick={() => setCurrentPage(currentPage + 1)}
             disabled={currentPage === totalPages}
           >
             ›
           </button>
-          <button
+          <button aria-label="Última página"
             className="pagination-btn"
             onClick={() => setCurrentPage(totalPages)}
             disabled={currentPage === totalPages}
@@ -797,7 +809,8 @@ const CommunitiesPage: React.FC = () => {
                     value={locInput}
                     onChange={(e) => setLocInput(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyPastedLocation(); } }}
-                    placeholder='Colar link do Google Maps ou "lat, long"'
+                    placeholder='Colar "lat, long" ou link do OpenStreetMap'
+                    aria-label="Coordenadas ou link do OpenStreetMap"
                     style={{ flex: 1, minWidth: 220, padding: '8px 10px', fontSize: 13 }}
                   />
                   <button
@@ -810,8 +823,8 @@ const CommunitiesPage: React.FC = () => {
                   </button>
                 </div>
                 <p style={{ fontSize: 11, color: '#aaa', margin: '0 0 8px' }}>
-                  Dica: no Google Maps, clique com o botão direito no ponto exato → copie as coordenadas, ou cole o link
-                  da barra de endereço.
+                  Dica: no openstreetmap.org, clique com o botão direito no ponto exato → "Mostrar endereço" e copie as
+                  coordenadas, ou cole o link da barra de endereço. Não use posições do Google Maps.
                 </p>
                 <MapPicker
                   value={

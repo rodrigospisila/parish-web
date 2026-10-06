@@ -396,8 +396,8 @@
 .territory-map .tm-sugestao-acoes .tm-primario { background: #8e44ad; border-color: #8e44ad; color: #fff; }
 .territory-map .tm-sugestao-acoes .tm-perigo { border-color: #c53b42; color: #c53b42; flex: 0 0 auto; }
 
-.territory-map .tm-google { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 700; color: #075aa9; text-decoration: none; }
-.territory-map .tm-google:hover { text-decoration: underline; }
+.territory-map .tm-osm { display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 700; color: #075aa9; text-decoration: none; }
+.territory-map .tm-osm:hover { text-decoration: underline; }
 .territory-map .tm-conferido { margin-top: 3px; color: #1f7a4a !important; font-weight: 700; }
 .territory-map .tm-sugestao-detalhe a { color: #075aa9; }
 

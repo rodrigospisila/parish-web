@@ -102,7 +102,8 @@ const SacramentProcessesPage: React.FC = () => {
         type: createForm.type,
         memberId: createForm.memberId,
         communityId: createForm.communityId,
-        scheduledDate: createForm.scheduledDate ? new Date(createForm.scheduledDate).toISOString() : undefined,
+        // Data civil AAAA-MM-DD: o backend ancora no fuso de Brasília
+        scheduledDate: createForm.scheduledDate || undefined,
         celebrant: createForm.celebrant || undefined,
       });
       notify.success('Processo aberto!');
@@ -147,7 +148,7 @@ const SacramentProcessesPage: React.FC = () => {
     if (!celebrateProcess) return;
     try {
       await api.patch(`/sacrament-processes/${celebrateProcess.id}/celebrate`, {
-        date: celebrateForm.date ? new Date(celebrateForm.date).toISOString() : undefined,
+        date: celebrateForm.date || undefined,
         minister: celebrateForm.minister || undefined,
         book: celebrateForm.book || undefined,
         page: celebrateForm.page || undefined,
@@ -207,7 +208,7 @@ const SacramentProcessesPage: React.FC = () => {
                   <span className="status-badge blue">{SACRAMENT_LABELS[process.type] ?? process.type}</span>
                   {process.scheduledDate && (
                     <p style={{ margin: '0.3rem 0 0 0', color: '#666' }}>
-                      📅 {new Date(process.scheduledDate).toLocaleDateString('pt-BR')}
+                      📅 {new Date(process.scheduledDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
                     </p>
                   )}
                   {checklistProgress(process) && (

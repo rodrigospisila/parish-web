@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import api from './services/api';
+import api, { CHANGE_PASSWORD_PATH } from './services/api';
 import AdminLayout from './components/AdminLayout';
 import LoginPage from './pages/LoginPage';
+import ChangePasswordPage from './pages/ChangePasswordPage';
 import DashboardPage from './pages/DashboardPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import DiocesesPage from './pages/DiocesesPage';
@@ -13,6 +14,8 @@ import ParishesPage from './pages/ParishesPage';
 import CommunitiesPage from './pages/CommunitiesPage';
 import MembersPage from './pages/MembersPage';
 import MyAccountPage from './pages/MyAccountPage';
+import MyDataPage from './pages/MyDataPage';
+import TermsAcceptanceGate from './components/TermsAcceptanceGate';
 import SystemSettingsPage from './pages/SystemSettingsPage';
 import TerritoryMapPage from './pages/TerritoryMapPage';
 import SuggestionsPage from './pages/platform/SuggestionsPage';
@@ -59,7 +62,8 @@ const COMMUNITY_MANAGEMENT_ROLES = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_AD
 const FIXED_SCHEDULE_ROLES = [...COMMUNITY_MANAGEMENT_ROLES, 'PASTORAL_COORDINATOR'];
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { token, loading } = useAuth();
+  const { token, user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return <div>Carregando...</div>;
@@ -67,6 +71,11 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
   if (!token) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Senha definida pela gestão (conta nova/redefinida): troca antes de qualquer tela
+  if (user?.forcePasswordChange && location.pathname !== CHANGE_PASSWORD_PATH) {
+    return <Navigate to={CHANGE_PASSWORD_PATH} replace />;
   }
 
   return <>{children}</>;
@@ -167,6 +176,14 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route
+            path={CHANGE_PASSWORD_PATH}
+            element={
+              <ProtectedRoute>
+                <ChangePasswordPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Páginas públicas exigidas pelas lojas (App Store / Google Play) */}
           <Route path="/privacy" element={<PrivacyPage />} />
@@ -184,6 +201,8 @@ const App: React.FC = () => {
             path="/admin"
             element={
               <ProtectedRoute>
+                {/* Aceite dos termos vigentes antes de usar o painel (M3/M4) */}
+                <TermsAcceptanceGate />
                 <AdminLayout />
               </ProtectedRoute>
             }
@@ -208,6 +227,7 @@ const App: React.FC = () => {
               </CoordinationOnlyRoute>
             } />
             <Route path="account" element={<MyAccountPage />} />
+            <Route path="my-data" element={<MyDataPage />} />
             <Route path="map" element={
               <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
                 <TerritoryMapPage />

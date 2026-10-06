@@ -44,6 +44,10 @@ interface Plan {
   currentPeriodEnd: string | null;
   graceDays: number | null;
   notes: string | null;
+  /** Período pago vencido (ACTIVE/PAST_DUE) — backend novo */
+  periodOverdue?: boolean;
+  /** Fim da carência (currentPeriodEnd + graceDays) */
+  graceEndsAt?: string | null;
 }
 
 interface PlanRow {
@@ -54,6 +58,10 @@ interface PlanRow {
   parish: { id: string; name: string } | null;
   diocese: { id: string; name: string } | null;
   membersWithAccount: number;
+  /** Membros ativos (só quando a faixa tem limite) */
+  activeMembers?: number | null;
+  /** Acima do limite de membros da faixa */
+  overTierLimit?: boolean;
   plan: Plan | null;
   paidAccess: boolean;
 }
@@ -63,6 +71,10 @@ interface Summary {
   trialsEndingIn15d: number;
   pastDue: number;
   mrrCents: number;
+  /** ACTIVE/PAST_DUE com o período vencido (backend novo) */
+  periodOverdue?: number;
+  /** Receita dos vencidos ainda na carência (fora do MRR) */
+  overdueMrrCents?: number;
 }
 
 interface Tier {
@@ -132,7 +144,14 @@ const Marco: React.FC<{ plan: Plan | null }> = ({ plan }) => {
   if (!data) return <span className="pf-mudo">—</span>;
   const dias = diasAte(data);
   if (plan.status === 'SUSPENDED') return <span className="pf-mudo">período terminou em {dataBR(data)}</span>;
-  if (plan.status === 'PAST_DUE') return <span className="pf-urgente">venceu em {dataBR(data)}</span>;
+  if (plan.status === 'PAST_DUE' || plan.periodOverdue) {
+    return (
+      <span className="pf-urgente">
+        período vencido em {dataBR(data)}
+        {plan.graceEndsAt && <small className="pf-sub">carência até {dataBR(plan.graceEndsAt)}</small>}
+      </span>
+    );
+  }
   const prefixo = plan.status === 'TRIAL' ? 'teste até' : 'período até';
   const urgente = dias != null && dias >= 0 && dias <= 15;
   return (
@@ -339,7 +358,12 @@ const PainelDoPlano: React.FC<PainelProps> = ({ row, tiers, onClose, onChanged }
               <dt>Membros com conta</dt>
               <dd>
                 {num(atual.membersWithAccount)}
-                {tier?.maxMembers ? ` de ${num(tier.maxMembers)} da faixa` : ''}
+                {tier?.maxMembers ? ` (limite da faixa: ${num(tier.maxMembers)} membros ativos)` : ''}
+                {atual.overTierLimit && (
+                  <small className="pf-sub pf-urgente">
+                    acima da faixa: {num(atual.activeMembers ?? 0)} membros ativos
+                  </small>
+                )}
               </dd>
               {plano?.notes && (
                 <>
@@ -838,11 +862,19 @@ const PlansPage: React.FC = () => {
             />
             <StatTile
               label="Em atraso"
-              value={num(resumo.pastDue)}
-              delta={resumo.pastDue > 0 ? { text: 'cobrança pendente', tone: 'bad' } : null}
+              value={num(resumo.periodOverdue ?? resumo.pastDue)}
+              delta={(resumo.periodOverdue ?? resumo.pastDue) > 0 ? { text: 'período vencido', tone: 'bad' } : null}
               onClick={() => mudarFiltro(setStatus)('PAST_DUE')}
             />
-            <StatTile label="Receita mensal recorrente" value={brl(resumo.mrrCents)} hint="planos pagos, anual dividido por 12" />
+            <StatTile
+              label="Receita mensal recorrente"
+              value={brl(resumo.mrrCents)}
+              hint={
+                resumo.overdueMrrCents
+                  ? `em dia; ${brl(resumo.overdueMrrCents)} vencidos na carência ficam de fora`
+                  : 'planos pagos em dia, anual dividido por 12'
+              }
+            />
           </section>
           <p className="pf-meta pf-resumo-linha">
             {PLAN_STATUSES.map((s, i) => (
@@ -963,7 +995,14 @@ const PlansPage: React.FC = () => {
                     <td>
                       {r.city}/{r.state}
                     </td>
-                    <td className="pf-num">{num(r.membersWithAccount)}</td>
+                    <td className="pf-num">
+                      {num(r.membersWithAccount)}
+                      {r.overTierLimit && (
+                        <small className="pf-sub pf-urgente" title={`${num(r.activeMembers ?? 0)} membros ativos`}>
+                          acima da faixa
+                        </small>
+                      )}
+                    </td>
                     <td>
                       <PlanBadge status={r.plan?.status} />
                       {r.plan?.tierKey && <small className="pf-sub">{tierNome[r.plan.tierKey] ?? r.plan.tierKey}</small>}

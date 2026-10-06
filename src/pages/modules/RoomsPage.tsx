@@ -123,13 +123,18 @@ const RoomsPage: React.FC = () => {
     e.preventDefault();
     if (!selectedRoom) return;
     try {
-      await api.post('/rooms/reservations', {
+      const res = await api.post('/rooms/reservations', {
         roomId: selectedRoom.id,
         title: reserveForm.title,
         startTime: new Date(reserveForm.startTime).toISOString(),
         endTime: new Date(reserveForm.endTime).toISOString(),
       });
-      notify.success('Reserva solicitada!');
+      // Coordenação de comunidade+ aprova direto; coordenador de pastoral pede
+      notify.success(
+        res.data?.status === 'APPROVED'
+          ? 'Reserva confirmada!'
+          : 'Reserva solicitada — aguardando aprovação da coordenação da comunidade.',
+      );
       setShowReserveModal(false);
       setReserveForm({ title: '', startTime: '', endTime: '' });
       loadAgenda(selectedRoom, agendaFrom);

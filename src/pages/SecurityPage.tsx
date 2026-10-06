@@ -4,7 +4,7 @@ import TitleIcon from '../components/TitleIcon';
 import api, { getErrorMessage } from '../services/api';
 import { notify, confirm } from '../services/notification.service';
 import { useAuth } from '../contexts/AuthContext';
-import { actionLabel, entityLabel, compactJson, formatDateTime } from '../utils/auditLabels';
+import { actionLabel, entityLabel, compactJson, formatDateTime, readableSummary } from '../utils/auditLabels';
 import './modules/ModulePages.css';
 import './SecurityPage.css';
 
@@ -63,7 +63,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
  * autenticação em duas etapas, dispositivos conhecidos e atividade recente.
  */
 const SecurityPage: React.FC = () => {
-  const { user, updateUser, logout, adoptSession } = useAuth();
+  const { user, updateUser, logout, logoutAllDevices, adoptSession } = useAuth();
   const navigate = useNavigate();
 
   // ---- 2FA
@@ -73,6 +73,9 @@ const SecurityPage: React.FC = () => {
   const [setup, setSetup] = useState<TwoFactorSetup | null>(null);
   const [setupLoading, setSetupLoading] = useState(false);
   const [enableCode, setEnableCode] = useState('');
+  // Ativar o 2FA pede a senha atual: só o token da sessão não basta (M5)
+  const [enablePassword, setEnablePassword] = useState('');
+  const [loggingOutAll, setLoggingOutAll] = useState(false);
   const [enabling, setEnabling] = useState(false);
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
   const [codesSaved, setCodesSaved] = useState(false);
@@ -164,6 +167,10 @@ const SecurityPage: React.FC = () => {
       notify.warning('Informe o código de 6 dígitos exibido no aplicativo autenticador');
       return;
     }
+    if (!enablePassword) {
+      notify.warning('Informe a sua senha atual para confirmar');
+      return;
+    }
     setEnabling(true);
     try {
       const { data } = await api.post<{
@@ -171,13 +178,14 @@ const SecurityPage: React.FC = () => {
         backupCodes: string[];
         accessToken?: string;
         refreshToken?: string;
-      }>('/auth/2fa/enable', { code });
+      }>('/auth/2fa/enable', { code, password: enablePassword });
       // As outras sessões caem; esta continua com os tokens novos
       adoptSession(data);
       setBackupCodes(data.backupCodes ?? []);
       setCodesSaved(false);
       setSetup(null);
       setEnableCode('');
+      setEnablePassword('');
       updateUser({ twoFactorEnabled: true });
       notify.success('Autenticação em duas etapas ativada!');
       void loadStatus();
@@ -277,6 +285,26 @@ const SecurityPage: React.FC = () => {
   };
 
   // ---- Dispositivos
+  // ---- Sessões: sair de todos os aparelhos
+  const handleLogoutAll = async () => {
+    const ok = await confirm.action(
+      'Sair de todos os aparelhos',
+      'Todas as sessões da sua conta serão encerradas — no app, em outros navegadores e também aqui. Você precisará entrar de novo em cada um.',
+      'Sair de todos',
+    );
+    if (!ok) return;
+    setLoggingOutAll(true);
+    try {
+      await logoutAllDevices();
+      notify.success('Sessões encerradas em todos os aparelhos.');
+      navigate('/login');
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Não foi possível encerrar as sessões'));
+    } finally {
+      setLoggingOutAll(false);
+    }
+  };
+
   const handleForget = async (device: DeviceItem) => {
     const label = device.label || 'este dispositivo';
     const ok = await confirm.action(
@@ -396,6 +424,16 @@ const SecurityPage: React.FC = () => {
                     </ol>
                     <form className="security-form" onSubmit={(e) => void handleEnable(e)}>
                       <label>
+                        Senha atual
+                        <input
+                          type="password"
+                          autoComplete="current-password"
+                          value={enablePassword}
+                          onChange={(e) => setEnablePassword(e.target.value)}
+                          required
+                        />
+                      </label>
+                      <label>
                         Código do autenticador
                         <input
                           type="text"
@@ -461,6 +499,28 @@ const SecurityPage: React.FC = () => {
               )}
             </>
           )}
+        </section>
+
+        {/* ===== Senha e sessões ===== */}
+        <section className="security-card" aria-labelledby="sec-password">
+          <h2 id="sec-password">Senha e sessões</h2>
+          <p className="card-hint">
+            Trocar a senha encerra as sessões nos outros aparelhos. "Sair" no menu encerra só este
+            navegador; para encerrar em todos, use o botão abaixo.
+          </p>
+          <div className="security-status-row">
+            <button type="button" className="btn-primary" onClick={() => navigate('/trocar-senha')}>
+              Trocar senha
+            </button>
+            <button
+              type="button"
+              className="btn-small danger"
+              onClick={() => void handleLogoutAll()}
+              disabled={loggingOutAll}
+            >
+              {loggingOutAll ? 'Encerrando…' : 'Sair de todos os aparelhos'}
+            </button>
+          </div>
         </section>
 
         {/* ===== Dispositivos ===== */}
@@ -543,7 +603,7 @@ const SecurityPage: React.FC = () => {
           ) : (
             <ul className="security-activity">
               {activity.map((item) => {
-                const summary = compactJson(item.metadata, 90);
+                const summary = readableSummary(item.metadata, 90);
                 return (
                   <li key={item.id}>
                     <time dateTime={item.createdAt}>{formatDateTime(item.createdAt)}</time>

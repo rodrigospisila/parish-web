@@ -427,7 +427,7 @@ const canManageSchedule = (role?: string) => {
 const scheduleStatusMap: Record<ScheduleStatus, { label: string; color: string }> = {
   OPEN: { label: 'Aberta', color: '#2a9d8f' },
   CLOSED: { label: 'Fechada', color: '#f4a261' },
-  COMPLETED: { label: 'Concluida', color: '#2f6d6f' },
+  COMPLETED: { label: 'Concluída', color: '#2f6d6f' },
   CANCELLED: { label: 'Cancelada', color: '#e63946' },
 };
 
@@ -439,7 +439,7 @@ const statusLabel: Record<AssignmentStatus, string> = {
 
 const recommendationLabelMap: Record<CandidateRecommendationLevel, string> = {
   RECOMMENDED: 'Pronto',
-  ATTENTION: 'Atencao',
+  ATTENTION: 'Atenção',
   CONFLICT: 'Conflito',
 };
 
@@ -525,6 +525,23 @@ const toScheduleDate = (value: string, startTime?: string | null) => {
     year: 'numeric',
   });
   return startTime ? `${date}, ${startTime}` : date;
+};
+
+/** Início da escala em ms: timestamp real, ou dia (00:00Z) + startTime no horário local. */
+const scheduleStartMs = (schedule: { date: string; startTime?: string | null }) => {
+  if (!isMidnightUtc(schedule.date)) return new Date(schedule.date).getTime();
+  const day = new Date(schedule.date).toISOString().slice(0, 10);
+  const time = /^\d{1,2}:\d{2}$/.test(schedule.startTime?.trim() ?? '') ? schedule.startTime!.trim().padStart(5, '0') : '00:00';
+  return new Date(`${day}T${time}`).getTime();
+};
+
+/** Até quando a escala conta como "próxima": o início, ou o fim do dia se não tem horário. */
+const scheduleUpcomingUntilMs = (schedule: { date: string; startTime?: string | null }) => {
+  if (isMidnightUtc(schedule.date) && !schedule.startTime) {
+    const day = new Date(schedule.date).toISOString().slice(0, 10);
+    return new Date(`${day}T23:59:59`).getTime();
+  }
+  return scheduleStartMs(schedule);
 };
 
 const toShortDate = (value: string) =>
@@ -904,7 +921,7 @@ const SchedulesPage: React.FC = () => {
       setOverview(response.data || []);
     } catch (error: any) {
       if (error?.response?.status !== 403) {
-        notify.error(error.response?.data?.message || 'Erro ao carregar visao de coordenacao');
+        notify.error(error.response?.data?.message || 'Erro ao carregar visão de coordenação');
       }
       setOverview([]);
     } finally {
@@ -1655,7 +1672,12 @@ const SchedulesPage: React.FC = () => {
   const overviewAssignments = overview.reduce((acc, item) => acc + item.counts.total, 0);
   const overviewChecked = overview.reduce((acc, item) => acc + item.counts.checkedIn, 0);
   const overviewAttendance = overviewAssignments > 0 ? Math.round((overviewChecked / overviewAssignments) * 100) : 0;
-  const openSchedulesCount = schedules.filter((schedule) => schedule.status === 'OPEN').length;
+  // B2: "abertas" são só as de hoje em diante — nada encerra escala vencida,
+  // e contar as passadas fazia o número crescer para sempre
+  const todayKeyForCounts = todayIsoDate();
+  const openSchedulesCount = schedules.filter(
+    (schedule) => schedule.status === 'OPEN' && toDayKey(schedule.date) >= todayKeyForCounts,
+  ).length;
   const completedSchedulesCount = schedules.filter((schedule) => schedule.status === 'COMPLETED').length;
   const confirmedAssignmentsCount = schedules.reduce(
     (acc, schedule) =>
@@ -1663,13 +1685,12 @@ const SchedulesPage: React.FC = () => {
     0,
   );
   const pendingEventsPreview = eventsWithoutSchedule.slice(0, 5);
-  const nowRef = new Date();
-  const startOfTodayUtcMs = Date.UTC(nowRef.getFullYear(), nowRef.getMonth(), nowRef.getDate());
-  const nextSchedule =
-    [...schedules]
-      .filter((schedule) => new Date(schedule.date).getTime() >= startOfTodayUtcMs)
-      .sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime())[0] ||
-    [...schedules].sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime())[0];
+  // B2: próxima = a primeira que ainda não começou (sem horário, vale o dia
+  // todo). Sem nenhuma futura, NÃO cai na mais antiga: o aviso diz isso.
+  const nowMs = Date.now();
+  const nextSchedule = [...schedules]
+    .filter((schedule) => schedule.status !== 'CANCELLED' && scheduleUpcomingUntilMs(schedule) >= nowMs)
+    .sort((left, right) => scheduleStartMs(left) - scheduleStartMs(right))[0];
 
   const eventPastoralText = (event: EventItem) => {
     if (!event.eventPastorals || event.eventPastorals.length === 0) {
@@ -1688,7 +1709,7 @@ const SchedulesPage: React.FC = () => {
     event.preventDefault();
 
     if (!createForm.eventId || !createForm.title || !createForm.date) {
-      notify.warning('Informe evento, titulo e data');
+      notify.warning('Informe evento, título e data');
       return;
     }
 
@@ -1708,7 +1729,7 @@ const SchedulesPage: React.FC = () => {
       const done = scheduledDaysByEvent.get(selectedEvent.id);
       const pendingDays = eventDayKeys(selectedEvent).filter((day) => !done?.has(day));
       if (pendingDays.length === 0) {
-        notify.warning('Todos os dias deste evento ja possuem escala.');
+        notify.warning('Todos os dias deste evento já possuem escala.');
         return;
       }
       // Sem vagas definidas o rodízio não terá o que sugerir — confirma a intenção
@@ -1824,7 +1845,7 @@ const SchedulesPage: React.FC = () => {
       notify.success(
         notified > 0
           ? `${notified} pessoa(s) da equipe foram notificadas.`
-          : 'Nenhum membro escalado possui notificacoes habilitadas.'
+          : 'Nenhum membro escalado possui notificações habilitadas.'
       );
     } catch (error: any) {
       console.error('Erro ao avisar equipe', error);
@@ -2186,7 +2207,7 @@ const SchedulesPage: React.FC = () => {
     const role = roleOverride !== undefined ? roleOverride : assignmentForm.role;
 
     if (!memberId || !role.trim()) {
-      notify.warning('Defina a funcao e selecione o membro');
+      notify.warning('Defina a função e selecione o membro');
       return false;
     }
 
@@ -2205,21 +2226,21 @@ const SchedulesPage: React.FC = () => {
       );
 
     if (!matchesSelectedPastoral) {
-      notify.warning('O membro selecionado nao pertence a pastoral desta vaga');
+      notify.warning('O membro selecionado não pertence a pastoral desta vaga');
       return false;
     }
 
     if (candidate?.currentScheduleAssigned) {
-      notify.warning('Este membro ja esta atribuido nesta mesma escala');
+      notify.warning('Este membro já está atribuído nesta mesma escala');
       return false;
     }
 
     const warnings: string[] = [];
     if (candidate?.conflicts.overlappingAssignments.length) {
-      warnings.push('ha conflito de horario com outra escala');
+      warnings.push('há conflito de horário com outra escala');
     }
     if (candidate?.conflicts.sameDayAssignments.length) {
-      warnings.push('o membro ja serve em outra escala no mesmo dia');
+      warnings.push('o membro já serve em outra escala no mesmo dia');
     }
     if (candidate?.history.noShowCount) {
       warnings.push(`houve ${candidate.history.noShowCount} falta(s) recente(s)`);
@@ -2312,7 +2333,7 @@ const SchedulesPage: React.FC = () => {
       }
       return true;
     } catch (error: any) {
-      console.error('Erro ao adicionar atribuicao', error);
+      console.error('Erro ao adicionar atribuição', error);
       notify.error(error.response?.data?.message || 'Erro ao adicionar membro');
       return false;
     } finally {
@@ -2330,7 +2351,7 @@ const SchedulesPage: React.FC = () => {
 
     try {
       await axios.delete(`${API_URL}/schedules/assignments/${assignment.id}`, { headers });
-      notify.success('Atribuicao removida');
+      notify.success('Atribuição removida');
       await fetchData();
       if (activeSchedule) {
         await fetchScheduleById(activeSchedule.id);
@@ -2343,8 +2364,8 @@ const SchedulesPage: React.FC = () => {
         }
       }
     } catch (error: any) {
-      console.error('Erro ao remover atribuicao', error);
-      notify.error(error.response?.data?.message || 'Erro ao remover atribuicao');
+      console.error('Erro ao remover atribuição', error);
+      notify.error(error.response?.data?.message || 'Erro ao remover atribuição');
     }
   };
 
@@ -2366,8 +2387,8 @@ const SchedulesPage: React.FC = () => {
           : `Check-in de ${assignment.member.fullName} registrado.`,
       );
     } catch (error: any) {
-      console.error('Erro ao atualizar presenca', error);
-      notify.error(error.response?.data?.message || 'Erro ao atualizar presenca');
+      console.error('Erro ao atualizar presença', error);
+      notify.error(error.response?.data?.message || 'Erro ao atualizar presença');
     }
   };
 
@@ -2379,16 +2400,18 @@ const SchedulesPage: React.FC = () => {
     <div className="schedules-page">
       <header className="schedules-hero">
         <div className="schedules-hero-copy">
-          <span className="schedules-eyebrow">Coordenacao de escalas</span>
+          <span className="schedules-eyebrow">Coordenação de escalas</span>
           <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="escala" /> Escalas</h1>
           <p>
-            Organize os eventos da comunidade, acompanhe vagas abertas e centralize confirmacoes e
-            presencas em um unico painel.
+            Organize os eventos da comunidade, acompanhe vagas abertas e centralize confirmações e
+            presenças em um único painel.
           </p>
           <div className="schedules-hero-note">
             {nextSchedule
-              ? `Proxima escala: ${nextSchedule.title} em ${toScheduleDate(nextSchedule.date, (nextSchedule as any).startTime)}`
-              : 'Nenhuma escala cadastrada ate o momento.'}
+              ? `Próxima escala: ${nextSchedule.title} em ${toScheduleDate(nextSchedule.date, (nextSchedule as any).startTime)}`
+              : schedules.length > 0
+                ? 'Nenhuma escala futura.'
+                : 'Nenhuma escala cadastrada até o momento.'}
           </div>
         </div>
         <div className="schedules-hero-actions">
@@ -2403,7 +2426,7 @@ const SchedulesPage: React.FC = () => {
                 Escala avulsa
               </button>
               <button className="overview-action-button is-secondary" onClick={openRotation}>
-                Gerar rodizio
+                Gerar rodízio
               </button>
             </>
           )}
@@ -2438,10 +2461,10 @@ const SchedulesPage: React.FC = () => {
         <section className="coordinator-overview schedule-surface">
           <div className="coordinator-overview-header">
             <div>
-              <span className="section-kicker">Visao consolidada</span>
+              <span className="section-kicker">Visão consolidada</span>
               <h2>Resumo do coordenador</h2>
               <p className="section-description">
-                Veja o volume de escalas do periodo, presencas registradas e os compromissos mais recentes.
+                Veja o volume de escalas do período, presenças registradas e os compromissos mais recentes.
               </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
@@ -2516,12 +2539,12 @@ const SchedulesPage: React.FC = () => {
             </div>
             <div className="coordinator-kpi-card">
               <strong>{overviewAttendance}%</strong>
-              <span>Presenca</span>
+              <span>Presença</span>
             </div>
           </div>
 
           {overview.length === 0 && overviewView !== 'calendar' ? (
-            <p className="coordinator-empty">Nenhuma escala encontrada no periodo selecionado.</p>
+            <p className="coordinator-empty">Nenhuma escala encontrada no período selecionado.</p>
           ) : overviewView === 'calendar' ? (
             <div className="coordinator-calendar">
               {overview.length === 0 && (
@@ -2758,7 +2781,7 @@ const SchedulesPage: React.FC = () => {
                       <strong>{calSelected.title}</strong>
                       <span className="cal-detail-date">{toScheduleDate(calSelected.date, (calSelected as any).startTime)}</span>
                     </div>
-                    <button type="button" className="cal-detail-close" onClick={() => setCalSelectedId(null)}>
+                    <button aria-label="Fechar" type="button" className="cal-detail-close" onClick={() => setCalSelectedId(null)}>
                       ×
                     </button>
                   </div>
@@ -2968,7 +2991,7 @@ const SchedulesPage: React.FC = () => {
                     {item.assignments.length > 2 && (
                       <p className="coordinator-more-members">+ {item.assignments.length - 2} membros</p>
                     )}
-                    {item.assignments.length === 0 && <p className="coordinator-no-members">Sem atribuicoes</p>}
+                    {item.assignments.length === 0 && <p className="coordinator-no-members">Sem atribuições</p>}
                   </div>
                 </div>
               ))}
@@ -3019,10 +3042,10 @@ const SchedulesPage: React.FC = () => {
       <section className="schedules-toolbar-panel schedule-surface">
         <div className="section-card-header">
           <div>
-            <span className="section-kicker">Filtro rapido</span>
+            <span className="section-kicker">Filtro rápido</span>
             <h2>Refinar escalas</h2>
             <p className="section-description">
-              Busque por evento, comunidade ou status para localizar a escala certa mais rapido.
+              Busque por evento, comunidade ou status para localizar a escala certa mais rápido.
             </p>
           </div>
           {(searchText || statusFilter !== 'all' || eventFilter) && (
@@ -3042,7 +3065,7 @@ const SchedulesPage: React.FC = () => {
         <div className="filter-row filter-row-panel">
           <input
             className="search-input"
-            placeholder="Buscar por titulo, evento ou comunidade"
+            placeholder="Buscar por título, evento ou comunidade"
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}
           />
@@ -3054,7 +3077,7 @@ const SchedulesPage: React.FC = () => {
             <option value="all">Todos os status</option>
             <option value="OPEN">Aberta</option>
             <option value="CLOSED">Fechada</option>
-            <option value="COMPLETED">Concluida</option>
+            <option value="COMPLETED">Concluída</option>
             <option value="CANCELLED">Cancelada</option>
           </select>
           <select className="filter-select" value={eventFilter} onChange={(event) => setEventFilter(event.target.value)}>
@@ -3095,12 +3118,12 @@ const SchedulesPage: React.FC = () => {
         <section className="events-without-schedule schedule-surface">
           <div className="section-card-header">
             <div>
-              <span className="section-kicker">Pendencias</span>
+              <span className="section-kicker">Pendências</span>
               <h3>Agenda fixa sem escala</h3>
               <p className="section-description">
                 {visibleFixedPending.length > 0
-                  ? 'Horarios fixos dos proximos 30 dias que ainda nao receberam escala.'
-                  : 'Todos os horarios fixos dos proximos 30 dias ja possuem escala.'}
+                  ? 'Horários fixos dos próximos 30 dias que ainda não receberam escala.'
+                  : 'Todos os horários fixos dos próximos 30 dias já possuem escala.'}
               </p>
             </div>
             <div className="fixed-pending-header-actions">
@@ -3137,7 +3160,7 @@ const SchedulesPage: React.FC = () => {
           </div>
           <div className="events-list">
             {visibleFixedPending.length === 0 ? (
-              <p className="no-events">Nenhuma pendencia da agenda fixa no periodo.</p>
+              <p className="no-events">Nenhuma pendência da agenda fixa no período.</p>
             ) : (
               visibleFixedPending.slice(0, 10).map((item) => {
                 const itemKey = `${item.massScheduleId}-${item.date}`;
@@ -3193,7 +3216,7 @@ const SchedulesPage: React.FC = () => {
             )}
             {visibleFixedPending.length > 10 && (
               <p className="no-events">
-                + {visibleFixedPending.length - 10} pendencia(s) alem das listadas acima.
+                + {visibleFixedPending.length - 10} pendência(s) além das listadas acima.
               </p>
             )}
           </div>
@@ -3203,19 +3226,19 @@ const SchedulesPage: React.FC = () => {
       <section className="events-without-schedule schedule-surface">
         <div className="section-card-header">
           <div>
-            <span className="section-kicker">Pendencias</span>
+            <span className="section-kicker">Pendências</span>
             <h3>Eventos sem escala</h3>
             <p className="section-description">
               {eventsWithoutSchedule.length > 0
-                ? `Mostrando os ${pendingEventsPreview.length} proximos eventos que ainda nao receberam escala.`
-                : 'Todos os eventos do recorte atual ja possuem escala.'}
+                ? `Mostrando os ${pendingEventsPreview.length} próximos eventos que ainda não receberam escala.`
+                : 'Todos os eventos do recorte atual já possuem escala.'}
             </p>
           </div>
           <span className="section-count-pill">{eventsWithoutSchedule.length}</span>
         </div>
         <div className="events-list">
           {eventsWithoutSchedule.length === 0 ? (
-            <p className="no-events">Nao existem eventos sem escala no recorte atual.</p>
+            <p className="no-events">Não existem eventos sem escala no recorte atual.</p>
           ) : (
             pendingEventsPreview.map((eventItem) => (
               <div className="event-item" key={eventItem.id}>
@@ -3300,11 +3323,11 @@ const SchedulesPage: React.FC = () => {
                           </div>
                           <div className="schedule-card-meta-item">
                             <span>Comunidade</span>
-                            <strong>{schedule.event.community?.name || 'Nao informada'}</strong>
+                            <strong>{schedule.event.community?.name || 'Não informada'}</strong>
                           </div>
                           <div className="schedule-card-meta-item">
                             <span>Paroquia</span>
-                            <strong>{schedule.event.community?.parish?.name || 'Nao informada'}</strong>
+                            <strong>{schedule.event.community?.parish?.name || 'Não informada'}</strong>
                           </div>
                         </div>
                         <p className="schedule-desc">{eventPastoralText(schedule.event)}</p>
@@ -3363,7 +3386,7 @@ const SchedulesPage: React.FC = () => {
       {showCreateModal && (
         <div className="modal-overlay" onClick={() => { setShowCreateModal(false); resetCreateForm(); }}>
           <div className="modal-content modal-large" onClick={(event) => event.stopPropagation()}>
-            <button className="modal-close" onClick={() => { setShowCreateModal(false); resetCreateForm(); }}>
+            <button aria-label="Fechar" className="modal-close" onClick={() => { setShowCreateModal(false); resetCreateForm(); }}>
               ×
             </button>
             <h2>Nova escala</h2>
@@ -3385,7 +3408,7 @@ const SchedulesPage: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label>Titulo</label>
+                <label>Título</label>
                 <input
                   type="text"
                   required
@@ -3395,7 +3418,7 @@ const SchedulesPage: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label>Descricao</label>
+                <label>Descrição</label>
                 <textarea
                   rows={3}
                   value={createForm.description}
@@ -3465,7 +3488,7 @@ const SchedulesPage: React.FC = () => {
                       <div key={pastoralSetting.communityPastoralId} className="create-slot-row">
                         <div className="create-slot-copy">
                           <strong>{pastoralSetting.name}</strong>
-                          <span>{pastoralSetting.role || 'Sem funcao padrao definida para esta pastoral'}</span>
+                          <span>{pastoralSetting.role || 'Sem função padrão definida para esta pastoral'}</span>
                         </div>
                         <label className="create-slot-input">
                           <span>Vagas</span>
@@ -3486,7 +3509,7 @@ const SchedulesPage: React.FC = () => {
                   </div>
                 ) : (
                   <div className="create-slots-empty">
-                    Sem pastorais vinculadas a este evento. A escala sera criada sem controle de vagas por pastoral.
+                    Sem pastorais vinculadas a este evento. A escala será criada sem controle de vagas por pastoral.
                   </div>
                 )}
 
@@ -3536,7 +3559,7 @@ const SchedulesPage: React.FC = () => {
                 >
                   <option value="OPEN">Aberta</option>
                   <option value="CLOSED">Fechada</option>
-                  <option value="COMPLETED">Concluida</option>
+                  <option value="COMPLETED">Concluída</option>
                   <option value="CANCELLED">Cancelada</option>
                 </select>
                 <button
@@ -3775,7 +3798,7 @@ const SchedulesPage: React.FC = () => {
               </div>
 
               {getFilteredAssignments.length === 0 ? (
-                <p className="no-assignments">Nenhuma atribuicao encontrada</p>
+                <p className="no-assignments">Nenhuma atribuição encontrada</p>
               ) : (
                 <div className="assignments-list">
                   {getFilteredAssignments.map((assignment) => (
@@ -3937,7 +3960,7 @@ const SchedulesPage: React.FC = () => {
       {showAssignModal && activeSchedule && (
         <div className="modal-overlay" onClick={closeAssignModal}>
           <div className="modal-content modal-assign" onClick={(event) => event.stopPropagation()}>
-            <button className="modal-close" onClick={closeAssignModal}>×</button>
+            <button aria-label="Fechar" className="modal-close" onClick={closeAssignModal}>×</button>
 
             <div className="assign-modal-header">
               <h2>{replaceTarget ? 'Substituir membro' : 'Preencher vaga'}</h2>
@@ -3970,7 +3993,7 @@ const SchedulesPage: React.FC = () => {
             {eligibleLoading && <p className="loading">Carregando candidatos...</p>}
 
             {!eligibleLoading && !candidates && (
-              <p className="no-members-warning">Nao foi possivel carregar os dados de candidatos.</p>
+              <p className="no-members-warning">Não foi possível carregar os dados de candidatos.</p>
             )}
 
             {!eligibleLoading && candidates && (
@@ -4002,7 +4025,7 @@ const SchedulesPage: React.FC = () => {
                 {assignedMembersForPanel.length > 0 && (
                   <div className="assign-already-strip">
                     <span className="assign-already-label">
-                      Ja escalados ({assignedMembersForPanel.length})
+                      Já escalados ({assignedMembersForPanel.length})
                     </span>
                     <div className="assign-already-list">
                       {assignedMembersForPanel.map((assignment) => (
@@ -4100,7 +4123,7 @@ const SchedulesPage: React.FC = () => {
                       className={`assignment-filter ${candidateFilter === 'attention' ? 'active' : ''}`}
                       onClick={() => setCandidateFilter('attention')}
                     >
-                      Atencao ({candidateCounts.attention})
+                      Atenção ({candidateCounts.attention})
                     </button>
                     <button
                       type="button"
@@ -4111,14 +4134,14 @@ const SchedulesPage: React.FC = () => {
                     </button>
                   </div>
                   <div className="overview-view-toggle assign-view-toggle" role="group" aria-label="Modo de visualização">
-                    <button
+                    <button aria-label="Ver em cartões"
                       type="button"
                       className={assignView === 'cards' ? 'active' : ''}
                       onClick={() => changeAssignView('cards')}
                     >
                       ▦
                     </button>
-                    <button
+                    <button aria-label="Ver em lista"
                       type="button"
                       className={assignView === 'list' ? 'active' : ''}
                       onClick={() => changeAssignView('list')}
@@ -4210,7 +4233,7 @@ const SchedulesPage: React.FC = () => {
                                     <td colSpan={7}>
                                       <p className="candidate-inline-summary">
                                         {member.recommendation.reasons[0] || 'Sem alertas para esta vaga'} •{' '}
-                                        {member.availability.summary[0] || 'Disponibilidade nao informada'}
+                                        {member.availability.summary[0] || 'Disponibilidade não informada'}
                                       </p>
                                     </td>
                                   </tr>
@@ -4230,7 +4253,7 @@ const SchedulesPage: React.FC = () => {
                     filteredCandidates.map((member) => {
                       const isExpanded = expandedCandidateId === member.id;
                       const primaryReason = member.recommendation.reasons[0] || 'Sem alertas para esta vaga';
-                      const availabilitySummary = member.availability.summary[0] || 'Disponibilidade nao informada';
+                      const availabilitySummary = member.availability.summary[0] || 'Disponibilidade não informada';
 
                       return (
                         <article
@@ -4274,7 +4297,7 @@ const SchedulesPage: React.FC = () => {
                               </div>
 
                               <div className="candidate-metrics compact">
-                                <span className="status-pill status-confirmed">Presenca {member.history.attendanceRate}%</span>
+                                <span className="status-pill status-confirmed">Presença {member.history.attendanceRate}%</span>
                                 <span className={`status-pill ${member.history.noShowCount > 0 ? 'status-declined' : 'status-ok'}`}>
                                   Faltas {member.history.noShowCount}
                                 </span>
@@ -4310,7 +4333,7 @@ const SchedulesPage: React.FC = () => {
                                     <div className="candidate-conflicts">
                                       {member.conflicts.overlappingAssignments.slice(0, 2).map((conflict) => (
                                         <div key={conflict.assignmentId} className="candidate-conflict-line">
-                                          Conflito de horario: {toShortDate(conflict.date)} • {conflict.title}
+                                          Conflito de horário: {toShortDate(conflict.date)} • {conflict.title}
                                         </div>
                                       ))}
                                       {member.conflicts.overlappingAssignments.length === 0 &&
@@ -4458,7 +4481,7 @@ const SchedulesPage: React.FC = () => {
       {groupPickerPastoralId && activeSchedule && (
         <div className="modal-overlay assign-target-overlay" onClick={() => setGroupPickerPastoralId(null)}>
           <div className="modal-content assign-target-modal" onClick={(event) => event.stopPropagation()}>
-            <button className="modal-close" onClick={() => setGroupPickerPastoralId(null)}>
+            <button aria-label="Fechar" className="modal-close" onClick={() => setGroupPickerPastoralId(null)}>
               ×
             </button>
             <h2>🎵 Escalar grupo</h2>
@@ -4566,7 +4589,7 @@ const SchedulesPage: React.FC = () => {
       {assignTarget && activeSchedule && (
         <div className="modal-overlay assign-target-overlay" onClick={() => setAssignTarget(null)}>
           <div className="modal-content assign-target-modal" onClick={(event) => event.stopPropagation()}>
-            <button className="modal-close" onClick={() => setAssignTarget(null)}>
+            <button aria-label="Fechar" className="modal-close" onClick={() => setAssignTarget(null)}>
               ×
             </button>
             <h2>Escalar membro</h2>
@@ -4619,7 +4642,7 @@ const SchedulesPage: React.FC = () => {
 
             <p className="candidate-inline-summary">
               {assignTarget.recommendation.reasons[0] || 'Sem alertas para esta vaga'} •{' '}
-              {assignTarget.availability.summary[0] || 'Disponibilidade nao informada'}
+              {assignTarget.availability.summary[0] || 'Disponibilidade não informada'}
             </p>
 
             <div className="form-group">
@@ -4664,7 +4687,7 @@ const SchedulesPage: React.FC = () => {
       {bulkTarget && activeSchedule && (
         <div className="modal-overlay assign-target-overlay" onClick={() => !bulkSubmitting && setBulkTarget(null)}>
           <div className="modal-content assign-target-modal" onClick={(event) => event.stopPropagation()}>
-            <button className="modal-close" onClick={() => setBulkTarget(null)} disabled={bulkSubmitting}>
+            <button aria-label="Fechar" className="modal-close" onClick={() => setBulkTarget(null)} disabled={bulkSubmitting}>
               ×
             </button>
             <h2>Convocar toda a pastoral</h2>
@@ -4713,7 +4736,7 @@ const SchedulesPage: React.FC = () => {
       {slotsEdit && (
         <div className="modal-overlay" onClick={() => setSlotsEdit(null)}>
           <div className="modal-content" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 480 }}>
-            <button className="modal-close" onClick={() => setSlotsEdit(null)}>
+            <button aria-label="Fechar" className="modal-close" onClick={() => setSlotsEdit(null)}>
               ×
             </button>
             <h2>Editar vagas por pastoral</h2>

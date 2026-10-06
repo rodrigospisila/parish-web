@@ -86,6 +86,19 @@ interface CreateEventModalProps {
   initialStartDate?: string;
 }
 
+/** ISO do servidor (UTC) → 'AAAA-MM-DDTHH:mm' no horário local, para o campo datetime. */
+const toLocalDateTimeInput = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
+
+/** 'AAAA-MM-DDTHH:mm' local (datetime-local) → ISO com 'Z' (instante real). */
+const toIsoInstant = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
+};
+
 const buildInitialForm = (communityId = '', initialStartDate = ''): EventFormData => ({
   title: '',
   description: '',
@@ -131,8 +144,9 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
         title: editingEvent.title,
         description: editingEvent.description || '',
         type: editingEvent.type,
-        startDate: editingEvent.startDate.slice(0, 16),
-        endDate: editingEvent.endDate ? editingEvent.endDate.slice(0, 16) : '',
+        // O servidor devolve UTC ('...Z'); o campo mostra o horário local
+        startDate: toLocalDateTimeInput(editingEvent.startDate),
+        endDate: editingEvent.endDate ? toLocalDateTimeInput(editingEvent.endDate) : '',
         location: editingEvent.location || '',
         isRecurring: false,
         recurrenceType: '',
@@ -278,8 +292,9 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({
     title: formData.title.trim(),
     description: formData.description.trim() || undefined,
     type: formData.type,
-    startDate,
-    endDate: endDate || undefined,
+    // Instante com fuso (A19): 'AAAA-MM-DDTHH:mm' sem 'Z' era gravado como UTC
+    startDate: toIsoInstant(startDate),
+    endDate: endDate ? toIsoInstant(endDate) : undefined,
     location: formData.location.trim() || undefined,
     isRecurring: editingEvent?.isRecurring || false,
     maxParticipants: formData.maxParticipants ? parseInt(formData.maxParticipants, 10) : undefined,

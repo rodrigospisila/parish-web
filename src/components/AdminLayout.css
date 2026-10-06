@@ -204,6 +204,56 @@
   color: #d8a83e;
 }
 
+/* Selo de recurso pago fora do plano da comunidade (modo "on") */
+.nav-plan-lock {
+  margin-left: auto;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(216, 168, 62, 0.6);
+  color: #d8a83e;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.nav-link.active .nav-plan-lock {
+  color: #8a6418;
+  border-color: rgba(138, 100, 24, 0.5);
+}
+
+/* Avisos do plano no topo do conteúdo */
+.plan-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 1rem 1.5rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  border: 1px solid #f0d58a;
+  background: #fff8e1;
+  color: #5c4500;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.plan-banner-trial {
+  border-color: #b9d7f5;
+  background: #eef6ff;
+  color: #17324d;
+}
+
+.plan-banner-close {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
 /* ===== Rodapé / sair ===== */
 .sidebar-footer {
   padding: 0.9rem 1.1rem;

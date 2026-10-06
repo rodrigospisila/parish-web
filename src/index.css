@@ -70,3 +70,14 @@ code {
 #root {
   min-height: 100vh;
 }
+
+/* Botão desabilitado com cara de desabilitado (B60): vale para todas as
+   telas, inclusive as que redefinem .btn-primary com seletor mais específico */
+.btn-primary:disabled,
+.btn-primary[aria-disabled='true'] {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+  transform: none !important;
+  filter: grayscale(0.35);
+}

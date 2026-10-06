@@ -323,6 +323,7 @@ interface FormEdicao {
   name?: string;
   city?: string;
   state?: string;
+  zipCode?: string;
   website?: string;
   apagarSite?: boolean;
 }
@@ -350,7 +351,13 @@ function formInicial(p: Proposta): FormEdicao {
     case 'COMMUNITY_PARISH':
       return { parishId: texto(pl.parishId) ?? '' };
     case 'COMMUNITY_CREATE':
-      return { name: texto(pl.name) ?? '', address: texto(pl.address) ?? '', city: texto(pl.city) ?? p.city ?? '', state: texto(pl.state) ?? p.state ?? '' };
+      return {
+        name: texto(pl.name) ?? '',
+        address: texto(pl.address) ?? '',
+        city: texto(pl.city) ?? p.city ?? '',
+        state: texto(pl.state) ?? p.state ?? '',
+        zipCode: texto(pl.zipCode) ?? '',
+      };
     case 'COMMUNITY_WEBSITE':
     case 'PARISH_WEBSITE':
       return { website: texto(pl.website) ?? '', apagarSite: p.payload != null && !texto(pl.website) };
@@ -403,8 +410,13 @@ function montarPayload(p: Proposta, f: FormEdicao): { payload: Record<string, un
       return f.parishId?.trim() ? { payload: { parishId: f.parishId.trim() } } : { erro: 'Informe o identificador da paróquia.' };
     case 'COMMUNITY_CREATE': {
       if (!f.name?.trim()) return { erro: 'Informe o nome da comunidade.' };
+      // O servidor exige endereço (3+ caracteres): avisa aqui, antes de enviar
+      if ((f.address?.trim().length ?? 0) < 3) return { erro: 'Informe o endereço (ao menos 3 caracteres).' };
       if (!f.city?.trim() || !f.state) return { erro: 'Informe a cidade e a UF.' };
-      return { payload: { name: f.name.trim(), address: f.address?.trim() || null, city: f.city.trim(), state: f.state } };
+      const cep = f.zipCode?.trim();
+      return {
+        payload: { name: f.name.trim(), address: f.address!.trim(), city: f.city.trim(), state: f.state, ...(cep ? { zipCode: cep } : {}) },
+      };
     }
     case 'COMMUNITY_WEBSITE':
     case 'PARISH_WEBSITE': {
@@ -1356,6 +1368,10 @@ const TerritoryProposals: React.FC<Props> = ({ resumo, recarregarResumo }) => {
                       ))}
                     </select>
                   </div>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="dp-cep">CEP (opcional)</label>
+                  <input id="dp-cep" value={editando.form.zipCode ?? ''} onChange={(e) => setForm({ zipCode: e.target.value })} />
                 </div>
               </>
             )}

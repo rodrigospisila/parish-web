@@ -305,7 +305,9 @@ const EventsPage: React.FC = () => {
       const token = localStorage.getItem('token');
       const response = await axios.post(
         `${API_URL}/events/${selectedEvent.id}/duplicate`,
-        { dates: selectedDates, copyTeam: duplicateCopyTeam },
+        // Horário local do navegador → instante com fuso (A19): sem o 'Z' o
+        // servidor gravava a hora como UTC e o evento aparecia 3h mais cedo
+        { dates: selectedDates.map((selectedDate) => new Date(selectedDate).toISOString()), copyTeam: duplicateCopyTeam },
         { headers: { Authorization: `Bearer ${token}` } },
       );
 
@@ -596,7 +598,7 @@ const EventsPage: React.FC = () => {
                       communities.find((community) => community.id === filterCommunity)?.name
                     }`
                   : communities.find((community) => community.id === filterCommunity)?.name}
-                <button className="filter-remove" onClick={() => setFilterCommunity('')}>
+                <button aria-label="Remover filtro de comunidade" className="filter-remove" onClick={() => setFilterCommunity('')}>
                   x
                 </button>
               </span>
@@ -604,7 +606,7 @@ const EventsPage: React.FC = () => {
             {filterType && (
               <span className="filter-badge filter-badge-type">
                 Tipo: {getEventTypeLabel(filterType)}
-                <button className="filter-remove" onClick={() => setFilterType('')}>
+                <button aria-label="Remover filtro de tipo" className="filter-remove" onClick={() => setFilterType('')}>
                   x
                 </button>
               </span>
@@ -612,7 +614,7 @@ const EventsPage: React.FC = () => {
             {filterStatus && (
               <span className="filter-badge filter-badge-status">
                 Status: {getEventStatusLabel(filterStatus)}
-                <button className="filter-remove" onClick={() => setFilterStatus('')}>
+                <button aria-label="Remover filtro de status" className="filter-remove" onClick={() => setFilterStatus('')}>
                   x
                 </button>
               </span>
@@ -859,10 +861,10 @@ const EventsPage: React.FC = () => {
 
           {totalPages > 1 && (
             <div className="pagination">
-              <button className="pagination-btn" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>
+              <button aria-label="Primeira página" className="pagination-btn" onClick={() => setCurrentPage(1)} disabled={currentPage === 1}>
                 {'<<'}
               </button>
-              <button
+              <button aria-label="Página anterior"
                 className="pagination-btn"
                 onClick={() => setCurrentPage(currentPage - 1)}
                 disabled={currentPage === 1}
@@ -872,14 +874,14 @@ const EventsPage: React.FC = () => {
               <span className="pagination-info">
                 Página {currentPage} de {totalPages} ({sortedEvents.length} eventos)
               </span>
-              <button
+              <button aria-label="Próxima página"
                 className="pagination-btn"
                 onClick={() => setCurrentPage(currentPage + 1)}
                 disabled={currentPage === totalPages}
               >
                 {'>'}
               </button>
-              <button
+              <button aria-label="Última página"
                 className="pagination-btn"
                 onClick={() => setCurrentPage(totalPages)}
                 disabled={currentPage === totalPages}
@@ -900,7 +902,7 @@ const EventsPage: React.FC = () => {
       {showDetailModal && selectedEvent && (
         <div className="modal-overlay" onClick={() => setShowDetailModal(false)}>
           <div className="modal-content event-detail-modal" onClick={(event) => event.stopPropagation()}>
-            <button className="modal-close" onClick={() => setShowDetailModal(false)}>
+            <button aria-label="Fechar" className="modal-close" onClick={() => setShowDetailModal(false)}>
               x
             </button>
 
@@ -1106,7 +1108,7 @@ const EventsPage: React.FC = () => {
           }}
         >
           <div className="modal-content duplicate-modal" onClick={(event) => event.stopPropagation()}>
-            <button
+            <button aria-label="Fechar"
               className="modal-close"
               onClick={() => {
                 setShowDuplicateModal(false);
@@ -1160,7 +1162,7 @@ const EventsPage: React.FC = () => {
                             <span className="date-text">{dateText}</span>
                             <TimeInput24h value={timeText} onChange={(newTime) => handleTimeChange(date, newTime)} />
                           </div>
-                          <button type="button" className="btn-remove-date" onClick={() => setSelectedDates((dates) => dates.filter((selectedDate) => selectedDate !== date))}>
+                          <button aria-label="Remover data" type="button" className="btn-remove-date" onClick={() => setSelectedDates((dates) => dates.filter((selectedDate) => selectedDate !== date))}>
                             x
                           </button>
                         </li>

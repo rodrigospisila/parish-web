@@ -205,24 +205,25 @@ const CliqueDefinePino: React.FC<{ ativo: boolean; onPick: (lat: number, lng: nu
 };
 
 /**
- * Consulta o Nominatim. Primeiro ESTRUTURADA (rua + cidade + UF): o resto do endereço —
- * "núcleo 6 – Cidade Nova II", CEP — derruba a busca livre. No Brasil o OpenStreetMap quase
- * não tem número de casa: o que volta costuma ser o MEIO da rua, e quem chama precisa saber.
+ * Consulta o OpenStreetMap (Nominatim) PELO SERVIDOR (`GET /geocoding/search`: cache, fila de
+ * 1 req/s e timeout — o navegador nunca chama o provedor direto). Primeiro ESTRUTURADA
+ * (rua + cidade + UF): o resto do endereço — "núcleo 6 – Cidade Nova II", CEP — derruba a busca
+ * livre. No Brasil o OpenStreetMap quase não tem número de casa: o que volta costuma ser o MEIO
+ * da rua, e quem chama precisa saber.
  */
 async function procurarNoNominatim(row: MapRow): Promise<{ lat: number; lng: number; nivel: 'numero' | 'rua' | 'cidade' } | null> {
-  const base = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=br&accept-language=pt-BR';
   const rua = (row.address ?? '').split(/\s[–—-]\s|\(|\bCEP\b/i)[0].replace(/\bn[º°.]\s*/i, '').trim();
-  const tentativas: Array<[string, boolean]> = [];
-  if (rua) tentativas.push([`&street=${encodeURIComponent(rua)}&city=${encodeURIComponent(row.city)}&state=${encodeURIComponent(row.state)}&country=Brasil`, false]);
-  if (row.address) tentativas.push([`&q=${encodeURIComponent([row.address, row.city, row.state, 'Brasil'].join(', '))}`, false]);
-  tentativas.push([`&q=${encodeURIComponent([row.city, row.state, 'Brasil'].join(', '))}`, true]);
-  for (const [consulta, soCidade] of tentativas) {
-    const resposta = await fetch(base + consulta);
-    const achados = (await resposta.json()) as Array<{ lat: string; lon: string; place_rank?: number }>;
-    if (!achados?.length) continue;
-    const rank = achados[0].place_rank ?? 0;
+  const tentativas: Array<[Record<string, string>, boolean]> = [];
+  if (rua.length >= 3) tentativas.push([{ street: rua, city: row.city, state: row.state }, false]);
+  if (row.address) tentativas.push([{ q: [row.address, row.city, row.state, 'Brasil'].join(', ') }, false]);
+  tentativas.push([{ q: [row.city, row.state, 'Brasil'].join(', ') }, true]);
+  for (const [params, soCidade] of tentativas) {
+    const { data } = await api.get<Array<{ latitude: number; longitude: number; rank?: number | null }>>('/geocoding/search', { params });
+    const achado = Array.isArray(data) ? data[0] : undefined;
+    if (!achado) continue;
+    const rank = achado.rank ?? 0;
     if (!soCidade && rank < 26) continue; // só achou o bairro ou a cidade: tenta a próxima forma
-    return { lat: Number(achados[0].lat), lng: Number(achados[0].lon), nivel: soCidade ? 'cidade' : rank >= 28 ? 'numero' : 'rua' };
+    return { lat: Number(achado.latitude), lng: Number(achado.longitude), nivel: soCidade ? 'cidade' : rank >= 28 ? 'numero' : 'rua' };
   }
   return null;
 }
@@ -363,7 +364,7 @@ const TerritoryMapPage: React.FC = () => {
         achado.nivel === 'numero'
           ? 'Achei o número. Confira no satélite e salve.'
           : achado.nivel === 'rua'
-            ? 'Achei só a RUA: o mapa aberto não conhece o número, então o pino foi para o meio dela. Arraste até a igreja — o satélite ajuda — ou abra o endereço no Google Maps para se localizar.'
+            ? 'Achei só a RUA: o mapa aberto não conhece o número, então o pino foi para o meio dela. Arraste até a igreja — o satélite ajuda.'
             : 'Não achei o endereço: o mapa foi para o centro da cidade. Marque onde fica a igreja.',
       );
     } catch {
@@ -522,8 +523,9 @@ const TerritoryMapPage: React.FC = () => {
   const naPorta = stats?.ok ?? 0;
   const naRua = stats?.rua ?? 0;
   const pct = (n: number) => (stats && stats.total > 0 ? Math.round((n / stats.total) * 100) : 0);
-  const googleMaps = emEdicao
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([emEdicao.address, emEdicao.city, emEdicao.state].filter(Boolean).join(', '))}`
+  // Conferência em fonte permitida (OpenStreetMap). Google Maps/Places nunca é fonte nem link (contrato).
+  const linkOsm = emEdicao
+    ? `https://www.openstreetmap.org/search?query=${encodeURIComponent([emEdicao.address, emEdicao.city, emEdicao.state].filter(Boolean).join(', '))}`
     : '';
 
   return (
@@ -895,10 +897,11 @@ const TerritoryMapPage: React.FC = () => {
                 )}
               </div>
               {emEdicao.address && (
-                <a className="tm-google" href={googleMaps} target="_blank" rel="noopener noreferrer">
-                  Abrir este endereço no Google Maps ↗
+                <a className="tm-osm" href={linkOsm} target="_blank" rel="noopener noreferrer">
+                  Abrir este endereço no OpenStreetMap ↗
                 </a>
               )}
+              <p className="tm-aviso-editor">Não use Google Maps para conferir nem copiar posições: o contrato proíbe como fonte.</p>
             </div>
           )}
         </div>

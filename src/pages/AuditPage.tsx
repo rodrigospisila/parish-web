@@ -6,7 +6,7 @@ import {
   actionLabel,
   entityLabel,
   roleLabel,
-  compactJson,
+  readableSummary,
   prettyJson,
   formatDateTime,
 } from '../utils/auditLabels';
@@ -54,7 +54,7 @@ function dayEndIso(date: string): string {
 }
 
 function summaryOf(item: AuditItem): string {
-  return compactJson(item.metadata) || compactJson(item.after) || compactJson(item.before);
+  return readableSummary(item.metadata) || readableSummary(item.after) || readableSummary(item.before);
 }
 
 function hasDetail(item: AuditItem): boolean {
@@ -268,9 +268,9 @@ const AuditPage: React.FC = () => {
                       </td>
                       <td>
                         {summary ? (
-                          <code className="audit-meta" title={summary}>
+                          <span className="audit-meta" title={summary}>
                             {summary}
-                          </code>
+                          </span>
                         ) : (
                           <span className="security-muted">—</span>
                         )}
@@ -340,7 +340,7 @@ const AuditPage: React.FC = () => {
             : 'Nenhum registro'}
         </span>
         <div className="audit-pagination-buttons">
-          <button type="button" className="btn-small" onClick={() => goTo(1)} disabled={loading || page <= 1}>
+          <button aria-label="Primeira página" type="button" className="btn-small" onClick={() => goTo(1)} disabled={loading || page <= 1}>
             «
           </button>
           <button type="button" className="btn-small" onClick={() => goTo(page - 1)} disabled={loading || page <= 1}>
@@ -349,7 +349,7 @@ const AuditPage: React.FC = () => {
           <button type="button" className="btn-small" onClick={() => goTo(page + 1)} disabled={loading || page >= totalPages}>
             Próxima ›
           </button>
-          <button type="button" className="btn-small" onClick={() => goTo(totalPages)} disabled={loading || page >= totalPages}>
+          <button aria-label="Última página" type="button" className="btn-small" onClick={() => goTo(totalPages)} disabled={loading || page >= totalPages}>
             »
           </button>
         </div>

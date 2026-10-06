@@ -1,9 +1,37 @@
 import React, { useEffect, useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import UserPhotoAvatar from './UserPhotoAvatar';
 import api from '../services/api';
+import { installPlanErrorHandler, PLAN_REQUIRED_EVENT, type PlanRequiredDetail } from '../services/planErrors';
+import { usePlanEntitlements } from '../hooks/usePlanEntitlements';
 import './AdminLayout.css';
+
+// Aviso amigável para 403 PLAN_REQUIRED/PLAN_SCOPE/PLAN_MEMBER_LIMIT (uma vez por app)
+installPlanErrorHandler();
+
+/** Matriz de módulos do último carregamento (por papel): o menu abre já certo no F5. */
+const MODULE_ACCESS_CACHE = 'parish:module-access:';
+
+function readCachedDisabled(role: string | undefined): Set<string> | null {
+  if (!role) return null;
+  try {
+    const raw = sessionStorage.getItem(MODULE_ACCESS_CACHE + role);
+    return raw ? new Set(JSON.parse(raw) as string[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Banner "teste até dd/mm": datas em pt-BR, sem hora. */
+const dataCurta = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+
+/** Selo no item de menu de recurso pago fora do plano (só no modo "on"). */
+const PlanLock: React.FC = () => (
+  <span className="nav-plan-lock" title="Disponível no plano da comunidade">
+    plano
+  </span>
+);
 
 const ROLE_LABELS: Record<string, string> = {
   SYSTEM_ADMIN: 'Administrador do Sistema',
@@ -61,27 +89,53 @@ const AdminLayout: React.FC = () => {
   const displayName = user?.name || user?.email || 'Usuário';
 
   // Matriz do SYSTEM_ADMIN (Configurações): módulos desativados para o papel
-  // deste usuário somem do menu. SYSTEM_ADMIN sempre vê tudo.
-  const [disabledModules, setDisabledModules] = useState<Set<string>>(new Set());
+  // deste usuário somem do menu. SYSTEM_ADMIN sempre vê tudo. Enquanto a
+  // matriz não chega, os itens controlados por ela ficam ESCONDIDOS (antes
+  // apareciam e sumiam — o menu "piscava" itens desligados); a última matriz
+  // do papel fica na sessão para o menu abrir certo no recarregamento.
+  const [disabledModules, setDisabledModules] = useState<Set<string> | null>(() => readCachedDisabled(user?.role));
   useEffect(() => {
     if (!user?.role || isSystemAdmin) return;
+    setDisabledModules(readCachedDisabled(user.role));
     api
       .get('/settings/module-access')
       .then((res) => {
-        setDisabledModules(
-          new Set(
-            (res.data?.disabled ?? [])
-              .filter((d: { role: string }) => d.role === user.role)
-              .map((d: { moduleKey: string }) => d.moduleKey),
-          ),
-        );
+        const keys: string[] = (res.data?.disabled ?? [])
+          .filter((d: { role: string }) => d.role === user.role)
+          .map((d: { moduleKey: string }) => d.moduleKey);
+        setDisabledModules(new Set(keys));
+        try {
+          sessionStorage.setItem(MODULE_ACCESS_CACHE + user.role, JSON.stringify(keys));
+        } catch {
+          // sessão indisponível: só perde o atalho do próximo carregamento
+        }
       })
       .catch(() => {
         // Falhou a consulta: menu completo (comportamento padrão do papel)
+        setDisabledModules((current) => current ?? new Set());
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.role]);
-  const modOn = (key: string) => isSystemAdmin || !disabledModules.has(key);
+  const modOn = (key: string) => isSystemAdmin || (disabledModules !== null && !disabledModules.has(key));
+
+  // Plano da comunidade (/me/entitlements): recurso pago fora do plano ganha o
+  // selo "plano" no menu (só no modo "on" — fora dele nada é bloqueado)
+  const { entitlements, isLocked } = usePlanEntitlements();
+  const lock = (feature: string) => (isLocked(feature) ? <PlanLock /> : null);
+
+  // Aviso de recurso fora do plano (o interceptor dispara; some ao trocar de tela)
+  const location = useLocation();
+  const [planNotice, setPlanNotice] = useState<string | null>(null);
+  useEffect(() => {
+    const onPlan = (event: Event) => setPlanNotice((event as CustomEvent<PlanRequiredDetail>).detail?.message ?? null);
+    window.addEventListener(PLAN_REQUIRED_EVENT, onPlan);
+    return () => window.removeEventListener(PLAN_REQUIRED_EVENT, onPlan);
+  }, []);
+  useEffect(() => setPlanNotice(null), [location.pathname]);
+
+  // Banner "teste até dd/mm" nos 15 dias finais — para quem administra ou
+  // coordena, e só com o bloqueio ligado (no modo log o fim do teste não muda nada)
+  const trials = canSeeDashboard && !isSystemAdmin && entitlements?.enforcement === 'on' ? (entitlements.trialsEndingSoon ?? []) : [];
 
   // Fiel/voluntário CATEQUISTA: o menu ganha "Catequese" (o backend lista só
   // as turmas onde ele está na equipe e valida cada ação)
@@ -146,9 +200,8 @@ const AdminLayout: React.FC = () => {
             </NavLink>
           )}
 
-          {(modOn('members') || modOn('events') || modOn('swaps') || (canManageSchedules && (modOn('fixed-schedule') || modOn('schedules')))) && (
-            <span className="nav-section-label">Comunidade</span>
-          )}
+          {/* Sempre há ao menos "Minha Escala" nesta seção */}
+          <span className="nav-section-label">Comunidade</span>
           {modOn('members') && isCoordination && (
             <NavLink to="/admin/members" className="nav-link">
               <NavIcon name="membros" /> Membros
@@ -166,21 +219,20 @@ const AdminLayout: React.FC = () => {
           )}
           {canManageSchedules && modOn('schedules') && (
             <NavLink to="/admin/schedules" className="nav-link">
-              <NavIcon name="escala" /> Escalas
+              <NavIcon name="escala" /> Escalas{lock('schedules')}
             </NavLink>
           )}
-          {!canManageSchedules && (
-            <NavLink to="/admin/my-schedule" className="nav-link">
-              <NavIcon name="escala" /> Minha Escala
-            </NavLink>
-          )}
+          {/* Coordenador também é escalado: "Minha Escala" vale para todos */}
+          <NavLink to="/admin/my-schedule" className="nav-link">
+            <NavIcon name="escala" /> Minha Escala{lock('schedules')}
+          </NavLink>
           {modOn('swaps') && (
             <NavLink to="/admin/swaps" className="nav-link">
-              <NavIcon name="trocas-escala" /> Trocas de Escala
+              <NavIcon name="trocas-escala" /> Trocas de Escala{lock('swaps')}
             </NavLink>
           )}
 
-          {(modOn('clergy-messages') || modOn('saints') || modOn('pastorals') || isCoordination) && (
+          {(modOn('clergy-messages') || modOn('saints') || isCoordination) && (
             <span className="nav-section-label">Pastoral</span>
           )}
           {modOn('clergy-messages') && (
@@ -193,14 +245,14 @@ const AdminLayout: React.FC = () => {
               <NavIcon name="santo" /> Santos
             </NavLink>
           )}
-          {modOn('pastorals') && (
+          {isCoordination && modOn('pastorals') && (
             <NavLink to="/admin/pastorals/community" className="nav-link">
-              <NavIcon name="pastoral" /> Pastorais
+              <NavIcon name="pastoral" /> Pastorais{lock('pastorals')}
             </NavLink>
           )}
           {isPastoralCoordinator && modOn('my-pastorals') && (
             <NavLink to="/admin/pastorals/my" className="nav-link highlight">
-              <NavIcon name="pastoral" /> Minhas Pastorais
+              <NavIcon name="pastoral" /> Minhas Pastorais{lock('pastorals')}
             </NavLink>
           )}
           {isSystemAdmin && (
@@ -210,14 +262,14 @@ const AdminLayout: React.FC = () => {
           )}
           {isCatechist && !isCoordination && modOn('catechesis') && (
             <NavLink to="/admin/catechesis" className="nav-link highlight">
-              <NavIcon name="catequese" /> Catequese (minha turma)
+              <NavIcon name="catequese" /> Catequese (minha turma){lock('catechesis')}
             </NavLink>
           )}
           {isCoordination && (
             <>
               {modOn('catechesis') && (
                 <NavLink to="/admin/catechesis" className="nav-link">
-                  <NavIcon name="catequese" /> Catequese
+                  <NavIcon name="catequese" /> Catequese{lock('catechesis')}
                 </NavLink>
               )}
               {modOn('planning') && (
@@ -227,22 +279,22 @@ const AdminLayout: React.FC = () => {
               )}
               {modOn('documents') && (
                 <NavLink to="/admin/documents" className="nav-link">
-                  <NavIcon name="documento" /> Documentos
+                  <NavIcon name="documento" /> Documentos{lock('documents')}
                 </NavLink>
               )}
               {modOn('formation') && (
                 <NavLink to="/admin/formation" className="nav-link">
-                  <NavIcon name="biblia" /> Formação
+                  <NavIcon name="biblia" /> Formação{lock('formation')}
                 </NavLink>
               )}
               {modOn('rooms') && (
                 <NavLink to="/admin/rooms" className="nav-link">
-                  <NavIcon name="espacos" /> Espaços
+                  <NavIcon name="espacos" /> Espaços{lock('rooms')}
                 </NavLink>
               )}
               {modOn('visitation') && (
                 <NavLink to="/admin/visitation" className="nav-link">
-                  <NavIcon name="visitacao" /> Visitação
+                  <NavIcon name="visitacao" /> Visitação{lock('visitation')}
                 </NavLink>
               )}
             </>
@@ -300,6 +352,10 @@ const AdminLayout: React.FC = () => {
           <NavLink to="/admin/security" className="nav-link">
             <NavIcon name="sino" /> Segurança
           </NavLink>
+          {/* Direitos do titular (LGPD): consentimentos, exportação e exclusão — todos os papéis */}
+          <NavLink to="/admin/my-data" className="nav-link">
+            <NavIcon name="documento" /> Privacidade
+          </NavLink>
         </nav>
 
         <div className="sidebar-footer">
@@ -311,6 +367,23 @@ const AdminLayout: React.FC = () => {
       </aside>
 
       <main className="main-content">
+        {trials.length > 0 && (
+          <div className="plan-banner plan-banner-trial" role="status">
+            {trials.length === 1
+              ? `O teste do plano de ${trials[0].communityName} vai até ${dataCurta(trials[0].trialEndsAt)}. `
+              : `Testes do plano terminando: ${trials.map((t) => `${t.communityName} (${dataCurta(t.trialEndsAt)})`).join(', ')}. `}
+            Depois disso, pastorais, escalas, catequese, formação, espaços, visitas e documentos dependem do plano da
+            comunidade; calendário, mapa e liturgia continuam liberados.
+          </div>
+        )}
+        {planNotice && (
+          <div className="plan-banner" role="alert">
+            <span>{planNotice}</span>
+            <button type="button" className="plan-banner-close" onClick={() => setPlanNotice(null)} aria-label="Fechar aviso">
+              ×
+            </button>
+          </div>
+        )}
         <Outlet />
       </main>
     </div>

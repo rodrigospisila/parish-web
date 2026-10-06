@@ -73,7 +73,12 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<LoginResult>;
   /** Etapa 2: código do autenticador (ou de recuperação) para concluir o desafio. */
   loginWithTwoFactor: (challengeToken: string, code: string) => Promise<LoginResult>;
+  /** Sai DESTE navegador (os outros aparelhos seguem logados) */
   logout: () => void;
+  /** Encerra as sessões em todos os aparelhos (inclusive este) */
+  logoutAllDevices: () => Promise<void>;
+  /** Troca a senha da própria conta (Segurança / troca obrigatória) */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   /** Recarrega o perfil do servidor (vínculos/pastorais novos sem relogin) */
   refreshUser: () => Promise<void>;
   /** Atualiza campos do usuário em memória/localStorage (ex.: twoFactorEnabled) */
@@ -154,10 +159,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  /** Limpa a sessão local (tokens, usuário e cabeçalho padrão). */
+  const clearLocalSession = () => {
+    setToken(null);
+    setUser(null);
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
+    delete axios.defaults.headers.common['Authorization'];
+  };
+
   const logout = () => {
-    // Revoga o refresh token no servidor (best-effort) antes de limpar o local
-    if (localStorage.getItem('token')) {
-      void api.post('/auth/logout').catch(() => undefined);
+    // Encerra no servidor SÓ a sessão deste navegador (best-effort). Token e
+    // refresh vão explícitos: o interceptor roda depois de o local ser limpo.
+    const currentToken = localStorage.getItem('token');
+    const currentRefresh = localStorage.getItem('refreshToken');
+    if (currentToken) {
+      void api
+        .post('/auth/logout', currentRefresh ? { refreshToken: currentRefresh } : {}, {
+          headers: { Authorization: `Bearer ${currentToken}` },
+        })
+        .catch(() => undefined);
     }
     setToken(null);
     setUser(null);
@@ -165,6 +187,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     delete axios.defaults.headers.common['Authorization'];
+  };
+
+  const logoutAllDevices = async () => {
+    try {
+      await api.post('/auth/logout-all');
+    } finally {
+      clearLocalSession();
+    }
+  };
+
+  /**
+   * Troca a senha. O servidor derruba as sessões dos outros aparelhos e o
+   * access token atual; o refresh deste navegador continua valendo, então a
+   * próxima requisição renova sozinha (interceptor) sem pedir login.
+   */
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    if (!user) throw new AuthError('Sessão expirada. Entre novamente.');
+    try {
+      await api.post(`/users/${user.id}/change-password`, { currentPassword, newPassword });
+    } catch (error) {
+      throw toAuthError(error, 'Não foi possível trocar a senha');
+    }
+    updateUser({ forcePasswordChange: false });
   };
 
   const updateUser = useCallback((patch: Partial<User>) => {
@@ -213,7 +258,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider
-      value={{ user, token, login, loginWithTwoFactor, logout, refreshUser, updateUser, adoptSession, loading }}
+      value={{ user, token, login, loginWithTwoFactor, logout, logoutAllDevices, changePassword, refreshUser, updateUser, adoptSession, loading }}
     >
       {children}
     </AuthContext.Provider>

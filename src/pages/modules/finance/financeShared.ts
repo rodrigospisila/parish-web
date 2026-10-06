@@ -55,6 +55,7 @@ export const PROVIDER_STATUS_LABEL: Record<string, string> = {
   paid: 'pago no provedor',
   overdue: 'vencido no provedor (ainda pagável)',
   refunded: 'estornado',
+  partially_refunded: 'estornado em parte',
   cancelled: 'cancelado no provedor',
   mismatch: 'divergência de valor — conciliar',
   in_review: 'cartão em análise',

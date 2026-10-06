@@ -2,8 +2,25 @@
 
 .security-grid {
   display: grid;
+  /* minmax(0, 1fr) + min-width: 0: a tabela de dispositivos não alarga o
+     grid (B53) — ela rola dentro do próprio cartão */
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.25rem;
   max-width: 1000px;
+}
+
+.security-grid > * {
+  min-width: 0;
+}
+
+.security-card .table-container {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Rótulo do navegador (user agent) é longo: quebra em vez de esticar a coluna */
+.security-card .data-table td strong {
+  overflow-wrap: anywhere;
 }
 
 .security-card {

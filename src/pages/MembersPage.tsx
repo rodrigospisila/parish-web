@@ -126,6 +126,15 @@ type SortDirection = 'asc' | 'desc';
 
 const MembersPage: React.FC = () => {
   const { user: authUser } = useAuth();
+  // Mesma matriz do backend (members.controller): criar/editar a partir do
+  // coordenador de pastoral; excluir (individual e em lote) só da coordenação
+  // de comunidade para cima — fora disso o botão terminaria em 403
+  const canManageMembers = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR'].includes(
+    String(authUser?.role ?? ''),
+  );
+  const canDeleteMembers = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(
+    String(authUser?.role ?? ''),
+  );
   const [members, setMembers] = useState<Member[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [loading, setLoading] = useState(true);
@@ -602,9 +611,11 @@ const MembersPage: React.FC = () => {
           <button className="btn-export" onClick={handleExportCSV} title="Exportar CSV">
             📥 Exportar
           </button>
-          <button className="btn-primary" onClick={() => setShowModal(true)}>
-            + Novo Membro
-          </button>
+          {canManageMembers && (
+            <button className="btn-primary" onClick={() => setShowModal(true)}>
+              + Novo Membro
+            </button>
+          )}
         </div>
       </div>
 
@@ -675,7 +686,7 @@ const MembersPage: React.FC = () => {
       </div>
 
       {/* Ações em lote */}
-      {selectedMembers.length > 0 && (
+      {canDeleteMembers && selectedMembers.length > 0 && (
         <div className="bulk-actions">
           <span>{selectedMembers.length} membro(s) selecionado(s)</span>
           <button className="btn-bulk-delete" onClick={handleBulkDelete}>
@@ -791,15 +802,19 @@ const MembersPage: React.FC = () => {
                   )}
                 </div>
                 <div className="entity-card-footer">
-                  <button className="entity-btn primary" onClick={() => handleEdit(member)}>
-                    Editar
-                  </button>
+                  {canManageMembers && (
+                    <button className="entity-btn primary" onClick={() => handleEdit(member)}>
+                      Editar
+                    </button>
+                  )}
                   <button className="entity-btn accent" onClick={() => setSacramentsFor(member)}>
                     Sacramentos
                   </button>
-                  <button className="entity-btn danger" onClick={() => handleDelete(member.id)}>
-                    Excluir
-                  </button>
+                  {canDeleteMembers && (
+                    <button className="entity-btn danger" onClick={() => handleDelete(member.id)}>
+                      Excluir
+                    </button>
+                  )}
                 </div>
               </div>
             ))
@@ -813,13 +828,16 @@ const MembersPage: React.FC = () => {
           <table className="data-table">
             <thead>
               <tr>
-                <th className="checkbox-col">
-                  <input
-                    type="checkbox"
-                    checked={selectedMembers.length === paginatedMembers.length && paginatedMembers.length > 0}
-                    onChange={handleSelectAll}
-                  />
-                </th>
+                {canDeleteMembers && (
+                  <th className="checkbox-col">
+                    <input
+                      type="checkbox"
+                      aria-label="Selecionar todos os membros da página"
+                      checked={selectedMembers.length === paginatedMembers.length && paginatedMembers.length > 0}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
+                )}
                 <th className="sortable" onClick={() => handleSort('fullName')}>
                   Nome {sortField === 'fullName' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
@@ -844,18 +862,21 @@ const MembersPage: React.FC = () => {
             <tbody>
               {paginatedMembers.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="no-results-cell">Nenhum membro encontrado.</td>
+                  <td colSpan={canDeleteMembers ? 10 : 9} className="no-results-cell">Nenhum membro encontrado.</td>
                 </tr>
               ) : (
                 paginatedMembers.map((member) => (
                   <tr key={member.id} className={selectedMembers.includes(member.id) ? 'selected' : ''}>
-                    <td className="checkbox-col">
-                      <input
-                        type="checkbox"
-                        checked={selectedMembers.includes(member.id)}
-                        onChange={() => handleSelectMember(member.id)}
-                      />
-                    </td>
+                    {canDeleteMembers && (
+                      <td className="checkbox-col">
+                        <input
+                          type="checkbox"
+                          aria-label={`Selecionar ${member.fullName}`}
+                          checked={selectedMembers.includes(member.id)}
+                          onChange={() => handleSelectMember(member.id)}
+                        />
+                      </td>
+                    )}
                     <td className="name-cell">
                       <strong>{member.fullName}</strong>
                     </td>
@@ -869,15 +890,19 @@ const MembersPage: React.FC = () => {
                     <td>{member.city ? `${member.city}/${member.state}` : '-'}</td>
                     <td>{new Date(member.createdAt).toLocaleDateString('pt-BR')}</td>
                     <td className="actions-cell">
-                      <button className="entity-icon-btn" onClick={() => handleEdit(member)} title="Editar">
-                        ✏️
-                      </button>
-                      <button className="entity-icon-btn" onClick={() => setSacramentsFor(member)} title="Sacramentos">
+                      {canManageMembers && (
+                        <button className="entity-icon-btn" onClick={() => handleEdit(member)} title="Editar" aria-label={`Editar ${member.fullName}`}>
+                          ✏️
+                        </button>
+                      )}
+                      <button className="entity-icon-btn" onClick={() => setSacramentsFor(member)} title="Sacramentos" aria-label={`Sacramentos de ${member.fullName}`}>
                         ✝️
                       </button>
-                      <button className="entity-icon-btn danger" onClick={() => handleDelete(member.id)} title="Excluir">
-                        🗑️
-                      </button>
+                      {canDeleteMembers && (
+                        <button className="entity-icon-btn danger" onClick={() => handleDelete(member.id)} title="Excluir" aria-label={`Excluir ${member.fullName}`}>
+                          🗑️
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -890,14 +915,14 @@ const MembersPage: React.FC = () => {
       {/* Paginação */}
       {totalPages > 1 && (
         <div className="pagination">
-          <button
+          <button aria-label="Primeira página"
             className="pagination-btn"
             disabled={currentPage === 1}
             onClick={() => setCurrentPage(1)}
           >
             ⏮️
           </button>
-          <button
+          <button aria-label="Página anterior"
             className="pagination-btn"
             disabled={currentPage === 1}
             onClick={() => setCurrentPage(currentPage - 1)}
@@ -909,14 +934,14 @@ const MembersPage: React.FC = () => {
             Página {currentPage} de {totalPages}
           </span>
           
-          <button
+          <button aria-label="Próxima página"
             className="pagination-btn"
             disabled={currentPage === totalPages}
             onClick={() => setCurrentPage(currentPage + 1)}
           >
             ▶️
           </button>
-          <button
+          <button aria-label="Última página"
             className="pagination-btn"
             disabled={currentPage === totalPages}
             onClick={() => setCurrentPage(totalPages)}

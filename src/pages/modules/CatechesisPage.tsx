@@ -164,6 +164,9 @@ interface ClassReport {
     unreadMessages?: number;
     /** Uso de imagem: true autorizado, false negado, null/ausente = não respondido */
     imageConsent?: boolean | null;
+    /** Termo LGPD do responsável: null = pendente; canal APP (aceite no app) ou PAPER */
+    guardianConsentAt?: string | null;
+    guardianConsentChannel?: 'APP' | 'PAPER' | string | null;
   }>;
 }
 
@@ -1036,7 +1039,7 @@ const CatechesisPage: React.FC = () => {
     }
   };
 
-  const handleEnroll = async (e: React.FormEvent) => {
+  const handleEnroll = async (e: React.FormEvent, confirmAdult = false) => {
     e.preventDefault();
     if (!selectedClass) return;
     try {
@@ -1046,13 +1049,29 @@ const CatechesisPage: React.FC = () => {
         ...(enrollForm.waiveBaptism ? { requireBaptism: false } : {}),
         ...(enrollForm.overrideCapacity ? { overrideCapacity: true } : {}),
         ...(enrollForm.unbaptized ? { unbaptized: true } : {}),
+        ...(confirmAdult ? { confirmAdult: true } : {}),
       });
       notify.success('Catequizando matriculado!');
       setShowEnrollModal(false);
       setEnrollForm({ memberId: '', waiveBaptism: false, overrideCapacity: false, unbaptized: false });
       refreshDetail();
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao matricular'));
+      const message = getErrorMessage(error, 'Erro ao matricular');
+      // Nascimento só com dia/mês e sem responsável: idade desconhecida — a
+      // equipe confirma a maioridade conscientemente (fica na auditoria)
+      if (!confirmAdult && /sem o ano/.test(message)) {
+        if (
+          window.confirm(
+            'O nascimento deste catequizando está sem o ano e não há responsável vinculado.\n\n' +
+              'Se ele for MENOR de idade, cancele, vincule o pai/mãe no cadastro (ou informe o ano) e matricule de novo.\n\n' +
+              'Confirmar que ele é MAIOR de idade e matricular?',
+          )
+        ) {
+          await handleEnroll(e, true);
+        }
+        return;
+      }
+      notify.error(message);
     }
   };
 
@@ -1563,6 +1582,33 @@ const CatechesisPage: React.FC = () => {
       refreshDetail();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao excluir o encontro'));
+    }
+  };
+
+  /** Lança o termo LGPD assinado em papel (e o uso de imagem que veio nele). */
+  const handlePaperConsent = async (enrollmentId: string, fullName: string) => {
+    const today = new Date().toLocaleDateString('en-CA');
+    const date = window.prompt(`Termo LGPD de ${fullName}: data em que o responsável assinou (AAAA-MM-DD):`, today);
+    if (date === null) return;
+    const image = window.prompt(
+      'Uso de imagem no termo: digite S (autoriza), N (não autoriza) ou deixe vazio se o termo não diz:',
+      '',
+    );
+    if (image === null) return;
+    const answer = image.trim().toUpperCase();
+    if (answer && answer !== 'S' && answer !== 'N') {
+      notify.error('Responda S, N ou deixe vazio');
+      return;
+    }
+    try {
+      await api.patch(`/catechesis/enrollments/${enrollmentId}/consent`, {
+        paperSignedAt: date.trim(),
+        ...(answer ? { imageConsent: answer === 'S' } : {}),
+      });
+      notify.success('Termo registrado!');
+      refreshDetail();
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Erro ao registrar o termo'));
     }
   };
 
@@ -3923,6 +3969,16 @@ const CatechesisPage: React.FC = () => {
                                       >
                                         🚫📷 sem uso de imagem
                                       </span>
+                                    )}
+                                    {!student.guardianConsentAt && CURRENT_ENROLLMENT_STATUSES.includes(student.status) && (
+                                      <button
+                                        type="button"
+                                        className="cate-noimage cate-noconsent"
+                                        title="Sem termo LGPD do responsável registrado — clique para lançar o termo assinado em papel (o responsável também pode aceitar pelo app)"
+                                        onClick={() => handlePaperConsent(student.enrollmentId, student.member.fullName)}
+                                      >
+                                        📝 termo LGPD pendente
+                                      </button>
                                     )}
                                     {student.contact && (
                                       <div style={{ fontSize: '0.76rem', color: '#64748b' }}>

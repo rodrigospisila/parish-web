@@ -37,6 +37,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+  min-width: 0;
   cursor: pointer;
   transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
@@ -87,13 +88,18 @@
   padding-top: 0.7rem;
   border-top: 1px solid var(--cate-line);
   display: flex;
+  flex-wrap: wrap; /* B53: com "concluídos" + vagas, o "Abrir turma" desce em vez de vazar */
   align-items: center;
   justify-content: space-between;
-  gap: 0.6rem;
+  gap: 0.5rem 0.6rem;
+  min-width: 0;
 }
 .cate-card__stats {
   display: flex;
-  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1rem;
+  min-width: 0;
   font-size: 0.8rem;
   color: var(--cate-muted);
 }
@@ -103,6 +109,7 @@
   font-weight: 700;
   color: var(--cate-primary);
   white-space: nowrap;
+  margin-left: auto;
 }
 
 /* ===== Vagas / lotação ===== */
@@ -829,6 +836,15 @@
   color: #b91c1c;
   white-space: nowrap;
 }
+
+/* Termo LGPD do responsável ainda não registrado (clicável: lança o papel) */
+.cate-noconsent {
+  border: 0;
+  cursor: pointer;
+  background: #fffbeb;
+  color: #b45309;
+}
+.cate-noconsent:hover { background: #fef3c7; }
 
 /* Modal de transferência: rota origem → destino */
 .cate-transfer__who { margin: 0 0 0.7rem; font-size: 0.95rem; color: var(--cate-ink, #0f172a); }

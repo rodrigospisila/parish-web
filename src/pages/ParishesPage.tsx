@@ -550,14 +550,14 @@ const ParishesPage: React.FC = () => {
       {/* Paginação */}
       {totalPages > 1 && (
         <div className="pagination">
-          <button
+          <button aria-label="Primeira página"
             className="pagination-btn"
             onClick={() => setCurrentPage(1)}
             disabled={currentPage === 1}
           >
             «
           </button>
-          <button
+          <button aria-label="Página anterior"
             className="pagination-btn"
             onClick={() => setCurrentPage(currentPage - 1)}
             disabled={currentPage === 1}
@@ -567,14 +567,14 @@ const ParishesPage: React.FC = () => {
           <span className="pagination-info">
             Página {currentPage} de {totalPages} ({sortedParishes.length} paróquias)
           </span>
-          <button
+          <button aria-label="Próxima página"
             className="pagination-btn"
             onClick={() => setCurrentPage(currentPage + 1)}
             disabled={currentPage === totalPages}
           >
             ›
           </button>
-          <button
+          <button aria-label="Última página"
             className="pagination-btn"
             onClick={() => setCurrentPage(totalPages)}
             disabled={currentPage === totalPages}
