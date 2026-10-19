@@ -148,6 +148,8 @@ const SacramentsModal: React.FC<Props> = ({ memberId, memberName, communityAllow
   const [editForm, setEditForm] = useState<SacramentForm>(EMPTY_FORM);
   const [reason, setReason] = useState('');
   const [editError, setEditError] = useState('');
+  // Erro do registro novo (ex.: 409 "assento irrepetível já existe"), dentro do formulário
+  const [addError, setAddError] = useState('');
 
   const [certificateFor, setCertificateFor] = useState<Sacrament | null>(null);
 
@@ -203,14 +205,16 @@ const SacramentsModal: React.FC<Props> = ({ memberId, memberName, communityAllow
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setAddError('');
     setSaving(true);
     try {
       await axios.post(`${API_URL}/sacraments`, { memberId, ...payloadOf(form) }, { headers: authHeader() });
       setForm(emptyForm);
       load();
     } catch (err: any) {
-      setError(withLayHint(err, form.recordKind, apiMessage(err, 'Erro ao registrar sacramento')));
+      // 409 de duplicidade/403 de permissão: mensagem do servidor no próprio
+      // formulário, que continua aberto com o que foi digitado
+      setAddError(withLayHint(err, form.recordKind, apiMessage(err, 'Erro ao registrar sacramento')));
     } finally {
       setSaving(false);
     }
@@ -229,7 +233,12 @@ const SacramentsModal: React.FC<Props> = ({ memberId, memberName, communityAllow
     !!editing &&
     kindOf(editing) === 'RECORD' &&
     !!original &&
-    RECTIFICATION_FIELDS.some((field) => String(editForm[field]).trim() !== String(original[field]).trim());
+    RECTIFICATION_FIELDS.some((field) =>
+      field === 'date'
+        ? // Data: mesma função (dia civil) dos dois lados — nunca a parte UTC crua
+          civilDateInputValue(editForm.date) !== civilDateInputValue(editing.date)
+        : String(editForm[field]).trim() !== String(original[field]).trim(),
+    );
 
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -243,7 +252,9 @@ const SacramentsModal: React.FC<Props> = ({ memberId, memberName, communityAllow
     try {
       await axios.patch(
         `${API_URL}/sacraments/${editing.id}`,
-        { ...payloadOf(editForm), ...(isRectification ? { rectificationReason: reason.trim() } : {}) },
+        // Motivo vai sempre que preenchido: se o servidor ainda vir retificação
+        // (400 "Informe o motivo"), a própria tela resolve preenchendo o campo
+        { ...payloadOf(editForm), ...(isRectification || reason.trim() ? { rectificationReason: reason.trim() } : {}) },
         { headers: authHeader() },
       );
       setEditing(null);
@@ -520,6 +531,7 @@ const SacramentsModal: React.FC<Props> = ({ memberId, memberName, communityAllow
           <form onSubmit={handleAdd}>
             <h3 style={{ fontSize: 15 }}>Registrar sacramento</h3>
             {renderFields(form, setForm, 'sac')}
+            {addError && <div className="error-message">{addError}</div>}
             <div className="modal-actions">
               <button type="button" className="btn-cancel" onClick={onClose}>
                 Fechar

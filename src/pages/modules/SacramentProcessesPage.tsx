@@ -69,6 +69,15 @@ const NEXT_STATUS: Record<string, string | null> = {
   CANCELLED: null,
 };
 
+/** Decisão sobre o sacramento já INFORMADO (409 SACRAMENT_INFORMED_DECISION_REQUIRED do celebrate) */
+const INFORMED_DECISION_REQUIRED = 'SACRAMENT_INFORMED_DECISION_REQUIRED';
+type InformedResolution = 'RECORD_INFORMED' | 'CONDITIONAL';
+const INFORMED_RESOLUTION_LABELS: Record<InformedResolution, string> = {
+  RECORD_INFORMED: 'Lavrar o assento sobre o registro informado',
+  CONDITIONAL: 'Celebrar sob condição (cân. 845 §2 e 869)',
+};
+const DECISION_REASON_MIN = 10;
+
 const SacramentProcessesPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [processes, setProcesses] = useState<SacramentProcess[]>([]);
@@ -84,6 +93,27 @@ const SacramentProcessesPage: React.FC = () => {
 
   const [celebrateProcess, setCelebrateProcess] = useState<SacramentProcess | null>(null);
   const [celebrateForm, setCelebrateForm] = useState({ date: '', minister: '', book: '', page: '', term: '', place: '' });
+  /**
+   * 409 SACRAMENT_INFORMED_DECISION_REQUIRED: o membro já tem o sacramento
+   * irrepetível só INFORMADO. O servidor manda a mensagem e as opções; a
+   * celebração é reenviada com a decisão (`informedResolution`) e o motivo.
+   */
+  const [informedDecision, setInformedDecision] = useState<{ message: string; options: InformedResolution[] } | null>(
+    null,
+  );
+  const [decisionChoice, setDecisionChoice] = useState<InformedResolution | ''>('');
+  const [decisionReason, setDecisionReason] = useState('');
+  const [decisionError, setDecisionError] = useState('');
+  const [celebrating, setCelebrating] = useState(false);
+
+  /** Fecha o modal de celebração e limpa a decisão pendente */
+  const closeCelebrate = () => {
+    setCelebrateProcess(null);
+    setInformedDecision(null);
+    setDecisionChoice('');
+    setDecisionReason('');
+    setDecisionError('');
+  };
 
   // Certidão (2ª via) com finalidade opcional
   const [certificateProcess, setCertificateProcess] = useState<SacramentProcess | null>(null);
@@ -159,7 +189,20 @@ const SacramentProcessesPage: React.FC = () => {
 
   const handleCelebrate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!celebrateProcess) return;
+    if (!celebrateProcess || celebrating) return;
+    setDecisionError('');
+    // Decisão pedida pelo servidor: opção e motivo obrigatórios antes de reenviar
+    if (informedDecision) {
+      if (!decisionChoice) {
+        setDecisionError('Escolha uma das opções.');
+        return;
+      }
+      if (decisionReason.trim().length < DECISION_REASON_MIN) {
+        setDecisionError(`Informe o motivo (pelo menos ${DECISION_REASON_MIN} caracteres).`);
+        return;
+      }
+    }
+    setCelebrating(true);
     try {
       await api.patch(`/sacrament-processes/${celebrateProcess.id}/celebrate`, {
         date: celebrateForm.date || undefined,
@@ -168,13 +211,32 @@ const SacramentProcessesPage: React.FC = () => {
         page: celebrateForm.page || undefined,
         term: celebrateForm.term || undefined,
         place: celebrateForm.place || undefined,
+        ...(informedDecision && decisionChoice
+          ? { informedResolution: decisionChoice, resolutionReason: decisionReason.trim() }
+          : {}),
       });
       notify.success('Sacramento celebrado e registrado no livro!');
-      setCelebrateProcess(null);
+      closeCelebrate();
       setCelebrateForm({ date: '', minister: '', book: '', page: '', term: '', place: '' });
       fetchData();
-    } catch (error) {
-      notify.error(getErrorMessage(error, 'Erro ao registrar celebração'));
+    } catch (error: any) {
+      const data = error?.response?.data;
+      if (error?.response?.status === 409 && data?.code === INFORMED_DECISION_REQUIRED) {
+        const options: InformedResolution[] = (Array.isArray(data.options) ? data.options : []).filter(
+          (option: unknown): option is InformedResolution =>
+            typeof option === 'string' && option in INFORMED_RESOLUTION_LABELS,
+        );
+        setInformedDecision({ message: getErrorMessage(error, 'Decisão necessária para celebrar.'), options });
+        // Opção que deixou de valer (ex.: batismo de outra denominação só aceita "sob condição")
+        setDecisionChoice((current) =>
+          current && options.includes(current) ? current : options.length === 1 ? options[0] : '',
+        );
+        return;
+      }
+      if (informedDecision) setDecisionError(getErrorMessage(error, 'Erro ao registrar celebração'));
+      else notify.error(getErrorMessage(error, 'Erro ao registrar celebração'));
+    } finally {
+      setCelebrating(false);
     }
   };
 
@@ -356,7 +418,7 @@ const SacramentProcessesPage: React.FC = () => {
       )}
 
       {celebrateProcess && (
-        <div className="module-modal-overlay" onClick={() => setCelebrateProcess(null)}>
+        <div className="module-modal-overlay" onClick={closeCelebrate}>
           <div className="module-modal" onClick={(e) => e.stopPropagation()}>
             <h2>Celebrar {SACRAMENT_LABELS[celebrateProcess.type] ?? celebrateProcess.type} — {celebrateProcess.member.fullName}</h2>
             <p style={{ color: '#666', marginTop: '-0.75rem', marginBottom: '1rem', fontSize: '0.9rem' }}>
@@ -393,9 +455,64 @@ const SacramentProcessesPage: React.FC = () => {
                   <input type="text" value={celebrateForm.place} onChange={(e) => setCelebrateForm({ ...celebrateForm, place: e.target.value })} />
                 </div>
               </div>
+              {informedDecision && (
+                <div
+                  role="alert"
+                  style={{ border: '1px solid #e0b252', background: '#fff8e6', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1rem' }}
+                >
+                  <p style={{ margin: '0 0 0.75rem', color: '#5c4400', fontSize: '0.9rem' }}>{informedDecision.message}</p>
+                  {informedDecision.options.length > 0 ? (
+                    <>
+                      <div className="form-group">
+                        <label>Como prosseguir *</label>
+                        {informedDecision.options.map((option) => (
+                          <label key={option} style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 'normal' }}>
+                            <input
+                              type="radio"
+                              name="informed-resolution"
+                              value={option}
+                              checked={decisionChoice === option}
+                              onChange={() => setDecisionChoice(option)}
+                              style={{ width: 'auto' }}
+                            />
+                            {INFORMED_RESOLUTION_LABELS[option]}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="informed-resolution-reason">Motivo *</label>
+                        <textarea
+                          id="informed-resolution-reason"
+                          rows={2}
+                          maxLength={500}
+                          required
+                          minLength={DECISION_REASON_MIN}
+                          placeholder="Ex.: assento conferido no Livro 3, fl. 12, nunca lavrado no sistema"
+                          value={decisionReason}
+                          onChange={(e) => setDecisionReason(e.target.value)}
+                        />
+                        <small style={{ color: '#888' }}>
+                          Obrigatório (mín. {DECISION_REASON_MIN} caracteres). Fica no histórico de auditoria.
+                        </small>
+                      </div>
+                    </>
+                  ) : (
+                    <p style={{ margin: 0, fontSize: '0.85rem', color: '#5c4400' }}>
+                      Nenhuma opção disponível: cancele o processo.
+                    </p>
+                  )}
+                  {decisionError && <div className="error-message">{decisionError}</div>}
+                </div>
+              )}
               <div className="modal-actions">
-                <button type="button" className="btn-cancel" onClick={() => setCelebrateProcess(null)}>Cancelar</button>
-                <button type="submit" className="btn-submit">Registrar celebração</button>
+                <button type="button" className="btn-cancel" onClick={closeCelebrate}>Cancelar</button>
+                <button
+                  type="submit"
+                  className="btn-submit"
+                  disabled={celebrating || (!!informedDecision && informedDecision.options.length === 0)}
+                >
+                  {celebrating ? 'Registrando…' : informedDecision ? 'Confirmar e registrar' : 'Registrar celebração'}
+                </button>
               </div>
             </form>
           </div>

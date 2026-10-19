@@ -120,24 +120,66 @@ export const toBrazilianInputFormat = (brazilianDate: string): string => {
 /**
  * Datas CIVIS (só dia: nascimento, aniversário, data de sacramento, validade).
  *
- * O backend grava essas datas como meia-noite UTC ('1990-05-10T00:00:00.000Z').
- * Formatar com o fuso do navegador (getDate / toLocaleDateString sem timeZone)
- * mostra 09/05 em UTC−3. Aqui a data é lida pela parte AAAA-MM-DD — nunca pelo
- * fuso local.
+ * Formatos que o backend devolve (mesma regra do formatCivilDate do backend,
+ * src/modules/catechesis/civil-date.ts):
+ * - meia-noite UTC exata ('1990-05-10T00:00:00.000Z'): gravação legada / data
+ *   enviada pelo painel — o dia certo está em UTC;
+ * - meio-dia de Brasília ('…T15:00:00.000Z'): AAAA-MM-DD gravado pelo backend;
+ * - 03:00 UTC exato (meia-noite de Brasília, registros antigos);
+ * - instante real (`new Date()` de uma celebração sem data informada).
+ * Fora a meia-noite UTC, o dia é lido no fuso America/Sao_Paulo — 22h30 de
+ * Brasília (01h30 UTC do dia seguinte) continua sendo o dia de Brasília.
+ * Nunca pelo fuso do navegador (getDate / toLocaleDateString sem timeZone).
  */
+const CIVIL_TZ = 'America/Sao_Paulo';
 
-/** Extrai 'AAAA-MM-DD' de uma data civil (string ISO, 'AAAA-MM-DD' ou Date em UTC). */
+let civilDayFormatter: Intl.DateTimeFormat | null | undefined;
+/** Dia (AAAA-MM-DD) do instante no fuso de Brasília; null se o Intl não tiver o fuso. */
+const saoPauloDay = (d: Date): string | null => {
+  if (civilDayFormatter === undefined) {
+    try {
+      civilDayFormatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: CIVIL_TZ,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+    } catch {
+      civilDayFormatter = null;
+    }
+  }
+  if (!civilDayFormatter) return null;
+  const parts = civilDayFormatter.formatToParts(d);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+};
+
+/** Extrai o dia civil de uma data (string 'AAAA-MM-DD', string ISO ou Date). */
 export const civilDateParts = (
   date: string | Date | null | undefined,
 ): { year: number; month: number; day: number } | null => {
   if (!date) return null;
   if (typeof date === 'string') {
-    const match = date.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (match) return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+    // Só o dia, ou data-hora sem fuso ('AAAA-MM-DDTHH:mm'): a parte da data vale
+    const plain = date.match(/^(\d{4})-(\d{2})-(\d{2})(?:T[\d:.]+)?$/);
+    if (plain) return { year: Number(plain[1]), month: Number(plain[2]), day: Number(plain[3]) };
   }
   const d = typeof date === 'string' ? new Date(date) : date;
   if (isNaN(d.getTime())) return null;
-  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+  const h = d.getUTCHours();
+  const exactHour = d.getUTCMinutes() === 0 && d.getUTCSeconds() === 0 && d.getUTCMilliseconds() === 0;
+  // Meia-noite UTC (legado/painel) e 03:00 UTC (meia-noite de Brasília): o dia
+  // certo está em UTC. O 03:00 vai explícito porque, antes de 1914, o fuso de
+  // São Paulo era −03:06 e jogaria esse horário para a véspera.
+  if (exactHour && (h === 0 || h === 3)) {
+    return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+  }
+  const day = saoPauloDay(d);
+  const match = day?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+  // Sem Intl com fuso: Brasília é −03:00 fixo desde 2019
+  const shifted = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+  return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate() };
 };
 
 /** Data civil para o input de data ('AAAA-MM-DD'); vazio se ausente. */

@@ -55,3 +55,28 @@ export const formatPhoneDisplay = (value: string | null | undefined): string => 
   if (!value) return '';
   return whatsappNumber(value) ? maskBrPhone(value) : value;
 };
+
+/**
+ * Valor inicial do campo na edição: com máscara só quando o número gravado é
+ * brasileiro válido (10/11 dígitos); fora do padrão (estrangeiro, zero na
+ * frente do DDD, dois números, sem DDD) aparece exatamente como gravado — a
+ * máscara cortaria/embaralharia os dígitos.
+ */
+export const phoneInputValue = (value: string | null | undefined): string => {
+  if (!value) return '';
+  return whatsappNumber(value) ? maskBrPhone(value) : value;
+};
+
+/**
+ * Telefone a enviar num PATCH: se a pessoa não mexeu no campo (valor igual ao
+ * carregado por phoneInputValue), devolve undefined — o campo sai do JSON e o
+ * telefone gravado fica intacto (regra: não reescrever telefone já gravado).
+ * Se mexeu, vai pelo phoneForApi.
+ */
+export const phoneForApiOnEdit = (
+  current: string | null | undefined,
+  original: string | null | undefined,
+): string | undefined => {
+  if (String(current ?? '') === phoneInputValue(original)) return undefined;
+  return phoneForApi(current);
+};

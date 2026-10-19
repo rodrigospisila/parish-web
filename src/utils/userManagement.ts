@@ -57,3 +57,13 @@ export function canManageUserTarget(actor: Actor | null | undefined, target: Tar
       return false;
   }
 }
+
+/**
+ * Senha provisória: nunca para a própria conta — nem o administrador do
+ * sistema (o reset encerra todas as sessões, inclusive a aberta). Para a
+ * própria senha: tela de Segurança.
+ */
+export function canIssueTempPassword(actor: Actor | null | undefined, target: Target): boolean {
+  if (!actor?.id || target.id === actor.id) return false;
+  return canManageUserTarget(actor, target);
+}

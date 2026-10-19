@@ -56,6 +56,9 @@ interface Community {
   createdAt: string;
 }
 
+/** Paróquias por busca no filtro do escopo amplo */
+const FILTER_PARISH_PAGE_SIZE = 20;
+
 const CommunitiesPage: React.FC = () => {
   const [communities, setCommunities] = useState<Community[]>([]);
   const [parishes, setParishes] = useState<Parish[]>([]);
@@ -115,6 +118,60 @@ const CommunitiesPage: React.FC = () => {
     };
   });
 
+  /**
+   * Filtro por paróquia no escopo amplo: busca paginada no servidor
+   * (`/parishes?page=1&search=`, já limitada ao escopo — diocese do
+   * DIOCESAN_ADMIN, país do SYSTEM_ADMIN). Independe da cascata do formulário.
+   */
+  const [filterParishSearch, setFilterParishSearch] = useState('');
+  const debouncedFilterParishSearch = useDebouncedValue(filterParishSearch.trim(), 350);
+  const [filterParishHits, setFilterParishHits] = useState<Parish[]>([]);
+  const [filterParishTotal, setFilterParishTotal] = useState<number | null>(null);
+  const [selectedFilterParish, setSelectedFilterParish] = useState<Parish | null>(null);
+  useEffect(() => {
+    if (!serverMode) return;
+    let alive = true;
+    api
+      .get('/parishes', {
+        params: { page: 1, pageSize: FILTER_PARISH_PAGE_SIZE, search: debouncedFilterParishSearch || undefined },
+      })
+      .then((res) => {
+        if (!alive) return;
+        if (isPagedResponse<Parish>(res.data)) {
+          setFilterParishHits(res.data.items);
+          setFilterParishTotal(res.data.total);
+        } else {
+          // Servidor antigo (ignora `page`): lista inteira; o SearchSelect filtra
+          setFilterParishHits(Array.isArray(res.data) ? res.data : []);
+          setFilterParishTotal(null);
+        }
+      })
+      .catch(() => {
+        if (alive) setFilterParishHits([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [serverMode, debouncedFilterParishSearch]);
+  const pickFilterParish = (id: string) => {
+    setSelectedFilterParish(id ? filterParishHits.find((parish) => parish.id === id) ?? null : null);
+    setFilterParish(id);
+  };
+  // A paróquia escolhida continua no seletor mesmo fora do resultado da busca atual
+  const filterParishOptions = [
+    ...(selectedFilterParish && !filterParishHits.some((parish) => parish.id === selectedFilterParish.id)
+      ? [selectedFilterParish]
+      : []),
+    ...filterParishHits,
+  ].map((parish) => {
+    const patron = parishPatrons[parish.id]?.[0];
+    return { ...parishOption(parish), icon: patron ? <SaintAvatar saint={patron.saint} small /> : undefined };
+  });
+  const filterParishFooter =
+    filterParishTotal !== null && filterParishTotal > filterParishHits.length
+      ? `${filterParishHits.length} de ${filterParishTotal.toLocaleString('pt-BR')} — digite para refinar a busca`
+      : undefined;
+
   const [formData, setFormData] = useState({
     name: '',
     address: '',
@@ -142,7 +199,13 @@ const CommunitiesPage: React.FC = () => {
     setListLoading(true);
     try {
       const { data } = await api.get('/communities', {
-        params: { page: currentPage, pageSize: itemsPerPage, search: debouncedSearch || undefined },
+        params: {
+          page: currentPage,
+          pageSize: itemsPerPage,
+          search: debouncedSearch || undefined,
+          // Filtro por paróquia dentro do escopo (o servidor aceita junto com `page`)
+          parishId: filterParish || undefined,
+        },
       });
       if (seq !== requestSeq.current) return;
       if (isPagedResponse<Community>(data)) {
@@ -161,7 +224,7 @@ const CommunitiesPage: React.FC = () => {
         setLoading(false);
       }
     }
-  }, [currentPage, itemsPerPage, debouncedSearch]);
+  }, [currentPage, itemsPerPage, debouncedSearch, filterParish]);
 
   useEffect(() => {
     if (serverMode) fetchPage();
@@ -564,8 +627,19 @@ const CommunitiesPage: React.FC = () => {
             className="search-input"
             aria-label="Buscar comunidades"
           />
-          {/* Paginado no servidor não há filtro por paróquia: a busca cobre nome e cidade */}
-          {!serverPaged && (
+          {/* Escopo amplo: paróquias buscadas no servidor; filtro enviado como `parishId` */}
+          {serverMode ? (
+            <SearchSelect
+              options={filterParishOptions}
+              value={filterParish}
+              onChange={pickFilterParish}
+              placeholder="Todas as paróquias"
+              allOption
+              searchPlaceholder="Buscar paróquia ou cidade..."
+              onSearchChange={filterParishTotal !== null ? setFilterParishSearch : undefined}
+              footer={filterParishFooter}
+            />
+          ) : (
             <SearchSelect
               options={parishOptions}
               value={filterParish}

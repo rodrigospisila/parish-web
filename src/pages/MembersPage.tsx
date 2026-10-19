@@ -11,8 +11,8 @@ import { useAuth } from '../contexts/AuthContext';
 import TempPasswordModal from '../components/TempPasswordModal';
 import api, { getErrorMessage } from '../services/api';
 import { civilDateInputValue, civilDateToIso, formatBirthDate } from '../utils/dateFormat';
-import { formatPhoneDisplay, maskBrPhone, phoneForApi } from '../utils/phone';
-import { canManageUserTarget, USER_MANAGER_ROLES } from '../utils/userManagement';
+import { formatPhoneDisplay, maskBrPhone, phoneForApi, phoneForApiOnEdit, phoneInputValue } from '../utils/phone';
+import { canIssueTempPassword, USER_MANAGER_ROLES } from '../utils/userManagement';
 import {
   csvInstantDate,
   downloadCsv,
@@ -281,9 +281,14 @@ const MembersPage: React.FC = () => {
         memberType: formData.memberType || undefined,
         // Data civil: meia-noite UTC do dia digitado (exibida sempre pela parte AAAA-MM-DD)
         birthDate: civilDateToIso(formData.birthDate),
-        // +55DDNÚMERO (o backend normaliza de novo)
-        phone: phoneForApi(formData.phone),
-        emergencyContactPhone: phoneForApi(formData.emergencyContactPhone),
+        // +55DDNÚMERO (o backend normaliza de novo). Na edição, campo intocado não
+        // é enviado: telefone gravado fora do padrão não pode ser reescrito.
+        phone: editingMember
+          ? phoneForApiOnEdit(formData.phone, editingMember.phone)
+          : phoneForApi(formData.phone),
+        emergencyContactPhone: editingMember
+          ? phoneForApiOnEdit(formData.emergencyContactPhone, editingMember.emergencyContactPhone)
+          : phoneForApi(formData.emergencyContactPhone),
         // Cônjuge: null remove o vínculo (o backend sincroniza os dois lados)
         spouseId: formData.spouseId || null,
         // Responsável (pai/mãe): obrigatório p/ menores na catequese
@@ -325,7 +330,7 @@ const MembersPage: React.FC = () => {
       occupation: member.occupation || '',
       notes: member.notes || '',
       email: member.email || '',
-      phone: maskBrPhone(member.phone) || member.phone || '',
+      phone: phoneInputValue(member.phone),
       zipCode: member.zipCode || '',
       street: member.street || '',
       number: member.number || '',
@@ -341,7 +346,7 @@ const MembersPage: React.FC = () => {
       status: member.status,
       memberType: member.memberType || '',
       emergencyContactName: member.emergencyContactName || '',
-      emergencyContactPhone: maskBrPhone(member.emergencyContactPhone) || member.emergencyContactPhone || '',
+      emergencyContactPhone: phoneInputValue(member.emergencyContactPhone),
       emergencyContactRelation: member.emergencyContactRelation || '',
     });
     setShowModal(true);
@@ -451,7 +456,11 @@ const MembersPage: React.FC = () => {
     setCheckingAccount(true);
     try {
       const { data: account } = await api.get(`/users/${member.userId}`);
-      if (!canManageUserTarget(authUser, account)) {
+      if (account.id === authUser?.id) {
+        notify.warning('Esta é a sua própria conta. Para trocar a sua senha, use Segurança, no menu da sua conta.');
+        return;
+      }
+      if (!canIssueTempPassword(authUser, account)) {
         notify.warning(
           'Esta conta tem papel igual ou acima do seu, ou está fora do seu escopo. Peça a quem administra a paróquia.',
         );
@@ -1208,7 +1217,7 @@ const MembersPage: React.FC = () => {
                   </div>
                 </div>
 
-                {editingMember?.userId && canResetAccounts && (
+                {editingMember?.userId && editingMember.userId !== authUser?.id && canResetAccounts && (
                   <div className="form-group" style={{ marginTop: '0.5rem' }}>
                     <label>Acesso ao app</label>
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>

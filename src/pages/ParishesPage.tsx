@@ -85,20 +85,18 @@ const ParishesPage: React.FC = () => {
   /**
    * Escopo amplo (plataforma ~12,8 mil paróquias; diocese): lista paginada no
    * servidor (`page`, `pageSize`, `search` sem acento por nome/cidade) com
-   * debounce. Filtro por diocese usa a lista leve `?dioceseId=` (no máximo
-   * algumas centenas), filtrada aqui. Servidor antigo que ignora `page`
-   * devolve tudo — a tela volta ao modo local.
+   * debounce. O filtro por diocese vai junto (`dioceseId` + `page`): a lista
+   * leve `?dioceseId=` sem `page` é a cascata (só ativas, sem endereço,
+   * telefone, e-mail e data) e não serve para a gestão nem para o CSV.
+   * Servidor antigo que ignora `page` devolve tudo — a tela volta ao modo local.
    */
   const serverMode = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN'].includes(currentUser?.role ?? '');
   const [pagedByServer, setPagedByServer] = useState(false);
   const [serverTotal, setServerTotal] = useState(0);
   const [listLoading, setListLoading] = useState(false);
   const debouncedSearch = useDebouncedValue(searchTerm.trim(), 350);
-  const serverPaged = serverMode && !filterDiocese && pagedByServer;
+  const serverPaged = serverMode && pagedByServer;
   const requestSeq = useRef(0);
-  // Nome da diocese na lista leve (sem refazer a busca quando as dioceses chegam)
-  const diocesesRef = useRef<Diocese[]>([]);
-  diocesesRef.current = dioceses;
 
   const [formData, setFormData] = useState({
     name: '',
@@ -116,25 +114,18 @@ const ParishesPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Lista do escopo amplo: página do servidor ou, com diocese escolhida, a lista leve dela. */
+  /** Lista do escopo amplo: página do servidor (com a diocese escolhida como filtro). */
   const fetchServerList = useCallback(async () => {
     const seq = ++requestSeq.current;
     setListLoading(true);
     try {
-      if (filterDiocese) {
-        const { data } = await api.get('/parishes', { params: { dioceseId: filterDiocese } });
-        if (seq !== requestSeq.current) return;
-        const diocese = diocesesRef.current.find((d) => d.id === filterDiocese);
-        setParishes(
-          (Array.isArray(data) ? data : []).map((parish: any) => ({
-            ...parish,
-            diocese: parish.diocese ?? { id: filterDiocese, name: diocese?.name ?? '' },
-          })),
-        );
-        return;
-      }
       const { data } = await api.get('/parishes', {
-        params: { page: currentPage, pageSize: itemsPerPage, search: debouncedSearch || undefined },
+        params: {
+          page: currentPage,
+          pageSize: itemsPerPage,
+          search: debouncedSearch || undefined,
+          dioceseId: filterDiocese || undefined,
+        },
       });
       if (seq !== requestSeq.current) return;
       if (isPagedResponse<Parish>(data)) {

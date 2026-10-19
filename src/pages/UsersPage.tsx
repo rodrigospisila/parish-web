@@ -7,8 +7,8 @@ import { avatarColor, initials } from '../components/SaintAvatar';
 import TempPasswordModal from '../components/TempPasswordModal';
 import api, { getErrorMessage } from '../services/api';
 import { scopeCommunityIdOf } from '../utils/userScope';
-import { canManageUserTarget } from '../utils/userManagement';
-import { formatPhoneDisplay, maskBrPhone, phoneForApi } from '../utils/phone';
+import { canIssueTempPassword, canManageUserTarget } from '../utils/userManagement';
+import { formatPhoneDisplay, maskBrPhone, phoneForApi, phoneForApiOnEdit, phoneInputValue } from '../utils/phone';
 import { csvInstantDate, downloadCsv } from '../utils/csvExport';
 import './UsersPage.css';
 
@@ -454,8 +454,11 @@ const UsersPage: React.FC = () => {
       const dataToSend: any = {
         name: formData.name,
         email: formData.email,
-        // +55DDNÚMERO: o login pelo celular procura o número nesse formato
-        phone: phoneForApi(formData.phone),
+        // +55DDNÚMERO: o login pelo celular procura o número nesse formato. Na
+        // edição, campo intocado não é enviado (telefone gravado fica intacto).
+        phone: editingUser
+          ? phoneForApiOnEdit(formData.phone, editingUser.phone)
+          : phoneForApi(formData.phone),
         role: formData.role,
         // Cargo eclesiástico: valor selecionado ou null para limpar
         clergyTitle: formData.clergyTitle || null,
@@ -516,7 +519,7 @@ const UsersPage: React.FC = () => {
     setFormData({
       name: user.name,
       email: user.email,
-      phone: maskBrPhone(user.phone) || user.phone || '',
+      phone: phoneInputValue(user.phone),
       password: '',
       role: user.role,
       clergyTitle: user.clergyTitle || '',
@@ -1041,13 +1044,16 @@ const UsersPage: React.FC = () => {
                     <button className="entity-btn accent" onClick={() => handleToggleActive(user)}>
                       {user.isActive ? 'Desativar' : 'Ativar'}
                     </button>
-                    <button
-                      className="entity-btn"
-                      onClick={() => setTempPasswordTarget(user)}
-                      title="Gerar uma senha provisória (a pessoa troca no primeiro acesso)"
-                    >
-                      Gerar senha provisória
-                    </button>
+                    {/* Nunca na própria linha (o reset derruba a sessão aberta) */}
+                    {canIssueTempPassword(currentUser, user) && (
+                      <button
+                        className="entity-btn"
+                        onClick={() => setTempPasswordTarget(user)}
+                        title="Gerar uma senha provisória (a pessoa troca no primeiro acesso)"
+                      >
+                        Gerar senha provisória
+                      </button>
+                    )}
                     {canResetTwoFactor && (
                       <button
                         className="entity-btn"
@@ -1144,14 +1150,16 @@ const UsersPage: React.FC = () => {
                           >
                             {user.isActive ? '🚫' : '✅'}
                           </button>
-                          <button
-                            className="entity-icon-btn"
-                            onClick={() => setTempPasswordTarget(user)}
-                            title="Gerar senha provisória"
-                            aria-label={`Gerar senha provisória para ${user.name}`}
-                          >
-                            🔑
-                          </button>
+                          {canIssueTempPassword(currentUser, user) && (
+                            <button
+                              className="entity-icon-btn"
+                              onClick={() => setTempPasswordTarget(user)}
+                              title="Gerar senha provisória"
+                              aria-label={`Gerar senha provisória para ${user.name}`}
+                            >
+                              🔑
+                            </button>
+                          )}
                           {canResetTwoFactor && (
                             <button
                               className="entity-icon-btn"
