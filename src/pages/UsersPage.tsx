@@ -10,6 +10,9 @@ import { scopeCommunityIdOf } from '../utils/userScope';
 import { canIssueTempPassword, canManageUserTarget } from '../utils/userManagement';
 import { formatPhoneDisplay, maskBrPhone, phoneForApi, phoneForApiOnEdit, phoneInputValue } from '../utils/phone';
 import { csvInstantDate, downloadCsv } from '../utils/csvExport';
+import InviteModal from '../components/team/InviteModal';
+import InvitesPanel from '../components/team/InvitesPanel';
+import { invitableRoles } from '../components/team/teamApi';
 import './UsersPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -122,6 +125,10 @@ const UsersPage: React.FC = () => {
   const [filterCommunityId, setFilterCommunityId] = useState('');
   // Conta que vai receber a senha provisória (modal com confirmação)
   const [tempPasswordTarget, setTempPasswordTarget] = useState<User | null>(null);
+  // Convite por link (Onda 1 — C2): ação principal; senha manual vira opção avançada
+  const [activeTab, setActiveTab] = useState<'users' | 'invites'>('users');
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteRefresh, setInviteRefresh] = useState(0);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -813,6 +820,9 @@ const UsersPage: React.FC = () => {
     return filteredAndSortedUsers.slice(start, start + itemsPerPage);
   }, [filteredAndSortedUsers, currentPage, itemsPerPage]);
 
+  const canInvite = invitableRoles(currentUser as any).length > 0;
+  const communityNameById = Object.fromEntries(communities.map((community) => [community.id, community.name]));
+
   if (loading) return <div className="loading">Carregando...</div>;
 
   if (!canManageUsers) {
@@ -832,11 +842,67 @@ const UsersPage: React.FC = () => {
           <button className="btn-export" onClick={handleExportCSV} title="Exportar CSV">
             Exportar
           </button>
-          <button className="btn-primary" onClick={() => setShowModal(true)}>
-            + Novo Usuário
+          <button
+            className="btn-export"
+            onClick={() => setShowModal(true)}
+            title="Opção avançada: você define a senha e a repassa à pessoa"
+          >
+            Criar com senha
           </button>
+          {canInvite && (
+            <button className="btn-primary" onClick={() => setShowInvite(true)}>
+              + Convidar
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Usuários | Convites (C2) */}
+      <div className="module-tabs" role="tablist" aria-label="Usuários e convites">
+        <button
+          type="button"
+          role="tab"
+          id="users-tab-users"
+          aria-selected={activeTab === 'users'}
+          aria-controls="users-panel-users"
+          className={`tab-btn${activeTab === 'users' ? ' active' : ''}`}
+          onClick={() => setActiveTab('users')}
+        >
+          Usuários
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="users-tab-invites"
+          aria-selected={activeTab === 'invites'}
+          aria-controls="users-panel-invites"
+          className={`tab-btn${activeTab === 'invites' ? ' active' : ''}`}
+          onClick={() => setActiveTab('invites')}
+        >
+          Convites
+        </button>
+      </div>
+
+      {activeTab === 'invites' && (
+        <div role="tabpanel" id="users-panel-invites" aria-labelledby="users-tab-invites">
+          <InvitesPanel
+            parishId={wideScope ? undefined : currentUser?.parishId}
+            communityId={currentUser?.role === 'COMMUNITY_COORDINATOR' ? actorScopeCommunityId : undefined}
+            refreshKey={inviteRefresh}
+            communityNames={communityNameById}
+          />
+        </div>
+      )}
+
+      {showInvite && (
+        <InviteModal
+          onClose={() => setShowInvite(false)}
+          onCreated={() => setInviteRefresh((value) => value + 1)}
+        />
+      )}
+
+      {activeTab === 'users' && (
+      <div role="tabpanel" id="users-panel-users" aria-labelledby="users-tab-users">
 
       {/* Filtros e Controles */}
       <div className="filters-section">
@@ -1224,6 +1290,9 @@ const UsersPage: React.FC = () => {
         </div>
       )}
 
+      </div>
+      )}
+
       {tempPasswordTarget && (
         <TempPasswordModal
           userId={tempPasswordTarget.id}
@@ -1236,7 +1305,25 @@ const UsersPage: React.FC = () => {
       {showModal && (
         <div className="modal-overlay" onClick={() => { setShowModal(false); resetForm(); }}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h2>{editingUser ? 'Editar Usuário' : 'Novo Usuário'}</h2>
+            <h2>{editingUser ? 'Editar Usuário' : 'Criar usuário com senha'}</h2>
+            {!editingUser && canInvite && (
+              <p style={{ margin: '0 0 1rem', fontSize: '0.88rem', color: '#52606d', lineHeight: 1.45 }}>
+                Opção avançada: você define a senha e a repassa à pessoa.{' '}
+                <button
+                  type="button"
+                  className="btn-link"
+                  style={{ background: 'none', border: 'none', color: '#075aa9', padding: 0, cursor: 'pointer', textDecoration: 'underline', font: 'inherit' }}
+                  onClick={() => {
+                    setShowModal(false);
+                    resetForm();
+                    setShowInvite(true);
+                  }}
+                >
+                  Prefira convidar por link
+                </button>{' '}
+                — a pessoa cria a própria senha.
+              </p>
+            )}
             <form onSubmit={handleSubmit}>
               <div className="form-group">
                 <label>Nome *</label>

@@ -416,3 +416,72 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
+
+/* ── Onda 1: visão geral, reivindicações, leads, avisos e uso ── */
+.platform-page .pf-ov-titulo { margin: 0.25rem 0 0.5rem; }
+.platform-page .pf-ov-duas {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin: 0.5rem 0 1rem;
+}
+.platform-page .pf-ov-jobs h3 { display: flex; align-items: center; gap: 8px; }
+.platform-page .pf-ov-atalhos { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+
+.platform-page .pf-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.platform-page .pf-claim-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+.platform-page .pf-claim-topo .pf-nome { font-size: 16px; }
+.platform-page .pf-claim .pf-dl { grid-template-columns: 130px 1fr; }
+.platform-page .pf-claim .pf-dl a { color: #075aa9; }
+.platform-page .pf-convite {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #eef8f1;
+  border: 1px solid #c9e7d5;
+  color: #1f4d33;
+}
+.platform-page .pf-convite input {
+  width: 100%;
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  border: 1px solid #c9e7d5;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  background: #fff;
+}
+.platform-page .pf-confirma { align-items: center; }
+.platform-page .pf-confirma .pf-meta { flex: 1 1 260px; margin: 0; color: #17324d; font-weight: 600; }
+
+.platform-page .pf-lead-msg {
+  max-width: 360px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
+}
+.platform-page .pf-lead-nota { color: #3e4c59; }
+.platform-page .data-table a.pf-sub { color: #075aa9; }
+.platform-page select.pf-lead-status {
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 8px;
+}
+.platform-page .pf-anuncio-corpo {
+  max-width: 460px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .platform-page .pf-ov-duas { grid-template-columns: 1fr; }
+  .platform-page .pf-claim .pf-dl { grid-template-columns: 1fr; }
+  .platform-page .pf-claim .pf-dl dd { margin-bottom: 4px; }
+}

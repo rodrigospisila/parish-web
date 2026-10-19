@@ -1,14 +1,43 @@
 import React, { useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import UserPhotoAvatar from './UserPhotoAvatar';
 import api from '../services/api';
-import { installPlanErrorHandler, PLAN_REQUIRED_EVENT, type PlanRequiredDetail } from '../services/planErrors';
+import { installPlanErrorHandler, managesPlan, MY_PLAN_PATH, PLAN_REQUIRED_EVENT, type PlanRequiredDetail } from '../services/planErrors';
+import { trackOnce } from '../services/analytics';
 import { usePlanEntitlements } from '../hooks/usePlanEntitlements';
 import { useModuleAccess } from '../hooks/useModuleAccess';
 import { COORDINATION_ROLES, canOpen } from './accessRules';
 import ErrorBoundary from './ErrorBoundary';
 import './AdminLayout.css';
+
+/** Aviso da plataforma (GET /announcements/active — saas-implantacao-29). */
+interface PlatformAnnouncement {
+  id: string;
+  title: string;
+  body: string;
+  kind?: 'NEWS' | 'MAINTENANCE' | 'INCIDENT' | string;
+}
+
+const DISMISSED_KEY = 'parish.dismissedAnnouncements';
+
+/** Ids dos avisos dispensados neste navegador (localStorage pode falhar: aba privada etc.). */
+function readDismissed(): string[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(DISMISSED_KEY) || '[]');
+    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeDismissed(ids: string[]) {
+  try {
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify(ids.slice(-100)));
+  } catch {
+    // sem armazenamento: o aviso some só nesta sessão
+  }
+}
 
 // Aviso amigável para 403 PLAN_REQUIRED/PLAN_SCOPE/PLAN_MEMBER_LIMIT (uma vez
 // por app; o main.tsx já instala — aqui é só garantia, é idempotente)
@@ -86,13 +115,50 @@ const AdminLayout: React.FC = () => {
 
   // Aviso de recurso fora do plano (o interceptor dispara; some ao trocar de tela)
   const location = useLocation();
-  const [planNotice, setPlanNotice] = useState<string | null>(null);
+  const [planNotice, setPlanNotice] = useState<PlanRequiredDetail | null>(null);
   useEffect(() => {
-    const onPlan = (event: Event) => setPlanNotice((event as CustomEvent<PlanRequiredDetail>).detail?.message ?? null);
+    const onPlan = (event: Event) => setPlanNotice((event as CustomEvent<PlanRequiredDetail>).detail ?? null);
     window.addEventListener(PLAN_REQUIRED_EVENT, onPlan);
     return () => window.removeEventListener(PLAN_REQUIRED_EVENT, onPlan);
   }, []);
   useEffect(() => setPlanNotice(null), [location.pathname]);
+
+  // Uso do produto (só agregados): abriu o Início do painel
+  useEffect(() => {
+    if (location.pathname === '/admin/dashboard') trackOnce('web_dashboard');
+  }, [location.pathname]);
+
+  // Avisos da plataforma (novidade, manutenção, incidente), dispensáveis por aviso
+  const [announcements, setAnnouncements] = useState<PlatformAnnouncement[]>([]);
+  const [dismissed, setDismissed] = useState<string[]>(() => readDismissed());
+  useEffect(() => {
+    if (!user?.id) return;
+    let active = true;
+    api
+      .get('/announcements/active')
+      .then((res) => {
+        if (!active) return;
+        const list = Array.isArray(res.data) ? res.data : Array.isArray(res.data?.items) ? res.data.items : [];
+        setAnnouncements(
+          list.filter((a: any) => a && typeof a.id === 'string' && typeof a.title === 'string').slice(0, 5),
+        );
+      })
+      .catch(() => {
+        if (active) setAnnouncements([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
+  const visibleAnnouncements = announcements.filter((a) => !dismissed.includes(a.id));
+  const dismissAnnouncement = (id: string) => {
+    const next = [...readDismissed().filter((x) => x !== id), id];
+    writeDismissed(next);
+    setDismissed(next);
+  };
+
+  // "Meu plano": administração da paróquia (e diocese/plataforma, com seletor)
+  const canSeeMyPlan = managesPlan(user?.role ?? '');
 
   // Banner "teste até dd/mm" nos 15 dias finais — para quem administra ou
   // coordena, e só com o bloqueio ligado (no modo log o fim do teste não muda nada)
@@ -164,6 +230,11 @@ const AdminLayout: React.FC = () => {
           {can('members') && (
             <NavLink to="/admin/members" className="nav-link">
               <NavIcon name="membros" /> Membros
+            </NavLink>
+          )}
+          {can('members') && ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(user?.role ?? '') && (
+            <NavLink to="/admin/importar" className="nav-link">
+              <NavIcon name="documento" /> Importar planilha
             </NavLink>
           )}
           {can('events') && (
@@ -257,7 +328,7 @@ const AdminLayout: React.FC = () => {
             </>
           )}
 
-          {(can('finance') || can('sacrament-processes') || can('users') || can('audit') || isSystemAdmin) && (
+          {(can('finance') || can('sacrament-processes') || can('users') || can('audit') || isSystemAdmin || canSeeMyPlan) && (
             <span className="nav-section-label">Gestão</span>
           )}
           {can('finance') && (
@@ -280,6 +351,16 @@ const AdminLayout: React.FC = () => {
               <NavIcon name="documento" /> Auditoria
             </NavLink>
           )}
+          {canSeeMyPlan && !isSystemAdmin && (
+            <NavLink to={MY_PLAN_PATH} className="nav-link">
+              <NavIcon name="dizimo" /> Meu plano
+            </NavLink>
+          )}
+          {user?.role === 'PARISH_ADMIN' && (
+            <NavLink to="/admin/minha-paroquia" className="nav-link">
+              <NavIcon name="paroquia" /> Minha paróquia
+            </NavLink>
+          )}
           {can('settings') && (
             <NavLink to="/admin/settings" className="nav-link">
               <NavIcon name="planejamento" /> Configurações
@@ -289,6 +370,15 @@ const AdminLayout: React.FC = () => {
           {can('platform') && (
             <>
               <span className="nav-section-label">Plataforma</span>
+              <NavLink to="/admin/platform" end className="nav-link">
+                <NavIcon name="planejamento" /> Visão geral
+              </NavLink>
+              <NavLink to="/admin/platform/claims" className="nav-link">
+                <NavIcon name="paroquia" /> Reivindicações
+              </NavLink>
+              <NavLink to="/admin/platform/leads" className="nav-link">
+                <NavIcon name="usuarios" /> Leads
+              </NavLink>
               <NavLink to="/admin/map" className="nav-link">
                 <NavIcon name="comunidade" /> Mapa do território
               </NavLink>
@@ -300,6 +390,12 @@ const AdminLayout: React.FC = () => {
               </NavLink>
               <NavLink to="/admin/platform/plans" className="nav-link">
                 <NavIcon name="dizimo" /> Planos
+              </NavLink>
+              <NavLink to="/admin/platform/usage" className="nav-link">
+                <NavIcon name="planejamento" /> Uso do produto
+              </NavLink>
+              <NavLink to="/admin/platform/announcements" className="nav-link">
+                <NavIcon name="sino" /> Avisos aos clientes
               </NavLink>
             </>
           )}
@@ -326,6 +422,26 @@ const AdminLayout: React.FC = () => {
       </aside>
 
       <main className="main-content">
+        {visibleAnnouncements.map((a) => (
+          <div
+            key={a.id}
+            className={`platform-announcement platform-announcement-${String(a.kind ?? 'NEWS').toLowerCase()}`}
+            role={a.kind === 'INCIDENT' ? 'alert' : 'status'}
+          >
+            <div className="platform-announcement-text">
+              <strong>{a.title}</strong>
+              {a.body && <span>{a.body}</span>}
+            </div>
+            <button
+              type="button"
+              className="plan-banner-close"
+              onClick={() => dismissAnnouncement(a.id)}
+              aria-label={`Dispensar o aviso: ${a.title}`}
+            >
+              ×
+            </button>
+          </div>
+        ))}
         {trials.length > 0 && (
           <div className="plan-banner plan-banner-trial" role="status">
             {trials.length === 1
@@ -333,11 +449,29 @@ const AdminLayout: React.FC = () => {
               : `Testes do plano terminando: ${trials.map((t) => `${t.communityName} (${dataCurta(t.trialEndsAt)})`).join(', ')}. `}
             Depois disso, pastorais, escalas, catequese, formação, espaços, visitas e documentos dependem do plano da
             comunidade; calendário, mapa e liturgia continuam liberados.
+            {canSeeMyPlan && (
+              <>
+                {' '}
+                <Link to={MY_PLAN_PATH} className="plan-banner-link">
+                  Ver meu plano
+                </Link>
+              </>
+            )}
           </div>
         )}
         {planNotice && (
           <div className="plan-banner" role="alert">
-            <span>{planNotice}</span>
+            <span>
+              {planNotice.message}
+              {planNotice.action && (
+                <>
+                  {' '}
+                  <Link to={planNotice.action.href} className="plan-banner-link">
+                    {planNotice.action.label}
+                  </Link>
+                </>
+              )}
+            </span>
             <button type="button" className="plan-banner-close" onClick={() => setPlanNotice(null)} aria-label="Fechar aviso">
               ×
             </button>

@@ -49,6 +49,27 @@ import { ROUTE_ACCESS, coordinatesAnyPastoral, roleAllows, type AccessRule } fro
 import { loadDisabledModules, useModuleAccess } from './hooks/useModuleAccess';
 import DonatePage from './pages/public/DonatePage';
 import GiftStatusPage from './pages/public/GiftStatusPage';
+// Onda 1 (WEB-B): site de vendas, "Meu plano" e painel da plataforma
+import { LandingRoute } from './pages/public/LandingPage';
+import MyPlanPage, { MY_PLAN_ACCESS } from './pages/MyPlanPage';
+import OverviewPage from './pages/platform/OverviewPage';
+import ClaimsPage from './pages/platform/ClaimsPage';
+import LeadsPage from './pages/platform/LeadsPage';
+import AnnouncementsPage from './pages/platform/AnnouncementsPage';
+import UsagePage from './pages/platform/UsagePage';
+// Onda 1 (WEB-A): reivindicação, convite, importação e "Minha paróquia"
+import ClaimParishPage from './pages/public/ClaimParishPage';
+import InviteAcceptPage from './pages/public/InviteAcceptPage';
+import ImportPage from './pages/ImportPage';
+import MyParishPage from './pages/MyParishPage';
+
+/** Importação de planilha: mesmos papéis do POST /members/import (Onda 1). */
+const IMPORT_ACCESS: AccessRule = {
+  roles: ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'],
+  module: 'members',
+};
+/** Minha paróquia (dados/CNPJ, exportação, encerramento): administração paroquial. */
+const MY_PARISH_ACCESS: AccessRule = { roles: ['PARISH_ADMIN'] };
 
 /** Carregando discreto (sem "Carregando..." cru no canto da tela). */
 const RouteLoading: React.FC = () => (
@@ -155,7 +176,11 @@ const AdminIndexRedirect: React.FC = () => {
   const { user } = useAuth();
   const role = user?.role ?? '';
   // Coordenação cai nas pendências (Onda 4); administração segue na estrutura
-  if (['SYSTEM_ADMIN', 'DIOCESAN_ADMIN'].includes(role)) {
+  // Plataforma entra pela visão geral (ux-acesso-31); diocese segue na estrutura
+  if (role === 'SYSTEM_ADMIN') {
+    return <Navigate to="/admin/platform" replace />;
+  }
+  if (role === 'DIOCESAN_ADMIN') {
     return <Navigate to="/admin/communities" replace />;
   }
   // Quem coordena pastoral pelo vínculo (papel VOLUNTEER/FAITHFUL) também cai
@@ -194,6 +219,10 @@ const App: React.FC = () => {
           {/* Doação pública (Dízimo D4.6): sem login, layout próprio */}
           <Route path="/doar/recibo/:token" element={<GiftStatusPage />} />
           <Route path="/doar/:parishId" element={<DonatePage />} />
+
+          {/* Onda 1 (WEB-A): "esta paróquia é minha" e aceite de convite de equipe — sem login */}
+          <Route path="/reivindicar/:parishId" element={<ClaimParishPage />} />
+          <Route path="/convite/:token" element={<InviteAcceptPage />} />
           
           <Route
             path="/admin"
@@ -233,6 +262,38 @@ const App: React.FC = () => {
             <Route path="map" element={
               <RequireAccess rule={ROUTE_ACCESS.map}>
                 <TerritoryMapPage />
+              </RequireAccess>
+            } />
+            {/* Plataforma (SYSTEM_ADMIN): visão geral, reivindicações, leads, avisos e uso (Onda 1) */}
+            <Route path="platform" element={
+              <RequireAccess rule={ROUTE_ACCESS.platform}>
+                <OverviewPage />
+              </RequireAccess>
+            } />
+            <Route path="platform/claims" element={
+              <RequireAccess rule={ROUTE_ACCESS.platform}>
+                <ClaimsPage />
+              </RequireAccess>
+            } />
+            <Route path="platform/leads" element={
+              <RequireAccess rule={ROUTE_ACCESS.platform}>
+                <LeadsPage />
+              </RequireAccess>
+            } />
+            <Route path="platform/announcements" element={
+              <RequireAccess rule={ROUTE_ACCESS.platform}>
+                <AnnouncementsPage />
+              </RequireAccess>
+            } />
+            <Route path="platform/usage" element={
+              <RequireAccess rule={ROUTE_ACCESS.platform}>
+                <UsagePage />
+              </RequireAccess>
+            } />
+            {/* Meu plano (Onda 1): planos, cobranças e contratação da paróquia */}
+            <Route path="meu-plano" element={
+              <RequireAccess rule={MY_PLAN_ACCESS}>
+                <MyPlanPage />
               </RequireAccess>
             } />
             {/* Plataforma (SYSTEM_ADMIN): sugestões dos fiéis, crescimento e planos */}
@@ -275,6 +336,17 @@ const App: React.FC = () => {
             <Route path="users" element={
               <RequireAccess rule={ROUTE_ACCESS.users}>
                 <UsersPage />
+              </RequireAccess>
+            } />
+            {/* Onda 1 (WEB-A): assistente de importação e "Minha paróquia" */}
+            <Route path="importar" element={
+              <RequireAccess rule={IMPORT_ACCESS}>
+                <ImportPage />
+              </RequireAccess>
+            } />
+            <Route path="minha-paroquia" element={
+              <RequireAccess rule={MY_PARISH_ACCESS}>
+                <MyParishPage />
               </RequireAccess>
             } />
             {/* Governança de acesso (D4.7): segurança da conta e auditoria escopada */}
@@ -374,7 +446,8 @@ const App: React.FC = () => {
             } />
           </Route>
 
-          <Route path="/" element={<Navigate to="/admin" replace />} />
+          {/* Site de vendas (Onda 1); quem está logado segue para o painel */}
+          <Route path="/" element={<LandingRoute />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
         

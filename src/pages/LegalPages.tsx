@@ -1,9 +1,9 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+// Suporte configurável (VITE_SUPPORT_EMAIL / VITE_SUPPORT_WHATSAPP); sem env, o e-mail de sempre
+import { SUPPORT_EMAIL, SUPPORT_WHATSAPP_LABEL, supportWhatsappUrl } from './public/LandingSupport';
 
 const UPDATED = '23 de julho de 2026';
-// TODO: troque pelo e-mail de suporte real antes de submeter à Apple/Google.
-const SUPPORT_EMAIL = 'suporte@parish.app';
 
 const shell: React.CSSProperties = {
   maxWidth: 760,
@@ -19,7 +19,7 @@ const back: React.CSSProperties = { color: '#075AA9', textDecoration: 'none', fo
 
 const Layout: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <div style={shell}>
-    <Link to="/login" style={back}>← Voltar</Link>
+    <Link to="/" style={back}>← Voltar</Link>
     <h1 style={h1}>{title}</h1>
     <p style={muted}>Parish — Gestão paroquial · Última atualização: {UPDATED}</p>
     {children}
@@ -117,6 +117,15 @@ export const SupportPage: React.FC = () => (
     <h2>Fale conosco</h2>
     <p>
       E-mail: <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a><br />
+      {supportWhatsappUrl() && (
+        <>
+          WhatsApp:{' '}
+          <a href={supportWhatsappUrl('Olá! Preciso de ajuda com o Parish.') ?? undefined} target="_blank" rel="noopener noreferrer">
+            {SUPPORT_WHATSAPP_LABEL}
+          </a>
+          <br />
+        </>
+      )}
       Respondemos, em geral, em até 2 dias úteis.
     </p>
 

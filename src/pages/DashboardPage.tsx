@@ -18,6 +18,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useModuleAccess } from '../hooks/useModuleAccess';
 import { ROUTE_ACCESS, canOpen, type RouteKey } from '../components/accessRules';
 import { isPagedResponse, useDebouncedValue } from '../utils/useDebouncedValue';
+import OnboardingChecklistCard from '../components/team/OnboardingChecklistCard';
 import './modules/ModulePages.css';
 import './DashboardPage.css';
 
@@ -611,6 +612,9 @@ const DashboardPage: React.FC = () => {
           </button>
         </div>
       </header>
+
+      {/* Primeiros passos (Onda 1): só a administração paroquial, até dispensar ou concluir */}
+      {isParishAdmin && user?.parishId && <OnboardingChecklistCard parishId={user.parishId} />}
 
       {loading && !overview && <div className="loading">Carregando o painel...</div>}
       {!loading && !overview && (

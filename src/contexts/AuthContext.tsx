@@ -35,6 +35,7 @@ function mapProfile(fresh: any): User {
     ...(fresh.scopeCommunityId !== undefined ? { scopeCommunityId: fresh.scopeCommunityId ?? null } : {}),
     pastoralIds: Array.isArray(fresh.pastoralIds) ? fresh.pastoralIds : [],
     ...(Array.isArray(fresh.coordinatedPastoralIds) ? { coordinatedPastoralIds: fresh.coordinatedPastoralIds } : {}),
+    ...(typeof fresh.parishHolder === 'boolean' ? { parishHolder: fresh.parishHolder } : {}),
     pastorals: Array.isArray(fresh.pastorals)
       ? fresh.pastorals.map((p: any) => ({ id: p.id, name: p.name, communityId: p.communityId, role: p.role }))
       : [],
@@ -83,6 +84,8 @@ export interface User {
   pastoralIds?: string[];
   /** Pastorais que COORDENA (backend novo) — é isto que libera a gestão */
   coordinatedPastoralIds?: string[];
+  /** Titular da paróquia (backend da Onda 1): convida titular, exporta e encerra a conta */
+  parishHolder?: boolean;
   pastorals?: {
     id: string;
     name: string;

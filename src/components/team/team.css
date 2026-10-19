@@ -1,0 +1,460 @@
+/* ===== Equipe: convites, checklist e cadastro rápido (Onda 1) ===== */
+
+.team-modal {
+  max-width: 600px;
+}
+
+.team-modal .team-modal__title {
+  margin: 0 0 0.35rem;
+  color: #17324d;
+  font-size: 1.3rem;
+}
+
+.team-modal .team-modal__lead {
+  margin: 0 0 1rem;
+  color: #52606d;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.team-roles {
+  border: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.team-roles legend {
+  font-size: 0.9rem;
+  color: #555;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+  padding: 0;
+}
+
+.team-role {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  border: 1px solid #d9e2ec;
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.4rem;
+  cursor: pointer;
+  background: #fff;
+}
+
+.team-role:hover {
+  border-color: #9fb3c8;
+}
+
+.team-role.is-active {
+  border-color: #075aa9;
+  background: #eef4fb;
+}
+
+.team-role input {
+  margin-top: 0.25rem;
+}
+
+.team-role__label {
+  font-weight: 700;
+  color: #17324d;
+  font-size: 0.92rem;
+}
+
+.team-role__desc {
+  color: #52606d;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.team-hint {
+  color: #66788c;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.team-error {
+  color: #b42318;
+  background: #fef3f2;
+  border: 1px solid #fecdca;
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.88rem;
+  margin-bottom: 0.75rem;
+}
+
+.team-info {
+  color: #17324d;
+  background: #eef4fb;
+  border: 1px solid #c6d9ef;
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.88rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.45;
+}
+
+.team-warning {
+  color: #6b4e00;
+  background: #fff8e6;
+  border: 1px solid #f2d59b;
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.88rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.45;
+}
+
+.team-share__row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-bottom: 0.75rem;
+}
+
+.team-share__row input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #ccd6e0;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+  background: #f8fafc;
+}
+
+.team-share__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.team-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  font-size: 0.92rem;
+  cursor: pointer;
+  background: #e9ecef;
+  color: #243b53;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.team-btn:hover:not(:disabled) {
+  background: #d9dee3;
+}
+
+.team-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.team-btn.is-primary {
+  background: #075aa9;
+  color: #fff;
+}
+
+.team-btn.is-primary:hover:not(:disabled) {
+  background: #05467f;
+}
+
+.team-btn.is-whatsapp {
+  background: #1f9d55;
+  color: #fff;
+}
+
+.team-btn.is-whatsapp:hover:not(:disabled) {
+  background: #17824a;
+}
+
+.team-btn.is-danger {
+  background: #fdecea;
+  color: #b42318;
+}
+
+.team-btn.is-small {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+}
+
+.team-btn:focus-visible,
+.team-role:focus-within {
+  outline: 3px solid #8fc1f0;
+  outline-offset: 2px;
+}
+
+/* ----- Lista de convites ----- */
+.team-invites {
+  background: #fff;
+  border: 1px solid #e4e9ef;
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.team-invites__filters {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.team-invites__filters select {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #ccd6e0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.team-invites table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.team-invites th,
+.team-invites td {
+  text-align: left;
+  padding: 0.55rem 0.5rem;
+  border-bottom: 1px solid #eef2f6;
+  vertical-align: top;
+}
+
+.team-invites th {
+  color: #52606d;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.team-invites__actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.team-invites__empty {
+  color: #66788c;
+  padding: 1rem 0.25rem;
+}
+
+.team-pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.team-pill.tone-pending {
+  background: #fff4e0;
+  color: #8a5a00;
+}
+
+.team-pill.tone-ok {
+  background: #e3f5ea;
+  color: #17643a;
+}
+
+.team-pill.tone-off {
+  background: #eef0f3;
+  color: #5b6876;
+}
+
+.team-pill.tone-none {
+  background: #f1f4f8;
+  color: #66788c;
+}
+
+@media (max-width: 720px) {
+  .team-invites table thead {
+    display: none;
+  }
+
+  .team-invites table,
+  .team-invites tbody,
+  .team-invites tr,
+  .team-invites td {
+    display: block;
+    width: 100%;
+  }
+
+  .team-invites tr {
+    border-bottom: 1px solid #e4e9ef;
+    padding: 0.5rem 0;
+  }
+
+  .team-invites td {
+    border: none;
+    padding: 0.2rem 0.25rem;
+  }
+}
+
+/* ----- Primeiros passos (Início do PARISH_ADMIN) ----- */
+.onb-card {
+  background: #fff;
+  border: 1px solid #d6e4f3;
+  border-radius: 14px;
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 1px 2px rgba(16, 42, 67, 0.05);
+}
+
+.onb-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.onb-card__title {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #17324d;
+}
+
+.onb-card__subtitle {
+  margin: 0.2rem 0 0;
+  color: #52606d;
+  font-size: 0.88rem;
+}
+
+.onb-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: #e6edf5;
+  overflow: hidden;
+  margin: 0.85rem 0 0.9rem;
+}
+
+.onb-progress__bar {
+  height: 100%;
+  background: linear-gradient(90deg, #075aa9, #2f80d1);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.onb-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.5rem;
+}
+
+.onb-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid #e4e9ef;
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  background: #fbfcfe;
+  color: #243b53;
+  text-decoration: none;
+  font-size: 0.9rem;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.onb-item:hover {
+  border-color: #9fb3c8;
+  background: #f3f7fc;
+}
+
+.onb-item:focus-visible {
+  outline: 3px solid #8fc1f0;
+  outline-offset: 2px;
+}
+
+.onb-item.is-done {
+  color: #52606d;
+  background: #f6fbf8;
+  border-color: #d3eadc;
+}
+
+.onb-item__check {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #9fb3c8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.onb-item.is-done .onb-item__check {
+  background: #1f9d55;
+  border-color: #1f9d55;
+}
+
+.onb-item__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.onb-item.is-done .onb-item__label {
+  text-decoration: line-through;
+  text-decoration-color: #9fb3c8;
+}
+
+.onb-item__count {
+  color: #66788c;
+  font-size: 0.8rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.team-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 1.25rem;
+}
+
+.team-modal .form-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  color: #444;
+}
+
+@media (max-width: 520px) {
+  .team-modal .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .team-actions > * {
+    flex: 1 1 auto;
+  }
+}

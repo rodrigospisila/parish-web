@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import TitleIcon from '../components/TitleIcon';
 import axios from 'axios';
 import { notify, confirm } from '../services/notification.service';
@@ -22,6 +23,12 @@ import {
   MEMBER_STATUS_CSV,
   MEMBER_TYPE_CSV,
 } from '../utils/csvExport';
+import { isPagedResponse, useDebouncedValue } from '../utils/useDebouncedValue';
+import InviteModal, { type InvitePreset } from '../components/team/InviteModal';
+import QuickMemberModal from '../components/team/QuickMemberModal';
+import MemberPickerSelect from '../components/team/MemberPickerSelect';
+import { dayMonth, invitableRoles } from '../components/team/teamApi';
+import '../components/team/team.css';
 import './MembersPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -64,6 +71,8 @@ interface Member {
   photoUrl?: string;
   /** Conta de acesso ligada ao cadastro (null quando não há conta ou foi anonimizado) */
   userId?: string | null;
+  /** Situação de acesso ao app (lista paginada do servidor novo — Onda 1, C5) */
+  access?: { state: 'NONE' | 'INVITED' | 'ACTIVE'; invitedAt?: string | null } | null;
   memberType?: MemberType;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
@@ -127,6 +136,30 @@ const statusChip = (status: MemberStatus) => (
   </span>
 );
 
+type AccessState = 'NONE' | 'INVITED' | 'ACTIVE';
+
+/** Acesso ao app: o do servidor novo ou, sem ele, deduzido da conta ligada (userId). */
+const accessOf = (member: Member): { state: AccessState; invitedAt?: string | null } | null => {
+  if (member.access?.state) return member.access;
+  if (member.userId) return { state: 'ACTIVE' };
+  if (member.userId === null) return { state: 'NONE' };
+  return null;
+};
+
+const accessChip = (member: Member) => {
+  const access = accessOf(member);
+  if (!access) return <span className="team-pill tone-none">—</span>;
+  if (access.state === 'ACTIVE') return <span className="team-pill tone-ok">Ativo no app</span>;
+  if (access.state === 'INVITED') {
+    return (
+      <span className="team-pill tone-pending">
+        Convidado{access.invitedAt ? ` em ${dayMonth(access.invitedAt)}` : ''}
+      </span>
+    );
+  }
+  return <span className="team-pill tone-none">Sem conta</span>;
+};
+
 const MEMBER_TYPE_LABELS: Record<MemberType, string> = {
   MEMBER: 'Membro',
   AGENT: 'Agente de pastoral',
@@ -186,6 +219,24 @@ const MembersPage: React.FC = () => {
   const [filterCommunity, setFilterCommunity] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
 
+  /**
+   * Lista paginada no servidor (Onda 1 — C5): GET /members?page&pageSize&search
+   * (sem acento; nome, telefone por dígitos, CPF) + communityId/status. O
+   * servidor antigo ignora `page` e devolve a lista inteira — a tela segue no
+   * modo local de sempre.
+   */
+  const [serverPaged, setServerPaged] = useState(false);
+  const serverPagedRef = useRef(false);
+  const [serverTotal, setServerTotal] = useState(0);
+  const [listLoading, setListLoading] = useState(false);
+  const debouncedSearch = useDebouncedValue(searchTerm.trim(), 350);
+  const requestSeq = useRef(0);
+
+  // Convite para o app e cadastro rápido (Onda 1)
+  const canInvite = invitableRoles(authUser as { role?: string; parishHolder?: boolean } | null).length > 0;
+  const [invitePreset, setInvitePreset] = useState<InvitePreset | null>(null);
+  const [showQuick, setShowQuick] = useState(false);
+
   // Padroeiros das comunidades — avatar nas opções do seletor de comunidade
   const { patronsByEntity: communityPatrons } = usePatronSaints('community');
   const communityOptions = communities.map((community) => {
@@ -244,25 +295,91 @@ const MembersPage: React.FC = () => {
     setCurrentPage(1);
   }, [searchTerm, filterCommunity, filterStatus, sortField, sortDirection]);
 
-  const fetchData = async () => {
+  const fetchMembers = useCallback(async () => {
+    const seq = ++requestSeq.current;
+    setListLoading(true);
     try {
-      const token = localStorage.getItem('token');
-      const [membersRes, communitiesRes] = await Promise.all([
-        axios.get(`${API_URL}/members`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        axios.get(`${API_URL}/communities`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-      ]);
-      setMembers(membersRes.data);
-      setCommunities(communitiesRes.data);
+      // Filtros só vão ao servidor no modo paginado (no antigo o filtro é local)
+      const { data } = await api.get('/members', {
+        params: {
+          page: currentPage,
+          pageSize: itemsPerPage,
+          search: debouncedSearch || undefined,
+          ...(serverPagedRef.current
+            ? { communityId: filterCommunity || undefined, status: filterStatus || undefined }
+            : {}),
+        },
+      });
+      if (seq !== requestSeq.current) return;
+      if (isPagedResponse<Member>(data)) {
+        serverPagedRef.current = true;
+        setMembers(data.items);
+        setServerTotal(data.total);
+        setServerPaged(true);
+      } else {
+        serverPagedRef.current = false;
+        setMembers(Array.isArray(data) ? data : []);
+        setServerPaged(false);
+      }
     } catch (error) {
-      console.error('Erro ao carregar dados:', error);
-      notify.error('Erro ao carregar dados');
+      if (seq === requestSeq.current) notify.error(getErrorMessage(error, 'Erro ao carregar os membros'));
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setListLoading(false);
     }
+  }, [currentPage, itemsPerPage, debouncedSearch, filterCommunity, filterStatus]);
+
+  // Modo paginado: página, busca e filtros vão ao servidor
+  useEffect(() => {
+    if (serverPagedRef.current) void fetchMembers();
+  }, [fetchMembers]);
+
+  const fetchData = async () => {
+    const token = localStorage.getItem('token');
+    await Promise.all([
+      fetchMembers(),
+      axios
+        .get(`${API_URL}/communities`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        .then((communitiesRes) => setCommunities(communitiesRes.data))
+        .catch((error) => {
+          console.error('Erro ao carregar comunidades:', error);
+          notify.error('Erro ao carregar as comunidades');
+        }),
+    ]);
+    setLoading(false);
+  };
+
+  /** Abre a ficha de um membro (mesmo fora da página atual da lista). */
+  const openMemberById = async (memberId: string) => {
+    setShowQuick(false);
+    const local = members.find((member) => member.id === memberId);
+    if (local) {
+      handleEdit(local);
+      return;
+    }
+    try {
+      const { data } = await api.get<Member>(`/members/${memberId}`);
+      handleEdit(data);
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Não foi possível abrir a ficha'));
+    }
+  };
+
+  /** "Convidar para o app" a partir do cadastro (papel Fiel por padrão). */
+  const openInvite = (
+    member: Pick<Member, 'id' | 'fullName' | 'phone' | 'email'> & { community?: Community | null },
+  ) => {
+    setInvitePreset({
+      memberId: member.id,
+      name: member.fullName,
+      phone: member.phone,
+      email: member.email,
+      role: 'FAITHFUL',
+      communityId: member.community?.id,
+      communityName: member.community?.name,
+      parishId: member.community?.parish?.id,
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -587,7 +704,19 @@ const MembersPage: React.FC = () => {
   };
 
   // Exportar CSV
-  const handleExportCSV = () => {
+  const handleExportCSV = async () => {
+    // Paginado no servidor: a página atual não é tudo — busca a lista inteira do
+    // escopo (GET sem `page`) e aplica os mesmos filtros da tela
+    let rows = filteredAndSortedMembers;
+    if (serverPaged) {
+      try {
+        const { data } = await api.get('/members');
+        rows = applyLocalFilters(Array.isArray(data) ? data : isPagedResponse<Member>(data) ? data.items : []);
+      } catch (error) {
+        notify.error(getErrorMessage(error, 'Não foi possível exportar'));
+        return;
+      }
+    }
     // Excel pt-BR: ';', BOM UTF-8, datas dd/mm/aaaa e rótulos em português
     downloadCsv(
       'membros',
@@ -606,7 +735,7 @@ const MembersPage: React.FC = () => {
         'Estado',
         'Cadastrado em',
       ],
-      filteredAndSortedMembers.map((member) => [
+      rows.map((member) => [
         member.fullName,
         member.cpf || '',
         formatBirthDate(member.birthDate, { fallback: '' }),
@@ -624,20 +753,24 @@ const MembersPage: React.FC = () => {
     );
   };
 
-  // Filtrar e ordenar membros
-  const filteredAndSortedMembers = useMemo(() => {
-    let result = members.filter((member) => {
-      const matchesSearch = 
+  /** Filtros do modo local (servidor antigo e exportação). */
+  const applyLocalFilters = (list: Member[]) =>
+    list.filter((member) => {
+      const matchesSearch =
         member.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         member.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         member.cpf?.includes(searchTerm) ||
         member.community.name.toLowerCase().includes(searchTerm.toLowerCase());
-      
+
       const matchesCommunity = filterCommunity ? member.community.id === filterCommunity : true;
       const matchesStatus = filterStatus ? member.status === filterStatus : true;
 
       return matchesSearch && matchesCommunity && matchesStatus;
     });
+
+  // Filtrar e ordenar membros (paginado no servidor: a busca/filtros já vieram aplicados)
+  const filteredAndSortedMembers = useMemo(() => {
+    let result = serverPaged ? [...members] : applyLocalFilters(members);
 
     // Ordenar
     result.sort((a, b) => {
@@ -663,14 +796,17 @@ const MembersPage: React.FC = () => {
     });
 
     return result;
-  }, [members, searchTerm, filterCommunity, filterStatus, sortField, sortDirection]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members, serverPaged, searchTerm, filterCommunity, filterStatus, sortField, sortDirection]);
 
-  // Paginação
-  const totalPages = Math.ceil(filteredAndSortedMembers.length / itemsPerPage);
+  // Paginação (no modo do servidor a lista já é a página pedida)
+  const totalCount = serverPaged ? serverTotal : filteredAndSortedMembers.length;
+  const totalPages = Math.ceil(totalCount / itemsPerPage);
   const paginatedMembers = useMemo(() => {
+    if (serverPaged) return filteredAndSortedMembers;
     const start = (currentPage - 1) * itemsPerPage;
     return filteredAndSortedMembers.slice(start, start + itemsPerPage);
-  }, [filteredAndSortedMembers, currentPage, itemsPerPage]);
+  }, [filteredAndSortedMembers, currentPage, itemsPerPage, serverPaged]);
 
   if (loading) return <div className="loading">Carregando...</div>;
 
@@ -679,9 +815,19 @@ const MembersPage: React.FC = () => {
       <div className="page-header">
         <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="membros" /> Membros</h1>
         <div className="header-actions">
-          <button className="btn-export" onClick={handleExportCSV} title="Exportar CSV">
+          <button className="btn-export" onClick={() => void handleExportCSV()} title="Exportar CSV">
             📥 Exportar
           </button>
+          {canDeleteMembers && (
+            <Link to="/admin/importar" className="btn-export" style={{ textDecoration: 'none' }}>
+              Importar planilha
+            </Link>
+          )}
+          {canManageMembers && (
+            <button className="btn-export" onClick={() => setShowQuick(true)} title="Nome, celular e comunidade">
+              Cadastro rápido
+            </button>
+          )}
           {canManageMembers && (
             <button className="btn-primary" onClick={() => setShowModal(true)}>
               + Novo Membro
@@ -695,7 +841,8 @@ const MembersPage: React.FC = () => {
         <div className="filters-row">
           <input
             type="text"
-            placeholder="Buscar por nome, email, CPF ou comunidade..."
+            placeholder={serverPaged ? 'Buscar por nome, telefone ou CPF...' : 'Buscar por nome, email, CPF ou comunidade...'}
+            aria-label="Buscar membros"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="search-input"
@@ -770,8 +917,8 @@ const MembersPage: React.FC = () => {
       )}
 
       {/* Contagem de resultados */}
-      <div className="results-info">
-        Mostrando {paginatedMembers.length} de {filteredAndSortedMembers.length} membro(s)
+      <div className="results-info" aria-live="polite">
+        {listLoading ? 'Atualizando… ' : ''}Mostrando {paginatedMembers.length} de {totalCount} membro(s)
       </div>
 
       {/* Visualização em Cards */}
@@ -791,6 +938,7 @@ const MembersPage: React.FC = () => {
                     <div className="entity-chips">
                       <span className="entity-chip soft-blue">{member.community.name}</span>
                       {statusChip(member.status)}
+                      {accessOf(member) && accessChip(member)}
                       {(member.communityLinks?.filter((link) => !link.isPrimary).length ?? 0) > 0 && (
                         <span
                           className="entity-chip"
@@ -879,6 +1027,11 @@ const MembersPage: React.FC = () => {
                   <button className="entity-btn accent" onClick={() => setSacramentsFor(member)}>
                     Sacramentos
                   </button>
+                  {canInvite && accessOf(member) && accessOf(member)!.state !== 'ACTIVE' && (
+                    <button className="entity-btn" onClick={() => openInvite(member)}>
+                      {accessOf(member)!.state === 'INVITED' ? 'Novo convite' : 'Convidar para o app'}
+                    </button>
+                  )}
                   {canDeleteMembers && (
                     <button className="entity-btn danger" onClick={() => handleDelete(member.id)}>
                       Excluir
@@ -921,6 +1074,7 @@ const MembersPage: React.FC = () => {
                 <th className="sortable" onClick={() => handleSort('status')}>
                   Status {sortField === 'status' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
+                <th>Acesso</th>
                 <th>Cidade</th>
                 <th className="sortable" onClick={() => handleSort('createdAt')}>
                   Criado em {sortField === 'createdAt' && (sortDirection === 'asc' ? '↑' : '↓')}
@@ -931,7 +1085,7 @@ const MembersPage: React.FC = () => {
             <tbody>
               {paginatedMembers.length === 0 ? (
                 <tr>
-                  <td colSpan={canDeleteMembers ? 10 : 9} className="no-results-cell">Nenhum membro encontrado.</td>
+                  <td colSpan={canDeleteMembers ? 11 : 10} className="no-results-cell">Nenhum membro encontrado.</td>
                 </tr>
               ) : (
                 paginatedMembers.map((member) => (
@@ -956,6 +1110,7 @@ const MembersPage: React.FC = () => {
                       <span className="entity-chip soft-blue">{member.community.name}</span>
                     </td>
                     <td>{statusChip(member.status)}</td>
+                    <td>{accessChip(member)}</td>
                     <td>{member.city ? `${member.city}/${member.state}` : '-'}</td>
                     <td>{new Date(member.createdAt).toLocaleDateString('pt-BR')}</td>
                     <td className="actions-cell">
@@ -967,6 +1122,16 @@ const MembersPage: React.FC = () => {
                       <button className="entity-icon-btn" onClick={() => setSacramentsFor(member)} title="Sacramentos" aria-label={`Sacramentos de ${member.fullName}`}>
                         ✝️
                       </button>
+                      {canInvite && accessOf(member) && accessOf(member)!.state !== 'ACTIVE' && (
+                        <button
+                          className="entity-icon-btn"
+                          onClick={() => openInvite(member)}
+                          title="Convidar para o app"
+                          aria-label={`Convidar ${member.fullName} para o app`}
+                        >
+                          ✉️
+                        </button>
+                      )}
                       {canDeleteMembers && (
                         <button className="entity-icon-btn danger" onClick={() => handleDelete(member.id)} title="Excluir" aria-label={`Excluir ${member.fullName}`}>
                           🗑️
@@ -1155,16 +1320,18 @@ const MembersPage: React.FC = () => {
 
                 <div className="form-group">
                   <label>💍 Cônjuge (membro cadastrado)</label>
-                  <SearchSelect
-                    options={members
+                  <MemberPickerSelect
+                    serverSearch={serverPaged}
+                    localOptions={members
                       .filter((m) => m.id !== editingMember?.id)
                       .filter((m) => !formData.communityId || m.community?.id === formData.communityId)
                       .map((m) => ({ value: m.id, label: m.fullName, sublabel: m.community?.name }))}
                     value={formData.spouseId}
                     onChange={(spouseId) => setFormData({ ...formData, spouseId })}
+                    selectedLabel={editingMember?.spouse?.id === formData.spouseId ? editingMember?.spouse?.fullName : undefined}
+                    excludeId={editingMember?.id}
+                    communityId={formData.communityId || undefined}
                     placeholder="Sem cônjuge vinculado"
-                    allOption
-                    searchPlaceholder="Buscar membro..."
                   />
                   <small style={{ color: '#8b97a4' }}>
                     O vínculo vale nos dois sentidos e é usado pela regra “casais servem juntos” das escalas.
@@ -1173,15 +1340,18 @@ const MembersPage: React.FC = () => {
 
                 <div className="form-group">
                   <label>👨‍👧 Responsável — pai/mãe (membro cadastrado)</label>
-                  <SearchSelect
-                    options={members
+                  <MemberPickerSelect
+                    serverSearch={serverPaged}
+                    localOptions={members
                       .filter((m) => m.id !== editingMember?.id)
                       .map((m) => ({ value: m.id, label: m.fullName, sublabel: m.community?.name }))}
                     value={formData.responsibleId}
                     onChange={(responsibleId) => setFormData({ ...formData, responsibleId })}
+                    selectedLabel={
+                      editingMember?.responsible?.id === formData.responsibleId ? editingMember?.responsible?.fullName : undefined
+                    }
+                    excludeId={editingMember?.id}
                     placeholder="Sem responsável vinculado"
-                    allOption
-                    searchPlaceholder="Buscar membro..."
                   />
                   <small style={{ color: '#8b97a4' }}>
                     Obrigatório para menores na catequese — é por este vínculo que a família acompanha,
@@ -1216,6 +1386,21 @@ const MembersPage: React.FC = () => {
                     />
                   </div>
                 </div>
+
+                {editingMember && !editingMember.userId && canInvite && accessOf(editingMember)?.state !== 'ACTIVE' && (
+                  <div className="form-group" style={{ marginTop: '0.5rem' }}>
+                    <label>Acesso ao app</label>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                      {accessChip(editingMember)}
+                      <button type="button" className="btn-small btn-surface" onClick={() => openInvite(editingMember)}>
+                        {accessOf(editingMember)?.state === 'INVITED' ? 'Enviar novo convite' : 'Convidar para o app'}
+                      </button>
+                      <small style={{ color: '#66788c' }}>
+                        A pessoa recebe um link, cria a própria senha e entra já ligada a este cadastro.
+                      </small>
+                    </div>
+                  </div>
+                )}
 
                 {editingMember?.userId && editingMember.userId !== authUser?.id && canResetAccounts && (
                   <div className="form-group" style={{ marginTop: '0.5rem' }}>
@@ -1560,6 +1745,37 @@ const MembersPage: React.FC = () => {
           userName={tempPasswordTarget.name}
           phone={tempPasswordTarget.phone}
           onClose={() => setTempPasswordTarget(null)}
+        />
+      )}
+
+      {showQuick && (
+        <QuickMemberModal
+          communityOptions={communityOptions}
+          defaultCommunityId={filterCommunity || undefined}
+          canInvite={canInvite}
+          onClose={() => setShowQuick(false)}
+          onCreated={() => void fetchMembers()}
+          onOpenMember={(memberId) => void openMemberById(memberId)}
+          onInvite={(created) => {
+            setShowQuick(false);
+            const community = communities.find((c) => c.id === created.communityId);
+            openInvite({
+              id: created.id,
+              fullName: created.fullName,
+              phone: created.phone ?? undefined,
+              email: undefined,
+              community: community ?? { id: created.communityId, name: created.communityName ?? '' },
+            });
+          }}
+        />
+      )}
+
+      {invitePreset && (
+        <InviteModal
+          preset={invitePreset}
+          title="Convidar para o app"
+          onClose={() => setInvitePreset(null)}
+          onCreated={() => void fetchMembers()}
         />
       )}
     </div>

@@ -1,0 +1,162 @@
+/* "Meu plano" (PARISH_ADMIN; DIOCESAN/SYSTEM com seletor de paróquia).
+   Mesmo vocabulário das telas da Plataforma: cartões brancos com borda
+   #e3e8ef, azul #075aa9 nas ações. */
+
+.myplan-page .myplan-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.myplan-page .myplan-seletor { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; max-width: 520px; }
+.myplan-page .myplan-seletor > div { flex: 1; min-width: 240px; }
+.myplan-page .myplan-rotulo { font-weight: 700; color: #52606d; font-size: 14px; }
+.myplan-page .myplan-vazio { color: #8b97a4; font-size: 14px; padding: 12px 4px; text-align: center; }
+.myplan-page .myplan-meta { color: #52606d; font-size: 13.5px; margin: 6px 0 10px; }
+.myplan-page .myplan-sub { display: block; font-size: 12px; color: #6b7785; margin-top: 2px; }
+.myplan-page .myplan-urgente { color: #b4541a; font-weight: 700; }
+.myplan-page .myplan-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.myplan-page .myplan-erro {
+  background: #fdecec;
+  border: 1px solid #f1b7b7;
+  color: #a12b31;
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  margin: 8px 0 12px;
+}
+.myplan-page .myplan-alerta {
+  margin: 10px 0 0;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: #fff8e6;
+  border: 1px solid #f1dca6;
+  color: #6b4f0e;
+  font-size: 13.5px;
+}
+.myplan-page .myplan-link {
+  background: none;
+  border: none;
+  color: #075aa9;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  font: inherit;
+}
+.myplan-page .myplan-libera {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #eef8f1;
+  border: 1px solid #c9e7d5;
+  color: #1f4d33;
+  font-size: 13.5px;
+  margin: 0 0 14px;
+}
+
+.myplan-page .myplan-card {
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  min-width: 0;
+}
+.myplan-page .myplan-card h2 { margin: 0 0 4px; font-size: 18px; color: #17324d; }
+.myplan-page .myplan-card-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.myplan-page .myplan-dl { display: grid; grid-template-columns: 180px 1fr; gap: 6px 12px; margin: 8px 0 0; font-size: 14px; }
+.myplan-page .myplan-dl dt { color: #6b7785; }
+.myplan-page .myplan-dl dd { margin: 0; color: #17324d; font-weight: 600; overflow-wrap: anywhere; }
+.myplan-page .myplan-acoes { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+
+.myplan-page .myplan-tabela select {
+  padding: 6px 8px;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  max-width: 260px;
+}
+.myplan-page .myplan-tabela input[type='checkbox'] { width: 18px; height: 18px; }
+.myplan-page .data-table tr.myplan-linha-on td { background: #eef5fd; }
+.myplan-page .myplan-docs a { margin-right: 10px; font-weight: 700; color: #075aa9; }
+
+.myplan-page .myplan-checkout {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #eef1f5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.myplan-page .myplan-checkout .myplan-meta { flex-basis: 100%; margin: 0; }
+.myplan-page .myplan-ciclo { display: inline-flex; padding: 3px; border-radius: 999px; border: 1px solid #d8dee6; background: #f6f8fb; }
+.myplan-page .myplan-ciclo button {
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #52606d;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.myplan-page .myplan-ciclo button.on { background: #17324d; color: #fff; }
+.myplan-page .myplan-total { display: flex; flex-direction: column; margin-left: auto; text-align: right; font-size: 13px; color: #52606d; }
+.myplan-page .myplan-total strong { font-size: 22px; color: #17324d; }
+.myplan-page .myplan-indisponivel {
+  flex-basis: 100%;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #eef5fd;
+  border: 1px solid #d3e4f7;
+  color: #17324d;
+  font-size: 14px;
+}
+.myplan-page .myplan-fatura {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #eef8f1;
+  border: 1px solid #c9e7d5;
+  color: #1f4d33;
+  font-size: 14px;
+}
+.myplan-page .myplan-fatura p { margin: 0; flex: 1 1 260px; }
+.myplan-page .myplan-fatura a.btn-primary { text-decoration: none; display: inline-block; }
+
+.myplan-page .myplan-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; }
+.myplan-page .myplan-largo { grid-column: span 2; }
+.myplan-page .myplan-campo { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 700; color: #52606d; min-width: 0; }
+.myplan-page .myplan-campo input,
+.myplan-page .myplan-campo select {
+  font: inherit;
+  font-weight: 400;
+  font-size: 14px;
+  color: #17324d;
+  border: 1px solid #d8dee6;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  width: 100%;
+}
+
+.myplan-modal p { margin: 0 0 10px; color: #3e4c59; line-height: 1.5; }
+.module-modal.myplan-modal .btn-submit.myplan-btn-perigo { background: #c53b42; }
+
+@media (max-width: 760px) {
+  .myplan-page { padding: 1rem; }
+  .myplan-page .myplan-grid { grid-template-columns: 1fr; }
+  .myplan-page .myplan-largo { grid-column: auto; }
+  .myplan-page .myplan-dl { grid-template-columns: 1fr; }
+  .myplan-page .myplan-dl dd { margin-bottom: 6px; }
+  .myplan-page .myplan-total { margin-left: 0; text-align: left; }
+  .myplan-page .myplan-checkout .btn-primary { width: 100%; }
+}

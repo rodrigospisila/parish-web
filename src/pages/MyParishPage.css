@@ -1,0 +1,141 @@
+/* ===== Minha paróquia (Onda 1) ===== */
+
+.my-parish .my-parish__card {
+  background: #fff;
+  border: 1px solid #e4e9ef;
+  border-radius: 14px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+  max-width: 860px;
+}
+
+.my-parish .my-parish__card.is-danger {
+  border-color: #f5c2c0;
+}
+
+.my-parish .my-parish__card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+  color: #17324d;
+}
+
+.my-parish .my-parish__card p {
+  color: #344e66;
+  line-height: 1.5;
+}
+
+.my-parish__details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.my-parish__details dt {
+  color: #66788c;
+  font-size: 0.88rem;
+}
+
+.my-parish__details dd {
+  margin: 0;
+  color: #17324d;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.my-parish .my-parish__muted {
+  color: #66788c;
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.my-parish__list {
+  margin: 0 0 1rem;
+  padding-left: 1.2rem;
+  color: #344e66;
+  line-height: 1.55;
+}
+
+.my-parish__cnpj {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #eef2f6;
+}
+
+.my-parish__cnpj label {
+  font-weight: 600;
+  color: #344e66;
+  font-size: 0.9rem;
+}
+
+.my-parish__row {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.my-parish__row input {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #ccd6e0;
+  border-radius: 8px;
+  font-size: 1rem;
+  min-width: 220px;
+  flex: 0 1 280px;
+}
+
+.my-parish .btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.my-parish__error {
+  color: #b42318;
+  font-size: 0.88rem;
+}
+
+.my-parish__alert {
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  line-height: 1.5;
+  max-width: 860px;
+}
+
+.my-parish__alert.is-warning {
+  background: #fff8e6;
+  border: 1px solid #f2d59b;
+  color: #6b4e00;
+}
+
+.my-parish__alert.is-error {
+  background: #fef3f2;
+  border: 1px solid #fecdca;
+  color: #b42318;
+}
+
+@media (max-width: 600px) {
+  .my-parish .my-parish__card {
+    padding: 1rem;
+  }
+
+  .my-parish__details {
+    grid-template-columns: 1fr;
+  }
+
+  .my-parish__details dd {
+    margin-bottom: 0.4rem;
+  }
+}
+
+.my-parish .my-parish__card p {
+  margin: 0 0 0.75rem;
+}
+
+.my-parish .my-parish__card .btn-small.danger {
+  padding: 0.6rem 1rem;
+  font-size: 0.92rem;
+  margin-bottom: 0.75rem;
+}

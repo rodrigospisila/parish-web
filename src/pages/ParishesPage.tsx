@@ -9,6 +9,9 @@ import { isPagedResponse, useDebouncedValue } from '../utils/useDebouncedValue';
 import PatronSaintsManager, { usePatronSaints, PatronSaintsBadge } from '../components/PatronSaintsManager';
 import SearchSelect from '../components/SearchSelect';
 import SaintAvatar, { avatarColor, initials } from '../components/SaintAvatar';
+import { Link } from 'react-router-dom';
+import { cnpjDigits, isValidCnpj, maskCnpj } from '../components/team/cnpj';
+import { maskBrPhone, phoneForApi, phoneForApiOnEdit, phoneInputValue } from '../utils/phone';
 import './ParishesPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -35,6 +38,8 @@ interface Parish {
   zipCode: string;
   phone?: string;
   email?: string;
+  /** CNPJ (filial da Mitra) — Onda 1, cat-gestao-31 */
+  cnpj?: string | null;
   dioceseId?: string;
   diocese: Diocese;
   createdAt: string;
@@ -107,6 +112,7 @@ const ParishesPage: React.FC = () => {
     phone: '',
     email: '',
     dioceseId: '',
+    cnpj: '',
   });
 
   useEffect(() => {
@@ -199,18 +205,32 @@ const ParishesPage: React.FC = () => {
       return;
     }
 
+    // CNPJ só na edição (PATCH aceita) e só quando mudou; dígitos verificadores conferidos aqui
+    const cnpjChanged = !!editingParish && cnpjDigits(formData.cnpj) !== cnpjDigits(editingParish.cnpj);
+    if (cnpjChanged && cnpjDigits(formData.cnpj) && !isValidCnpj(formData.cnpj)) {
+      notify.warning('CNPJ inválido. Confira os 14 números.');
+      return;
+    }
+
     try {
       const token = localStorage.getItem('token');
+      const { cnpj: _cnpj, ...baseData } = formData;
+      const payload: Record<string, unknown> = {
+        ...baseData,
+        // +55DDNÚMERO; na edição, telefone intocado não é reescrito
+        phone: editingParish ? phoneForApiOnEdit(formData.phone, editingParish.phone) : phoneForApi(formData.phone),
+      };
+      if (cnpjChanged) payload.cnpj = cnpjDigits(formData.cnpj) || null;
 
       if (editingParish) {
         await axios.patch(
           `${API_URL}/parishes/${editingParish.id}`,
-          formData,
+          payload,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         notify.success('Paróquia atualizada com sucesso!');
       } else {
-        await axios.post(`${API_URL}/parishes`, formData, {
+        await axios.post(`${API_URL}/parishes`, payload, {
           headers: { Authorization: `Bearer ${token}` },
         });
         notify.success('Paróquia criada com sucesso!');
@@ -233,9 +253,10 @@ const ParishesPage: React.FC = () => {
       state: parish.state ?? '',
       address: parish.address ?? '',
       zipCode: parish.zipCode ?? '',
-      phone: parish.phone || '',
+      phone: phoneInputValue(parish.phone),
       email: parish.email || '',
       dioceseId: parish.diocese?.id ?? parish.dioceseId ?? '',
+      cnpj: maskCnpj(parish.cnpj),
     });
     setShowModal(true);
   };
@@ -281,6 +302,7 @@ const ParishesPage: React.FC = () => {
       phone: '',
       email: '',
       dioceseId: '',
+      cnpj: '',
     });
     setEditingParish(null);
   };
@@ -413,6 +435,11 @@ const ParishesPage: React.FC = () => {
           <button className="btn-primary" onClick={() => setShowModal(true)}>
             + Nova Paróquia
           </button>
+        )}
+        {currentUserRole === 'PARISH_ADMIN' && (
+          <Link to="/admin/minha-paroquia" className="btn-primary" style={{ textDecoration: 'none' }}>
+            Minha paróquia: CNPJ, exportação e encerramento
+          </Link>
         )}
       </div>
 
@@ -750,11 +777,14 @@ const ParishesPage: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label>Telefone</label>
+                <label htmlFor="parish-phone">Telefone</label>
                 <input
-                  type="text"
+                  id="parish-phone"
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="(00) 0000-0000"
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, phone: maskBrPhone(e.target.value) })}
                 />
               </div>
 
@@ -766,6 +796,23 @@ const ParishesPage: React.FC = () => {
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 />
               </div>
+
+              {editingParish && (
+                <div className="form-group">
+                  <label htmlFor="parish-cnpj">CNPJ</label>
+                  <input
+                    id="parish-cnpj"
+                    inputMode="numeric"
+                    placeholder="00.000.000/0000-00"
+                    value={formData.cnpj}
+                    onChange={(e) => setFormData({ ...formData, cnpj: maskCnpj(e.target.value) })}
+                    aria-describedby="parish-cnpj-hint"
+                  />
+                  <small id="parish-cnpj-hint" style={{ color: '#888', fontSize: '0.8rem' }}>
+                    Em geral, o da filial da Mitra Diocesana. Sai nos recibos e balancetes.
+                  </small>
+                </div>
+              )}
 
               <div className="modal-actions">
                 <button type="button" className="btn-cancel" onClick={() => { setShowModal(false); resetForm(); }}>
