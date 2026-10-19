@@ -8,6 +8,20 @@ import SearchSelect from '../components/SearchSelect';
 import { DateInput } from '../components/DateInput';
 import { usePatronSaints } from '../components/PatronSaintsManager';
 import { useAuth } from '../contexts/AuthContext';
+import TempPasswordModal from '../components/TempPasswordModal';
+import api, { getErrorMessage } from '../services/api';
+import { civilDateInputValue, civilDateToIso, formatBirthDate } from '../utils/dateFormat';
+import { formatPhoneDisplay, maskBrPhone, phoneForApi } from '../utils/phone';
+import { canManageUserTarget, USER_MANAGER_ROLES } from '../utils/userManagement';
+import {
+  csvInstantDate,
+  downloadCsv,
+  enumLabel,
+  GENDER_CSV,
+  MARITAL_STATUS_CSV,
+  MEMBER_STATUS_CSV,
+  MEMBER_TYPE_CSV,
+} from '../utils/csvExport';
 import './MembersPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -18,6 +32,8 @@ interface Community {
   city?: string;
   state?: string;
   parish?: { id: string; name: string };
+  /** Coordenador leigo pode registrar sacramentos (GET /communities devolve o campo) */
+  laySacramentRecords?: boolean;
 }
 
 interface Member {
@@ -46,6 +62,8 @@ interface Member {
   responsibleId?: string;
   responsible?: { id: string; fullName: string };
   photoUrl?: string;
+  /** Conta de acesso ligada ao cadastro (null quando não há conta ou foi anonimizado) */
+  userId?: string | null;
   memberType?: MemberType;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
@@ -141,6 +159,10 @@ const MembersPage: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [sacramentsFor, setSacramentsFor] = useState<Member | null>(null);
+  // Senha provisória da conta ligada ao membro (ux-acesso-04)
+  const canResetAccounts = USER_MANAGER_ROLES.includes(String(authUser?.role ?? ''));
+  const [tempPasswordTarget, setTempPasswordTarget] = useState<{ id: string; name: string; phone?: string | null } | null>(null);
+  const [checkingAccount, setCheckingAccount] = useState(false);
   // Vínculos multi-comunidade do membro em edição
   const [memberLinks, setMemberLinks] = useState<Member['communityLinks']>([]);
   const [linkCommunityToAdd, setLinkCommunityToAdd] = useState('');
@@ -257,7 +279,11 @@ const MembersPage: React.FC = () => {
         gender: formData.gender || undefined,
         maritalStatus: formData.maritalStatus || undefined,
         memberType: formData.memberType || undefined,
-        birthDate: formData.birthDate ? new Date(formData.birthDate).toISOString() : undefined,
+        // Data civil: meia-noite UTC do dia digitado (exibida sempre pela parte AAAA-MM-DD)
+        birthDate: civilDateToIso(formData.birthDate),
+        // +55DDNÚMERO (o backend normaliza de novo)
+        phone: phoneForApi(formData.phone),
+        emergencyContactPhone: phoneForApi(formData.emergencyContactPhone),
         // Cônjuge: null remove o vínculo (o backend sincroniza os dois lados)
         spouseId: formData.spouseId || null,
         // Responsável (pai/mãe): obrigatório p/ menores na catequese
@@ -294,12 +320,12 @@ const MembersPage: React.FC = () => {
       cpf: member.cpf || '',
       rg: member.rg || '',
       gender: member.gender || '',
-      birthDate: member.birthDate ? member.birthDate.slice(0, 10) : '',
+      birthDate: civilDateInputValue(member.birthDate),
       maritalStatus: member.maritalStatus || '',
       occupation: member.occupation || '',
       notes: member.notes || '',
       email: member.email || '',
-      phone: member.phone || '',
+      phone: maskBrPhone(member.phone) || member.phone || '',
       zipCode: member.zipCode || '',
       street: member.street || '',
       number: member.number || '',
@@ -315,7 +341,7 @@ const MembersPage: React.FC = () => {
       status: member.status,
       memberType: member.memberType || '',
       emergencyContactName: member.emergencyContactName || '',
-      emergencyContactPhone: member.emergencyContactPhone || '',
+      emergencyContactPhone: maskBrPhone(member.emergencyContactPhone) || member.emergencyContactPhone || '',
       emergencyContactRelation: member.emergencyContactRelation || '',
     });
     setShowModal(true);
@@ -412,6 +438,30 @@ const MembersPage: React.FC = () => {
       notify.error(error.response?.data?.message || 'Erro ao trocar a comunidade principal');
     } finally {
       setLinkBusy(false);
+    }
+  };
+
+  /**
+   * Senha provisória da conta do membro: confere a conta (GET /users/:id já
+   * aplica o escopo) e a mesma regra da tela de Usuários — papel abaixo do seu
+   * e no seu escopo — antes de abrir o modal com a confirmação.
+   */
+  const openTempPassword = async (member: Member) => {
+    if (!member.userId) return;
+    setCheckingAccount(true);
+    try {
+      const { data: account } = await api.get(`/users/${member.userId}`);
+      if (!canManageUserTarget(authUser, account)) {
+        notify.warning(
+          'Esta conta tem papel igual ou acima do seu, ou está fora do seu escopo. Peça a quem administra a paróquia.',
+        );
+        return;
+      }
+      setTempPasswordTarget({ id: account.id, name: account.name || member.fullName, phone: account.phone ?? member.phone });
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Não foi possível abrir a conta deste membro'));
+    } finally {
+      setCheckingAccount(false);
     }
   };
 
@@ -529,28 +579,40 @@ const MembersPage: React.FC = () => {
 
   // Exportar CSV
   const handleExportCSV = () => {
-    const headers = ['Nome', 'CPF', 'Email', 'Telefone', 'Comunidade', 'Status', 'Cidade', 'Estado'];
-    const rows = filteredAndSortedMembers.map(member => [
-      member.fullName,
-      member.cpf || '',
-      member.email || '',
-      member.phone || '',
-      member.community.name,
-      member.status,
-      member.city || '',
-      member.state || '',
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `membros_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
+    // Excel pt-BR: ';', BOM UTF-8, datas dd/mm/aaaa e rótulos em português
+    downloadCsv(
+      'membros',
+      [
+        'Nome',
+        'CPF',
+        'Nascimento',
+        'Sexo',
+        'Estado civil',
+        'Email',
+        'Telefone',
+        'Comunidade',
+        'Status',
+        'Tipo de agente',
+        'Cidade',
+        'Estado',
+        'Cadastrado em',
+      ],
+      filteredAndSortedMembers.map((member) => [
+        member.fullName,
+        member.cpf || '',
+        formatBirthDate(member.birthDate, { fallback: '' }),
+        enumLabel(GENDER_CSV, member.gender),
+        enumLabel(MARITAL_STATUS_CSV, member.maritalStatus),
+        member.email || '',
+        formatPhoneDisplay(member.phone),
+        member.community.name,
+        enumLabel(MEMBER_STATUS_CSV, member.status),
+        enumLabel(MEMBER_TYPE_CSV, member.memberType),
+        member.city || '',
+        member.state || '',
+        csvInstantDate(member.createdAt),
+      ]),
+    );
   };
 
   // Filtrar e ordenar membros
@@ -755,10 +817,8 @@ const MembersPage: React.FC = () => {
                     <div className="entity-field">
                       <span className="entity-field-label">Nascimento</span>
                       <span className="entity-field-value">
-                        {/* Ano 1900 = só dia/mês conhecidos (importado de planilha sem ano) */}
-                        {new Date(member.birthDate).getUTCFullYear() <= 1900
-                          ? `${new Date(member.birthDate).toLocaleDateString('pt-BR', { timeZone: 'UTC', day: '2-digit', month: '2-digit' })} (ano não informado)`
-                          : new Date(member.birthDate).toLocaleDateString('pt-BR')}
+                        {/* Data civil (sem fuso); ano 1900 = só dia/mês conhecidos (planilha sem ano) */}
+                        {formatBirthDate(member.birthDate, { withNote: true })}
                       </span>
                     </div>
                   )}
@@ -791,7 +851,7 @@ const MembersPage: React.FC = () => {
                   {member.phone && (
                     <div className="entity-field">
                       <span className="entity-field-label">Telefone</span>
-                      <span className="entity-field-value">{member.phone}</span>
+                      <span className="entity-field-value">{formatPhoneDisplay(member.phone)}</span>
                     </div>
                   )}
                   {member.city && (
@@ -882,7 +942,7 @@ const MembersPage: React.FC = () => {
                     </td>
                     <td>{member.cpf || '-'}</td>
                     <td>{member.email || '-'}</td>
-                    <td>{member.phone || '-'}</td>
+                    <td>{formatPhoneDisplay(member.phone) || '-'}</td>
                     <td>
                       <span className="entity-chip soft-blue">{member.community.name}</span>
                     </td>
@@ -1136,15 +1196,36 @@ const MembersPage: React.FC = () => {
                   </div>
 
                   <div className="form-group">
-                    <label>Telefone</label>
+                    <label>Celular</label>
                     <input
-                      type="text"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
                       value={formData.phone}
-                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                      placeholder="(00) 00000-0000"
+                      onChange={(e) => setFormData({ ...formData, phone: maskBrPhone(e.target.value) })}
+                      placeholder="(00) 90000-0000"
                     />
                   </div>
                 </div>
+
+                {editingMember?.userId && canResetAccounts && (
+                  <div className="form-group" style={{ marginTop: '0.5rem' }}>
+                    <label>Acesso ao app</label>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        className="btn-small btn-surface"
+                        disabled={checkingAccount}
+                        onClick={() => openTempPassword(editingMember)}
+                      >
+                        {checkingAccount ? 'Conferindo…' : 'Gerar senha provisória'}
+                      </button>
+                      <small style={{ color: '#66788c' }}>
+                        Esqueceu a senha? Gere uma provisória — a pessoa cria uma nova no primeiro acesso.
+                      </small>
+                    </div>
+                  </div>
+                )}
               </fieldset>
 
               {/* Endereço */}
@@ -1296,9 +1377,11 @@ const MembersPage: React.FC = () => {
                     <input
                       id="emg-phone"
                       type="tel"
+                      inputMode="tel"
+                      placeholder="(00) 90000-0000"
                       value={formData.emergencyContactPhone}
                       onChange={(e) =>
-                        setFormData({ ...formData, emergencyContactPhone: e.target.value })
+                        setFormData({ ...formData, emergencyContactPhone: maskBrPhone(e.target.value) })
                       }
                     />
                   </div>
@@ -1455,7 +1538,19 @@ const MembersPage: React.FC = () => {
         <SacramentsModal
           memberId={sacramentsFor.id}
           memberName={sacramentsFor.fullName}
+          communityAllowsLayRecords={
+            communities.find((community) => community.id === sacramentsFor.community?.id)?.laySacramentRecords
+          }
           onClose={() => setSacramentsFor(null)}
+        />
+      )}
+
+      {tempPasswordTarget && (
+        <TempPasswordModal
+          userId={tempPasswordTarget.id}
+          userName={tempPasswordTarget.name}
+          phone={tempPasswordTarget.phone}
+          onClose={() => setTempPasswordTarget(null)}
         />
       )}
     </div>

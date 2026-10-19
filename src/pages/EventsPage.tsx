@@ -16,6 +16,7 @@ import {
   getEventTypeLabel,
 } from '../constants/eventOptions';
 import { confirm, notify } from '../services/notification.service';
+import { downloadCsv } from '../utils/csvExport';
 import SearchSelect from '../components/SearchSelect';
 import SaintAvatar from '../components/SaintAvatar';
 import { usePatronSaints } from '../components/PatronSaintsManager';
@@ -507,15 +508,11 @@ const EventsPage: React.FC = () => {
       event.location || '',
       event.community.name,
       getEventStatusLabel(event.status),
-      event._count.participants.toString(),
+      event._count.participants,
     ]);
 
-    const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `eventos_${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
+    // Excel pt-BR: ';', BOM UTF-8 e aspas escapadas (ux-web-18)
+    downloadCsv('eventos', headers, rows);
   };
 
   if (loading) {

@@ -163,6 +163,235 @@ const Marco: React.FC<{ plan: Plan | null }> = ({ plan }) => {
 };
 
 // ---------------------------------------------------------------------------
+// "O que os bloqueios fariam" — contagem dos enforcements (contrato 6)
+// ---------------------------------------------------------------------------
+
+interface EnforcementTotal {
+  kind: string;
+  feature: string | null;
+  mode: string;
+  count: number;
+}
+
+interface EnforcementRow {
+  day: string;
+  kind: string;
+  feature: string | null;
+  communityId: string | null;
+  communityName: string | null;
+  mode: string;
+  count: number;
+}
+
+interface EnforcementHits {
+  days: number;
+  totals: EnforcementTotal[];
+  rows: EnforcementRow[];
+}
+
+const ENFORCEMENT_DIAS = 30;
+const ENFORCEMENT_COMUNIDADES_VISIVEIS = 10;
+
+const KIND_LABEL: Record<string, string> = {
+  PLAN_FEATURE: 'Recurso do plano',
+  PLAN_MEMBER_LIMIT: 'Limite de membros da faixa',
+  TERMS: 'Aceite dos termos',
+  PASSWORD_CHANGE: 'Troca de senha obrigatória',
+};
+
+const KIND_ORDER = ['PLAN_FEATURE', 'PLAN_MEMBER_LIMIT', 'TERMS', 'PASSWORD_CHANGE'];
+
+const FEATURE_LABEL: Record<string, string> = {
+  pastorals: 'Pastorais',
+  schedules: 'Escalas',
+  swaps: 'Trocas de escala',
+  catechesis: 'Catequese',
+  formation: 'Formação',
+  rooms: 'Espaços',
+  visitation: 'Visitação',
+  documents: 'Documentos',
+};
+
+const MODE_LABEL: Record<string, string> = {
+  log: 'só registrado',
+  on: 'bloqueado',
+  off: 'desligado',
+};
+
+/** Dia da contagem (data sem hora, gravada em UTC): dd/mm/aaaa sem fuso. */
+const diaBR = (day: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day ?? '');
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '—';
+};
+
+const rotuloBloqueio = (kind: string, feature: string | null) => {
+  const tipo = KIND_LABEL[kind] ?? kind;
+  return kind === 'PLAN_FEATURE' && feature ? `${tipo}: ${FEATURE_LABEL[feature] ?? feature}` : tipo;
+};
+
+const ordemBloqueio = (a: { kind: string; feature: string | null }, b: { kind: string; feature: string | null }) => {
+  const ka = KIND_ORDER.indexOf(a.kind);
+  const kb = KIND_ORDER.indexOf(b.kind);
+  if (ka !== kb) return (ka < 0 ? 99 : ka) - (kb < 0 ? 99 : kb);
+  return (a.feature ?? '').localeCompare(b.feature ?? '');
+};
+
+/**
+ * Quantas pessoas teriam esbarrado (modo "log") ou esbarraram (modo "on")
+ * em cada bloqueio nos últimos 30 dias, no total e por comunidade. Cada
+ * número conta uma pessoa por dia. É a base para decidir ligar o "on".
+ */
+const BloqueiosCard: React.FC = () => {
+  const [dados, setDados] = useState<EnforcementHits | null>(null);
+  const [erro, setErro] = useState('');
+  const [carregando, setCarregando] = useState(true);
+  const [todas, setTodas] = useState(false);
+
+  const carregar = useCallback(async () => {
+    setCarregando(true);
+    setErro('');
+    try {
+      const { data } = await api.get('/platform/enforcement-hits', { params: { days: ENFORCEMENT_DIAS } });
+      setDados({
+        days: Number(data?.days) || ENFORCEMENT_DIAS,
+        totals: Array.isArray(data?.totals) ? data.totals : [],
+        rows: Array.isArray(data?.rows) ? data.rows : [],
+      });
+    } catch (e) {
+      setDados(null);
+      setErro(mensagemDeErro(e, 'Não foi possível carregar a contagem dos bloqueios.'));
+    } finally {
+      setCarregando(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void carregar();
+  }, [carregar]);
+
+  const totais = useMemo(() => [...(dados?.totals ?? [])].sort(ordemBloqueio), [dados]);
+
+  // Por comunidade: soma dos dias, com o detalhe por tipo/modo
+  const comunidades = useMemo(() => {
+    const mapa = new Map<string, { id: string | null; nome: string; total: number; ultimoDia: string; itens: Map<string, number> }>();
+    for (const r of dados?.rows ?? []) {
+      const chave = r.communityId ?? '—';
+      const atual =
+        mapa.get(chave) ??
+        {
+          id: r.communityId,
+          nome: r.communityName || (r.communityId ? 'Comunidade sem nome' : 'Sem comunidade (conta da pessoa)'),
+          total: 0,
+          ultimoDia: r.day,
+          itens: new Map<string, number>(),
+        };
+      atual.total += Number(r.count) || 0;
+      if (r.day > atual.ultimoDia) atual.ultimoDia = r.day;
+      const rotulo = `${rotuloBloqueio(r.kind, r.feature)} (${MODE_LABEL[r.mode] ?? r.mode})`;
+      atual.itens.set(rotulo, (atual.itens.get(rotulo) ?? 0) + (Number(r.count) || 0));
+      mapa.set(chave, atual);
+    }
+    return [...mapa.values()].sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome));
+  }, [dados]);
+
+  const visiveis = todas ? comunidades : comunidades.slice(0, ENFORCEMENT_COMUNIDADES_VISIVEIS);
+  const dias = dados?.days ?? ENFORCEMENT_DIAS;
+
+  return (
+    <section className="pf-caixa pf-bloqueios" aria-label="O que os bloqueios fariam">
+      <div className="pf-secao-cabeca">
+        <div>
+          <h2 className="pf-secao-titulo">O que os bloqueios fariam</h2>
+          <p className="pf-meta">
+            Últimos {num(dias)} dias. Cada número conta uma pessoa por dia. Em “só registrado” (modo log) ninguém foi
+            bloqueado: é o que aconteceria se a chave fosse ligada.
+          </p>
+        </div>
+        <button type="button" className="pf-btn pf-btn-mini" onClick={() => void carregar()} disabled={carregando}>
+          Atualizar
+        </button>
+      </div>
+
+      {erro && (
+        <p className="pf-erro">
+          {erro}{' '}
+          <button type="button" className="pf-link" onClick={() => void carregar()}>
+            tentar de novo
+          </button>
+        </p>
+      )}
+      {carregando && !dados && <p className="pf-mudo">Carregando…</p>}
+
+      {dados && totais.length === 0 && <p className="pf-vazio">Nenhum bloqueio registrado no período.</p>}
+
+      {totais.length > 0 && (
+        <div className="table-container">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Bloqueio</th>
+                <th>Modo</th>
+                <th className="pf-num">Pessoas-dia</th>
+              </tr>
+            </thead>
+            <tbody>
+              {totais.map((t) => (
+                <tr key={`${t.kind}-${t.feature ?? ''}-${t.mode}`}>
+                  <td>{rotuloBloqueio(t.kind, t.feature)}</td>
+                  <td>{MODE_LABEL[t.mode] ?? t.mode}</td>
+                  <td className="pf-num">{num(t.count)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {comunidades.length > 0 && (
+        <>
+          <h3 className="pf-bloqueios-sub">Por comunidade</h3>
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Comunidade</th>
+                  <th>O que travaria</th>
+                  <th className="pf-num">Pessoas-dia</th>
+                  <th>Último dia</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visiveis.map((c) => (
+                  <tr key={c.id ?? '—'}>
+                    <td>
+                      <strong className="pf-nome">{c.nome}</strong>
+                    </td>
+                    <td>
+                      {[...c.itens.entries()].map(([rotulo, n]) => (
+                        <small key={rotulo} className="pf-sub">
+                          {rotulo}: {num(n)}
+                        </small>
+                      ))}
+                    </td>
+                    <td className="pf-num">{num(c.total)}</td>
+                    <td>{diaBR(c.ultimoDia)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {comunidades.length > ENFORCEMENT_COMUNIDADES_VISIVEIS && (
+            <button type="button" className="pf-link" onClick={() => setTodas((v) => !v)}>
+              {todas ? 'mostrar menos' : `ver todas (${num(comunidades.length)})`}
+            </button>
+          )}
+        </>
+      )}
+    </section>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Painel lateral: gestão do plano de uma comunidade
 // ---------------------------------------------------------------------------
 
@@ -355,10 +584,14 @@ const PainelDoPlano: React.FC<PainelProps> = ({ row, tiers, onClose, onChanged }
                   <dd>{plano.graceDays} dia(s)</dd>
                 </>
               )}
-              <dt>Membros com conta</dt>
+              <dt>Contas vinculadas</dt>
               <dd>
                 {num(atual.membersWithAccount)}
-                {tier?.maxMembers ? ` (limite da faixa: ${num(tier.maxMembers)} membros ativos)` : ''}
+                {tier?.maxMembers
+                  ? ` (limite da faixa: ${num(tier.maxMembers)} membros ativos, inclui quem entrou pelo app${
+                      atual.activeMembers != null ? `; hoje ${num(atual.activeMembers)}` : ''
+                    })`
+                  : ''}
                 {atual.overTierLimit && (
                   <small className="pf-sub pf-urgente">
                     acima da faixa: {num(atual.activeMembers ?? 0)} membros ativos
@@ -575,7 +808,10 @@ const FaixasEPrecos: React.FC<{ tiers: Tier[]; erro: string; carregando: boolean
       <div className="pf-secao-cabeca">
         <div>
           <h2 className="pf-secao-titulo">Faixas e preços</h2>
-          <p className="pf-meta">Preço por tamanho da comunidade (membros com conta). Mudar o preço não altera planos já ativos.</p>
+          <p className="pf-meta">
+            Preço por tamanho da comunidade (membros ativos, inclui quem entrou pelo app). Mudar o preço não altera planos já
+            ativos.
+          </p>
         </div>
         <button type="button" className="pf-btn pf-btn-primario" onClick={() => abrir()}>
           Nova faixa
@@ -587,7 +823,7 @@ const FaixasEPrecos: React.FC<{ tiers: Tier[]; erro: string; carregando: boolean
           <thead>
             <tr>
               <th>Faixa</th>
-              <th className="pf-num">Até (membros)</th>
+              <th className="pf-num">Até (membros ativos)</th>
               <th className="pf-num">Mensal</th>
               <th className="pf-num">Anual</th>
               <th>Situação</th>
@@ -659,7 +895,7 @@ const FaixasEPrecos: React.FC<{ tiers: Tier[]; erro: string; carregando: boolean
             </div>
             <div className="form-row">
               <div className="form-group">
-                <label htmlFor="pf-tier-max">Limite de membros com conta</label>
+                <label htmlFor="pf-tier-max">Limite de membros ativos (inclui quem entrou pelo app)</label>
                 <input
                   id="pf-tier-max"
                   inputMode="numeric"
@@ -887,6 +1123,8 @@ const PlansPage: React.FC = () => {
         </>
       )}
 
+      <BloqueiosCard />
+
       <div className="module-tabs">
         <button type="button" className={`tab-btn${aba === 'comunidades' ? ' active' : ''}`} onClick={() => trocarAba('comunidades')}>
           Comunidades
@@ -968,7 +1206,7 @@ const PlansPage: React.FC = () => {
                 <tr>
                   <th>Comunidade</th>
                   <th>Cidade/UF</th>
-                  <th className="pf-num">Com conta</th>
+                  <th className="pf-num" title="Contas de usuário vinculadas à comunidade">Contas</th>
                   <th>Plano</th>
                   <th className="pf-num">Valor</th>
                   <th>Próximo marco</th>

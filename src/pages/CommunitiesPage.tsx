@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import TitleIcon from '../components/TitleIcon';
 import axios from 'axios';
+import api, { getErrorMessage } from '../services/api';
 import { notify, confirm } from '../services/notification.service';
+import { csvInstantDate, downloadCsv } from '../utils/csvExport';
+import { isPagedResponse, useDebouncedValue } from '../utils/useDebouncedValue';
 import PatronSaintsManager, { usePatronSaints, PatronSaintsBadge } from '../components/PatronSaintsManager';
 import SearchSelect from '../components/SearchSelect';
 import SaintAvatar, { avatarColor, initials } from '../components/SaintAvatar';
@@ -25,10 +28,14 @@ interface Parish {
   diocese: Diocese;
 }
 
+// A lista leve da cascata (`/parishes?dioceseId=`) não traz a diocese
 const parishOption = (parish: Parish) => ({
   value: parish.id,
   label: parish.name,
-  sublabel: `${parish.diocese.name}${parish.city ? ` · ${parish.city}${parish.state ? ` - ${parish.state}` : ''}` : ''}`,
+  sublabel:
+    [parish.diocese?.name, parish.city ? `${parish.city}${parish.state ? ` - ${parish.state}` : ''}` : null]
+      .filter(Boolean)
+      .join(' · ') || undefined,
 });
 
 interface Community {
@@ -42,6 +49,9 @@ interface Community {
   email?: string;
   latitude?: number | null;
   longitude?: number | null;
+  /** Coordenador leigo pode registrar sacramentos e emitir certidão (padrão: não) */
+  laySacramentRecords?: boolean;
+  parishId?: string;
   parish: Parish;
   createdAt: string;
 }
@@ -74,6 +84,23 @@ const CommunitiesPage: React.FC = () => {
   const canEditCommunity = isAdminRole || authUser?.role === 'COMMUNITY_COORDINATOR';
   const [filterParish, setFilterParish] = useState('');
 
+  /**
+   * Escopo amplo (plataforma ~53 mil comunidades; diocese, centenas): a lista
+   * vem paginada do servidor (`page`, `pageSize`, `search` sem acento por
+   * nome/cidade), com busca atrasada (debounce). Servidor antigo que ignora
+   * `page` devolve a lista inteira — aí a tela volta ao modo local.
+   */
+  const serverMode = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN'].includes(authUser?.role ?? '');
+  // Plataforma: paróquias do formulário em cascata pela diocese (12,8 mil no total)
+  const platformScope = authUser?.role === 'SYSTEM_ADMIN';
+  const [serverTotal, setServerTotal] = useState<number | null>(null);
+  const [listLoading, setListLoading] = useState(false);
+  const debouncedSearch = useDebouncedValue(searchTerm.trim(), 350);
+  const serverPaged = serverMode && serverTotal !== null;
+  const requestSeq = useRef(0);
+  const [dioceses, setDioceses] = useState<Diocese[]>([]);
+  const [formDioceseId, setFormDioceseId] = useState('');
+
   // Santos padroeiros (vínculo por comunidade)
   const { patronsByEntity, refresh: refreshPatrons } = usePatronSaints('community');
   const [patronTarget, setPatronTarget] = useState<Community | null>(null);
@@ -99,15 +126,94 @@ const CommunitiesPage: React.FC = () => {
     parishId: '',
     latitude: null as number | null,
     longitude: null as number | null,
+    laySacramentRecords: false,
   });
   const [geocoding, setGeocoding] = useState(false);
   const [locInput, setLocInput] = useState('');
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** Uma página da lista (escopo amplo). Resposta fora de ordem é descartada. */
+  const fetchPage = useCallback(async () => {
+    const seq = ++requestSeq.current;
+    setListLoading(true);
+    try {
+      const { data } = await api.get('/communities', {
+        params: { page: currentPage, pageSize: itemsPerPage, search: debouncedSearch || undefined },
+      });
+      if (seq !== requestSeq.current) return;
+      if (isPagedResponse<Community>(data)) {
+        setCommunities(data.items);
+        setServerTotal(data.total);
+      } else {
+        // Servidor sem paginação: lista inteira, filtrada/paginada aqui
+        setCommunities(Array.isArray(data) ? data : []);
+        setServerTotal(null);
+      }
+    } catch (error) {
+      if (seq === requestSeq.current) notify.error(getErrorMessage(error, 'Erro ao carregar comunidades'));
+    } finally {
+      if (seq === requestSeq.current) {
+        setListLoading(false);
+        setLoading(false);
+      }
+    }
+  }, [currentPage, itemsPerPage, debouncedSearch]);
+
+  useEffect(() => {
+    if (serverMode) fetchPage();
+  }, [serverMode, fetchPage]);
+
+  // Nova busca/filtro volta para a primeira página
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, filterParish]);
+
+  // Cascata da plataforma: paróquias da diocese escolhida no formulário
+  useEffect(() => {
+    if (!platformScope || !showModal || !formDioceseId) return;
+    let cancelled = false;
+    const diocese = dioceses.find((d) => d.id === formDioceseId);
+    api
+      .get('/parishes', { params: { dioceseId: formDioceseId } })
+      .then((res) => {
+        if (cancelled) return;
+        const rows: Parish[] = (Array.isArray(res.data) ? res.data : []).map((parish: any) => ({
+          ...parish,
+          diocese: parish.diocese ?? (diocese ? { id: diocese.id, name: diocese.name } : undefined),
+        }));
+        setParishes(rows);
+      })
+      .catch((error) => {
+        if (!cancelled) notify.error(getErrorMessage(error, 'Erro ao carregar as paróquias da diocese'));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [platformScope, showModal, formDioceseId, dioceses]);
+
+  /** Recarrega a lista depois de criar/editar/excluir */
+  const refreshList = () => (serverMode ? fetchPage() : fetchData());
+
   const fetchData = async () => {
+    if (serverMode) {
+      // Escopo amplo: a lista vem por página (fetchPage); aqui só a fonte das paróquias
+      try {
+        if (platformScope) {
+          const { data } = await api.get('/dioceses');
+          setDioceses(Array.isArray(data) ? data : []);
+        } else {
+          const { data } = await api.get('/parishes');
+          setParishes(Array.isArray(data) ? data : []);
+        }
+      } catch (error) {
+        notify.error(getErrorMessage(error, 'Erro ao carregar paróquias'));
+      }
+      return;
+    }
     try {
       const token = localStorage.getItem('token');
       const [communitiesRes, parishesRes] = await Promise.all([
@@ -137,16 +243,18 @@ const CommunitiesPage: React.FC = () => {
 
     try {
       const token = localStorage.getItem('token');
+      const { laySacramentRecords, ...communityData } = formData;
 
       if (editingCommunity) {
         await axios.patch(
           `${API_URL}/communities/${editingCommunity.id}`,
-          formData,
+          // Interruptor de sacramentos por leigos: só PARISH_ADMIN+ (o coordenador não muda)
+          isAdminRole ? { ...communityData, laySacramentRecords } : communityData,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         notify.success('Comunidade atualizada com sucesso!');
       } else {
-        await axios.post(`${API_URL}/communities`, formData, {
+        await axios.post(`${API_URL}/communities`, communityData, {
           headers: { Authorization: `Bearer ${token}` },
         });
         notify.success('Comunidade criada com sucesso!');
@@ -154,7 +262,7 @@ const CommunitiesPage: React.FC = () => {
 
       setShowModal(false);
       resetForm();
-      fetchData();
+      refreshList();
     } catch (error: any) {
       console.error('Erro ao salvar comunidade:', error);
       notify.error(error.response?.data?.message || 'Erro ao salvar comunidade');
@@ -171,10 +279,13 @@ const CommunitiesPage: React.FC = () => {
       zipCode: community.zipCode,
       phone: community.phone || '',
       email: community.email || '',
-      parishId: community.parish.id,
+      parishId: community.parish?.id ?? community.parishId ?? '',
       latitude: community.latitude ?? null,
       longitude: community.longitude ?? null,
+      laySacramentRecords: community.laySacramentRecords === true,
     });
+    // Plataforma: abre a cascata na diocese da paróquia atual
+    if (platformScope) setFormDioceseId(community.parish?.diocese?.id ?? '');
     setShowModal(true);
   };
 
@@ -214,7 +325,7 @@ const CommunitiesPage: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       notify.success('Comunidade excluída com sucesso!');
-      fetchData();
+      refreshList();
     } catch (error: any) {
       console.error('Erro ao excluir comunidade:', error);
       notify.error(error.response?.data?.message || 'Erro ao excluir comunidade');
@@ -233,8 +344,10 @@ const CommunitiesPage: React.FC = () => {
       parishId: '',
       latitude: null,
       longitude: null,
+      laySacramentRecords: false,
     });
     setEditingCommunity(null);
+    setFormDioceseId('');
   };
 
   // Endereço → coordenadas (Nominatim via backend). Posiciona o pino no mapa.
@@ -308,44 +421,55 @@ const CommunitiesPage: React.FC = () => {
     notify.success('Coordenadas aplicadas! Confira o pino no mapa.');
   };
 
-  // Filtros
-  const filteredCommunities = communities.filter((community) => {
-    const matchesSearch = 
-      community.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      community.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      community.parish.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesParish = !filterParish || community.parish.id === filterParish;
-    return matchesSearch && matchesParish;
-  });
+  // Filtros (modo local). Paginado no servidor, a busca já veio aplicada lá
+  // (sem acento, por nome/cidade) e a ordem é a do servidor (nome).
+  const normalizeText = (text: string | null | undefined) =>
+    (text ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const term = normalizeText(searchTerm.trim());
+  const filteredCommunities = serverPaged
+    ? communities
+    : communities.filter((community) => {
+        const matchesSearch =
+          !term ||
+          normalizeText(community.name).includes(term) ||
+          normalizeText(community.city).includes(term) ||
+          normalizeText(community.parish?.name).includes(term);
+        const matchesParish = !filterParish || community.parish?.id === filterParish;
+        return matchesSearch && matchesParish;
+      });
 
   // Ordenação
-  const sortedCommunities = [...filteredCommunities].sort((a, b) => {
-    let comparison = 0;
-    switch (sortField) {
-      case 'name':
-        comparison = a.name.localeCompare(b.name);
-        break;
-      case 'city':
-        comparison = a.city.localeCompare(b.city);
-        break;
-      case 'parish':
-        comparison = a.parish.name.localeCompare(b.parish.name);
-        break;
-      case 'createdAt':
-        comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-        break;
-    }
-    return sortDirection === 'asc' ? comparison : -comparison;
-  });
+  const sortedCommunities = serverPaged
+    ? filteredCommunities
+    : [...filteredCommunities].sort((a, b) => {
+        let comparison = 0;
+        switch (sortField) {
+          case 'name':
+            comparison = a.name.localeCompare(b.name);
+            break;
+          case 'city':
+            comparison = (a.city ?? '').localeCompare(b.city ?? '');
+            break;
+          case 'parish':
+            comparison = (a.parish?.name ?? '').localeCompare(b.parish?.name ?? '');
+            break;
+          case 'createdAt':
+            comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+            break;
+        }
+        return sortDirection === 'asc' ? comparison : -comparison;
+      });
 
-  // Paginação
-  const totalPages = Math.ceil(sortedCommunities.length / itemsPerPage);
-  const paginatedCommunities = sortedCommunities.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  // Paginação (no servidor, `communities` já é a página atual)
+  const totalCount = serverPaged ? serverTotal ?? 0 : sortedCommunities.length;
+  const totalPages = Math.ceil(totalCount / itemsPerPage);
+  const paginatedCommunities = serverPaged
+    ? sortedCommunities
+    : sortedCommunities.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const handleSort = (field: typeof sortField) => {
+    // Paginado no servidor a ordem é a do servidor (nome)
+    if (serverPaged) return;
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
@@ -384,7 +508,7 @@ const CommunitiesPage: React.FC = () => {
       }
       notify.success(`${selectedCommunities.length} comunidade(s) excluída(s) com sucesso!`);
       setSelectedCommunities([]);
-      fetchData();
+      refreshList();
     } catch (error: any) {
       console.error('Erro ao excluir comunidades:', error);
       notify.error(error.response?.data?.message || 'Erro ao excluir comunidades');
@@ -392,28 +516,25 @@ const CommunitiesPage: React.FC = () => {
   };
 
   const exportToCSV = () => {
-    const headers = ['Nome', 'Paróquia', 'Diocese', 'Cidade', 'Estado', 'Endereço', 'CEP', 'Telefone', 'Email'];
-    const rows = sortedCommunities.map((community) => [
-      community.name,
-      community.parish.name,
-      community.parish.diocese.name,
-      community.city,
-      community.state,
-      community.address,
-      community.zipCode,
-      community.phone || '',
-      community.email || '',
-    ]);
-
-    const csvContent = [headers, ...rows]
-      .map((row) => row.map((cell) => `"${cell}"`).join(','))
-      .join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `comunidades_${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
+    // Excel pt-BR: ';', BOM UTF-8, datas dd/mm/aaaa. Paginado no servidor,
+    // exporta a página exibida (a lista inteira seria o país).
+    downloadCsv(
+      'comunidades',
+      ['Nome', 'Paróquia', 'Diocese', 'Cidade', 'Estado', 'Endereço', 'CEP', 'Telefone', 'Email', 'Leigos registram sacramentos', 'Criada em'],
+      sortedCommunities.map((community) => [
+        community.name,
+        community.parish?.name ?? '',
+        community.parish?.diocese?.name ?? '',
+        community.city,
+        community.state,
+        community.address,
+        community.zipCode,
+        community.phone || '',
+        community.email || '',
+        community.laySacramentRecords === true,
+        csvInstantDate(community.createdAt),
+      ]),
+    );
   };
 
   const formatDate = (dateString: string) => {
@@ -437,19 +558,24 @@ const CommunitiesPage: React.FC = () => {
         <div className="filters">
           <input
             type="text"
-            placeholder="Buscar por nome, cidade ou paróquia..."
+            placeholder={serverPaged ? 'Buscar por nome ou cidade...' : 'Buscar por nome, cidade ou paróquia...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="search-input"
+            aria-label="Buscar comunidades"
           />
-          <SearchSelect
-            options={parishOptions}
-            value={filterParish}
-            onChange={setFilterParish}
-            placeholder="Todas as paróquias"
-            allOption
-            searchPlaceholder="Buscar paróquia ou diocese..."
-          />
+          {/* Paginado no servidor não há filtro por paróquia: a busca cobre nome e cidade */}
+          {!serverPaged && (
+            <SearchSelect
+              options={parishOptions}
+              value={filterParish}
+              onChange={setFilterParish}
+              placeholder="Todas as paróquias"
+              allOption
+              searchPlaceholder="Buscar paróquia ou diocese..."
+            />
+          )}
+          {listLoading && <span style={{ alignSelf: 'center', color: '#888', fontSize: 13 }}>Buscando…</span>}
         </div>
 
         <div className="view-toggle">
@@ -482,8 +608,18 @@ const CommunitiesPage: React.FC = () => {
                   <div className="entity-heading">
                     <h3 className="entity-title">{community.name}</h3>
                     <div className="entity-chips">
-                      <span className="entity-chip soft-blue">{community.parish.name}</span>
-                      <span className="entity-chip">{community.parish.diocese.name}</span>
+                      <span className="entity-chip soft-blue">{community.parish?.name}</span>
+                      {community.parish?.diocese?.name && (
+                        <span className="entity-chip">{community.parish.diocese.name}</span>
+                      )}
+                      {community.laySacramentRecords && (
+                        <span
+                          className="entity-chip"
+                          title="Coordenador leigo pode registrar sacramentos e emitir certidão"
+                        >
+                          Leigos registram sacramentos
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -616,9 +752,9 @@ const CommunitiesPage: React.FC = () => {
                     <strong>{community.name}</strong>
                   </td>
                   <td>
-                    <span className="entity-chip soft-blue">{community.parish.name}</span>
+                    <span className="entity-chip soft-blue">{community.parish?.name}</span>
                   </td>
-                  <td>{community.parish.diocese.name}</td>
+                  <td>{community.parish?.diocese?.name ?? '-'}</td>
                   <td>{community.city} - {community.state}</td>
                   <td>{community.phone || '-'}</td>
                   <td>{community.email || '-'}</td>
@@ -681,7 +817,7 @@ const CommunitiesPage: React.FC = () => {
             ‹
           </button>
           <span className="pagination-info">
-            Página {currentPage} de {totalPages} ({sortedCommunities.length} comunidades)
+            Página {currentPage} de {totalPages} ({totalCount.toLocaleString('pt-BR')} comunidades)
           </span>
           <button aria-label="Próxima página"
             className="pagination-btn"
@@ -715,15 +851,36 @@ const CommunitiesPage: React.FC = () => {
                 />
               </div>
 
+              {platformScope && (
+                <div className="form-group">
+                  <label>Diocese *</label>
+                  <SearchSelect
+                    options={dioceses.map((diocese) => ({ value: diocese.id, label: diocese.name }))}
+                    value={formDioceseId}
+                    onChange={(dioceseId) => {
+                      setFormDioceseId(dioceseId);
+                      setParishes([]);
+                      setFormData({ ...formData, parishId: '' });
+                    }}
+                    placeholder="Selecione a diocese"
+                    searchPlaceholder="Buscar diocese..."
+                  />
+                </div>
+              )}
+
               <div className="form-group">
                 <label>Paróquia *</label>
-                <SearchSelect
-                  options={parishOptions}
-                  value={formData.parishId}
-                  onChange={(parishId) => setFormData({ ...formData, parishId })}
-                  placeholder="Selecione uma paróquia"
-                  searchPlaceholder="Buscar paróquia ou diocese..."
-                />
+                {platformScope && !formDioceseId ? (
+                  <p style={{ fontSize: 13, color: '#888', margin: 0 }}>Escolha a diocese para listar as paróquias.</p>
+                ) : (
+                  <SearchSelect
+                    options={parishOptions}
+                    value={formData.parishId}
+                    onChange={(parishId) => setFormData({ ...formData, parishId })}
+                    placeholder="Selecione uma paróquia"
+                    searchPlaceholder="Buscar paróquia ou diocese..."
+                  />
+                )}
               </div>
 
               <div className="form-group">
@@ -786,6 +943,31 @@ const CommunitiesPage: React.FC = () => {
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 />
               </div>
+
+              {/* Registro sacramental por leigos: decisão da paróquia, por comunidade (PARISH_ADMIN+) */}
+              {editingCommunity && isAdminRole && (
+                <div className="form-group">
+                  <label
+                    style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', fontWeight: 'normal' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={formData.laySacramentRecords}
+                      onChange={(e) => setFormData({ ...formData, laySacramentRecords: e.target.checked })}
+                      style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0 }}
+                    />
+                    <span>
+                      <strong>Coordenador leigo pode registrar sacramentos e emitir certidão</strong>
+                      <br />
+                      <small style={{ color: '#66788c' }}>
+                        Desligado (padrão): só a secretaria paroquial e o pároco registram assentos, retificam e
+                        emitem certidões desta comunidade. Ligue apenas se o pároco delegou essa tarefa ao
+                        coordenador da comunidade.
+                      </small>
+                    </span>
+                  </label>
+                </div>
+              )}
 
               <div className="form-group">
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>

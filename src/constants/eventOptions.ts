@@ -9,6 +9,18 @@ export const eventTypes = [
   { value: 'VISITATION', label: 'Visitação', color: '#64748b', icon: 'V' },
 ] as const;
 
+/**
+ * Tipos que só existem na agenda fixa (MassScheduleType), não em Event: não
+ * entram nos seletores de evento, mas ganham rótulo/cor/ícone onde aparecem.
+ */
+const scheduleOnlyTypes = [
+  { value: 'WORD_CELEBRATION', label: 'Celebração da Palavra', color: '#16a34a', icon: '📖' },
+] as const;
+
+const findType = (type: string) =>
+  eventTypes.find((eventType) => eventType.value === type) ??
+  scheduleOnlyTypes.find((scheduleType) => scheduleType.value === type);
+
 export const eventStatuses = [
   { value: 'DRAFT', label: 'Rascunho', color: '#6c757d' },
   { value: 'PUBLISHED', label: 'Publicado', color: '#28a745' },
@@ -16,14 +28,11 @@ export const eventStatuses = [
   { value: 'COMPLETED', label: 'Concluído', color: '#007bff' },
 ] as const;
 
-export const getEventTypeLabel = (type: string) =>
-  eventTypes.find((eventType) => eventType.value === type)?.label || type;
+export const getEventTypeLabel = (type: string) => findType(type)?.label || type;
 
-export const getEventTypeColor = (type: string) =>
-  eventTypes.find((eventType) => eventType.value === type)?.color || '#95a5a6';
+export const getEventTypeColor = (type: string) => findType(type)?.color || '#95a5a6';
 
-export const getEventTypeIcon = (type: string) =>
-  eventTypes.find((eventType) => eventType.value === type)?.icon || 'E';
+export const getEventTypeIcon = (type: string) => findType(type)?.icon || 'E';
 
 export const getEventStatusLabel = (status: string) =>
   eventStatuses.find((eventStatus) => eventStatus.value === status)?.label || status;

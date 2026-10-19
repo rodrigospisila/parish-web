@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import TitleIcon from '../../components/TitleIcon';
 import { DateInput } from '../../components/DateInput';
+import SacramentCertificateDialog from '../../components/SacramentCertificateDialog';
 import api, { getErrorMessage } from '../../services/api';
+import { formatCivilDate } from '../../utils/dateFormat';
 import { notify } from '../../services/notification.service';
 import './ModulePages.css';
 
@@ -19,7 +21,16 @@ interface SacramentProcess {
   documentsChecklist?: ChecklistItem[] | null;
   member: { id: string; fullName: string };
   communityId: string;
+  /** Assento gerado na celebração + numeração (livro/folha/termo) */
+  sacramentId?: string | null;
+  book?: string | null;
+  page?: string | null;
+  term?: string | null;
 }
+
+/** Certidão só com livro + folha + termo e assento gravado; senão sai a declaração para conferência */
+const hasNumbering = (process: SacramentProcess) =>
+  !!(process.sacramentId && process.book?.trim() && process.page?.trim() && process.term?.trim());
 
 interface Community {
   id: string;
@@ -58,21 +69,6 @@ const NEXT_STATUS: Record<string, string | null> = {
   CANCELLED: null,
 };
 
-/** Com responseType 'blob' o erro do backend também vem como Blob — recupera a mensagem real. */
-const blobErrorMessage = async (error: any, fallback: string): Promise<string> => {
-  try {
-    if (error?.response?.data instanceof Blob) {
-      const parsed = JSON.parse(await error.response.data.text());
-      if (parsed?.message) {
-        return Array.isArray(parsed.message) ? parsed.message.join(', ') : parsed.message;
-      }
-    }
-  } catch {
-    // corpo não-JSON — segue para o genérico
-  }
-  return getErrorMessage(error, fallback);
-};
-
 const SacramentProcessesPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [processes, setProcesses] = useState<SacramentProcess[]>([]);
@@ -88,6 +84,9 @@ const SacramentProcessesPage: React.FC = () => {
 
   const [celebrateProcess, setCelebrateProcess] = useState<SacramentProcess | null>(null);
   const [celebrateForm, setCelebrateForm] = useState({ date: '', minister: '', book: '', page: '', term: '', place: '' });
+
+  // Certidão (2ª via) com finalidade opcional
+  const [certificateProcess, setCertificateProcess] = useState<SacramentProcess | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -179,21 +178,6 @@ const SacramentProcessesPage: React.FC = () => {
     }
   };
 
-  const downloadCertificate = async (process: SacramentProcess) => {
-    try {
-      const res = await api.get(`/sacrament-processes/${process.id}/certificate.pdf`, { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `certidao_${process.member.fullName.replace(/\s+/g, '_').toLowerCase()}.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      // responseType 'blob': o 400/403 também chega como Blob — lê a mensagem real
-      notify.error(await blobErrorMessage(error, 'Erro ao emitir certidão'));
-    }
-  };
-
   const checklistProgress = (process: SacramentProcess) => {
     const items = Array.isArray(process.documentsChecklist) ? process.documentsChecklist : [];
     if (!items.length) return null;
@@ -224,7 +208,7 @@ const SacramentProcessesPage: React.FC = () => {
                   <span className="status-badge blue">{SACRAMENT_LABELS[process.type] ?? process.type}</span>
                   {process.scheduledDate && (
                     <p style={{ margin: '0.3rem 0 0 0', color: '#666' }}>
-                      📅 {new Date(process.scheduledDate).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
+                      📅 {formatCivilDate(process.scheduledDate)}
                     </p>
                   )}
                   {checklistProgress(process) && (
@@ -246,7 +230,13 @@ const SacramentProcessesPage: React.FC = () => {
                       </>
                     )}
                     {process.status === 'CELEBRATED' && (
-                      <button className="btn-small" onClick={() => downloadCertificate(process)}>📄 Certidão (2ª via)</button>
+                      <button
+                        className="btn-small"
+                        onClick={() => setCertificateProcess(process)}
+                        title={hasNumbering(process) ? 'Emitir a certidão' : 'Sem livro/folha/termo: sai a declaração para conferência'}
+                      >
+                        📄 {hasNumbering(process) ? 'Certidão (2ª via)' : 'Declaração'}
+                      </button>
                     )}
                     {process.status === 'CANCELLED' && (
                       <button className="btn-small" onClick={() => handleStatus(process, 'REQUESTED')}>Reabrir</button>
@@ -410,6 +400,16 @@ const SacramentProcessesPage: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {certificateProcess && (
+        <SacramentCertificateDialog
+          path={`/sacrament-processes/${certificateProcess.id}/certificate.pdf`}
+          personName={certificateProcess.member.fullName}
+          sacramentLabel={SACRAMENT_LABELS[certificateProcess.type] ?? certificateProcess.type}
+          hasNumbering={hasNumbering(certificateProcess)}
+          onClose={() => setCertificateProcess(null)}
+        />
       )}
     </div>
   );

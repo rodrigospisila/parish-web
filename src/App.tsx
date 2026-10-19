@@ -44,29 +44,25 @@ import SaintsPage from './pages/modules/SaintsPage';
 import ClergyMessagesPage from './pages/modules/ClergyMessagesPage';
 import FixedSchedulePage from './pages/modules/FixedSchedulePage';
 import { PrivacyPage, TermsPage, SupportPage } from './pages/LegalPages';
+import AccessDenied from './components/AccessDenied';
+import { ROUTE_ACCESS, coordinatesAnyPastoral, roleAllows, type AccessRule } from './components/accessRules';
+import { loadDisabledModules, useModuleAccess } from './hooks/useModuleAccess';
 import DonatePage from './pages/public/DonatePage';
 import GiftStatusPage from './pages/public/GiftStatusPage';
 
-// Papéis com acesso às telas de coordenação (módulos das Fases 3–4)
-const COORDINATION_ROLES = [
-  'SYSTEM_ADMIN',
-  'DIOCESAN_ADMIN',
-  'PARISH_ADMIN',
-  'COMMUNITY_COORDINATOR',
-  'PASTORAL_COORDINATOR',
-];
-
-// Módulos restritos à coordenação de comunidade ou superior (financeiro, sacramentos)
-const COMMUNITY_MANAGEMENT_ROLES = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'];
-// Agenda Fixa: coordenador de pastoral acessa para GERAR ESCALA (CRUD segue restrito no componente/back)
-const FIXED_SCHEDULE_ROLES = [...COMMUNITY_MANAGEMENT_ROLES, 'PASTORAL_COORDINATOR'];
+/** Carregando discreto (sem "Carregando..." cru no canto da tela). */
+const RouteLoading: React.FC = () => (
+  <div className="loading" role="status" style={{ padding: '2rem', textAlign: 'center', color: '#52606d' }}>
+    Carregando…
+  </div>
+);
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { token, user, loading } = useAuth();
   const location = useLocation();
 
   if (loading) {
-    return <div>Carregando...</div>;
+    return <RouteLoading />;
   }
 
   if (!token) {
@@ -81,20 +77,26 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
-const RoleProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles: string[] }> = ({ children, allowedRoles }) => {
+/**
+ * Guarda de rota com o MESMO critério do menu (accessRules + matriz de módulos):
+ * quem chega pela URL sem acesso vê "Sem acesso a esta página" com a saída
+ * para o Início (eng-acessos-25 / ux-acesso-30).
+ */
+const RequireAccess: React.FC<{ children: React.ReactNode; rule: AccessRule }> = ({ children, rule }) => {
   const { user, loading } = useAuth();
+  const { modOn, ready } = useModuleAccess(user?.role);
 
   if (loading) {
-    return <div>Carregando...</div>;
+    return <RouteLoading />;
   }
 
-  if (!user || !allowedRoles.includes(user.role)) {
-    return (
-      <div style={{ padding: '2rem', textAlign: 'center' }}>
-        <h2 style={{ color: '#e74c3c' }}>Acesso Negado</h2>
-        <p>Você não tem permissão para acessar esta página.</p>
-      </div>
-    );
+  if (!roleAllows(user, rule)) {
+    return <AccessDenied reason="role" />;
+  }
+
+  if (rule.module) {
+    if (!ready) return <RouteLoading />;
+    if (!modOn(rule.module)) return <AccessDenied reason="module" />;
   }
 
   return <>{children}</>;
@@ -103,18 +105,18 @@ const RoleProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles: st
 // Tela exclusiva da coordenação. Papel de base que chegue pela URL (o painel de
 // Escalas já foi o landing do fiel, então o endereço pode estar no histórico do
 // navegador) volta para a própria área em vez de ver a gestão ou um "Acesso Negado".
-const CoordinationOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const CoordinationOnlyRoute: React.FC<{ children: React.ReactNode; rule: AccessRule }> = ({ children, rule }) => {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return <div>Carregando...</div>;
+    return <RouteLoading />;
   }
 
-  if (!user || !COORDINATION_ROLES.includes(user.role)) {
+  if (!roleAllows(user, rule)) {
     return <Navigate to="/admin" replace />;
   }
 
-  return <>{children}</>;
+  return <RequireAccess rule={rule}>{children}</RequireAccess>;
 };
 
 // Fiel/voluntário: o catequista entra pela turma dele (item em destaque do menu);
@@ -126,17 +128,11 @@ const BaseRoleLanding: React.FC<{ role: string }> = ({ role }) => {
 
   useEffect(() => {
     let active = true;
-    Promise.all([
-      api.get('/catechesis/my-classes'),
-      api.get('/settings/module-access').catch(() => null),
-    ])
-      .then(([classes, access]) => {
+    Promise.all([api.get('/catechesis/my-classes'), loadDisabledModules(role)])
+      .then(([classes, disabled]) => {
         if (!active) return;
         const isCatechist = Array.isArray(classes.data) && classes.data.length > 0;
-        const catechesisOff = (access?.data?.disabled ?? []).some(
-          (d: { role: string; moduleKey: string }) => d.role === role && d.moduleKey === 'catechesis',
-        );
-        setTarget(isCatechist && !catechesisOff ? '/admin/catechesis' : '/admin/my-schedule');
+        setTarget(isCatechist && !disabled.has('catechesis') ? '/admin/catechesis' : '/admin/my-schedule');
       })
       .catch(() => {
         if (active) setTarget('/admin/my-schedule');
@@ -147,7 +143,7 @@ const BaseRoleLanding: React.FC<{ role: string }> = ({ role }) => {
   }, [role]);
 
   if (!target) {
-    return <div>Carregando...</div>;
+    return <RouteLoading />;
   }
 
   return <Navigate to={target} replace />;
@@ -162,7 +158,9 @@ const AdminIndexRedirect: React.FC = () => {
   if (['SYSTEM_ADMIN', 'DIOCESAN_ADMIN'].includes(role)) {
     return <Navigate to="/admin/communities" replace />;
   }
-  if (['PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR'].includes(role)) {
+  // Quem coordena pastoral pelo vínculo (papel VOLUNTEER/FAITHFUL) também cai
+  // no Início das suas pastorais (ux-dashboards-22)
+  if (['PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR'].includes(role) || coordinatesAnyPastoral(user)) {
     return <Navigate to="/admin/dashboard" replace />;
   }
   // Fiel/voluntário caía no painel de Escalas da coordenação, que não é dele
@@ -209,95 +207,109 @@ const App: React.FC = () => {
           >
             <Route index element={<AdminIndexRedirect />} />
             <Route path="dioceses" element={
-              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN', 'DIOCESAN_ADMIN']}>
+              <RequireAccess rule={ROUTE_ACCESS.dioceses}>
                 <DiocesesPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="parishes" element={
-              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN']}>
+              <RequireAccess rule={ROUTE_ACCESS.parishes}>
                 <ParishesPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
-            <Route path="communities" element={<CommunitiesPage />} />
+            <Route path="communities" element={
+              <RequireAccess rule={ROUTE_ACCESS.communities}>
+                <CommunitiesPage />
+              </RequireAccess>
+            } />
             {/* Cadastro de membros: só coordenação (o backend já devolve ao fiel
                 apenas o próprio cadastro e os dependentes) */}
             <Route path="members" element={
-              <CoordinationOnlyRoute>
+              <CoordinationOnlyRoute rule={ROUTE_ACCESS.members}>
                 <MembersPage />
               </CoordinationOnlyRoute>
             } />
             <Route path="account" element={<MyAccountPage />} />
             <Route path="my-data" element={<MyDataPage />} />
             <Route path="map" element={
-              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
+              <RequireAccess rule={ROUTE_ACCESS.map}>
                 <TerritoryMapPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             {/* Plataforma (SYSTEM_ADMIN): sugestões dos fiéis, crescimento e planos */}
             <Route path="platform/suggestions" element={
-              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
+              <RequireAccess rule={ROUTE_ACCESS.platform}>
                 <SuggestionsPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="platform/growth" element={
-              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
+              <RequireAccess rule={ROUTE_ACCESS.platform}>
                 <GrowthPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="platform/plans" element={
-              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
+              <RequireAccess rule={ROUTE_ACCESS.platform}>
                 <PlansPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="settings" element={
-              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
+              <RequireAccess rule={ROUTE_ACCESS.settings}>
                 <SystemSettingsPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
-            <Route path="events" element={<EventsPage />} />
+            <Route path="events" element={
+              <RequireAccess rule={ROUTE_ACCESS.events}>
+                <EventsPage />
+              </RequireAccess>
+            } />
+            {/* Agenda Fixa: coordenador de pastoral acessa para GERAR ESCALA (CRUD segue restrito no componente/back) */}
             <Route path="fixed-schedule" element={
-              <RoleProtectedRoute allowedRoles={FIXED_SCHEDULE_ROLES}>
+              <RequireAccess rule={ROUTE_ACCESS['fixed-schedule']}>
                 <FixedSchedulePage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="schedules" element={
-              <CoordinationOnlyRoute>
+              <CoordinationOnlyRoute rule={ROUTE_ACCESS.schedules}>
                 <SchedulesPage />
               </CoordinationOnlyRoute>
             } />
-            <Route path="users" element={<UsersPage />} />
+            <Route path="users" element={
+              <RequireAccess rule={ROUTE_ACCESS.users}>
+                <UsersPage />
+              </RequireAccess>
+            } />
             {/* Governança de acesso (D4.7): segurança da conta e auditoria escopada */}
             <Route path="security" element={<SecurityPage />} />
             <Route path="audit" element={
-              <RoleProtectedRoute allowedRoles={COMMUNITY_MANAGEMENT_ROLES}>
+              <RequireAccess rule={ROUTE_ACCESS.audit}>
                 <AuditPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="pastorals/my" element={
-              <RoleProtectedRoute allowedRoles={['PASTORAL_COORDINATOR']}>
+              <RequireAccess rule={ROUTE_ACCESS['pastorals/my']}>
                 <MyPastoralsPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="pastorals/global" element={
-              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN']}>
+              <RequireAccess rule={ROUTE_ACCESS['pastorals/global']}>
                 <GlobalPastoralsPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="pastorals/community" element={
-              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR']}>
+              <RequireAccess rule={ROUTE_ACCESS['pastorals/community']}>
                 <CommunityPastoralsPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="pastorals/community/:id" element={
-              <RoleProtectedRoute allowedRoles={['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR']}>
+              <RequireAccess rule={ROUTE_ACCESS['pastorals/community']}>
                 <CommunityPastoralDetailsPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
 
+            {/* Início: coordenação e quem coordena pastoral pelo vínculo (ux-dashboards-22) */}
             <Route path="dashboard" element={
-              <RoleProtectedRoute allowedRoles={COORDINATION_ROLES}>
+              <RequireAccess rule={ROUTE_ACCESS.dashboard}>
                 <DashboardPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
 
             {/* Módulos das Fases 3–4 */}
@@ -305,49 +317,61 @@ const App: React.FC = () => {
             <Route path="catechesis" element={
               // Fiel/voluntário CATEQUISTA também entra: a página se limita às
               // turmas dele (backend restringe a lista e valida cada ação)
-              <RoleProtectedRoute allowedRoles={[...COORDINATION_ROLES, 'VOLUNTEER', 'FAITHFUL']}>
+              <RequireAccess rule={ROUTE_ACCESS.catechesis}>
                 <CatechesisPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="planning" element={
-              <RoleProtectedRoute allowedRoles={COORDINATION_ROLES}>
+              <RequireAccess rule={ROUTE_ACCESS.planning}>
                 <PlanningPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="documents" element={
-              <RoleProtectedRoute allowedRoles={COORDINATION_ROLES}>
+              <RequireAccess rule={ROUTE_ACCESS.documents}>
                 <DocumentsPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="formation" element={
-              <RoleProtectedRoute allowedRoles={COORDINATION_ROLES}>
+              <RequireAccess rule={ROUTE_ACCESS.formation}>
                 <FormationPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="rooms" element={
-              <RoleProtectedRoute allowedRoles={COORDINATION_ROLES}>
+              <RequireAccess rule={ROUTE_ACCESS.rooms}>
                 <RoomsPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="finance" element={
-              <RoleProtectedRoute allowedRoles={COMMUNITY_MANAGEMENT_ROLES}>
+              <RequireAccess rule={ROUTE_ACCESS.finance}>
                 <FinancePage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="sacrament-processes" element={
-              <RoleProtectedRoute allowedRoles={COMMUNITY_MANAGEMENT_ROLES}>
+              <RequireAccess rule={ROUTE_ACCESS['sacrament-processes']}>
                 <SacramentProcessesPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
             <Route path="visitation" element={
-              <RoleProtectedRoute allowedRoles={COORDINATION_ROLES}>
+              <RequireAccess rule={ROUTE_ACCESS.visitation}>
                 <VisitationPage />
-              </RoleProtectedRoute>
+              </RequireAccess>
             } />
-            <Route path="swaps" element={<SwapsPage />} />
-            {/* Santos e Palavra Pastoral: leitura aberta a todos os logados */}
-            <Route path="saints" element={<SaintsPage />} />
-            <Route path="clergy-messages" element={<ClergyMessagesPage />} />
+            <Route path="swaps" element={
+              <RequireAccess rule={ROUTE_ACCESS.swaps}>
+                <SwapsPage />
+              </RequireAccess>
+            } />
+            {/* Santos e Palavra Pastoral: leitura aberta a todos os logados (salvo módulo desligado) */}
+            <Route path="saints" element={
+              <RequireAccess rule={ROUTE_ACCESS.saints}>
+                <SaintsPage />
+              </RequireAccess>
+            } />
+            <Route path="clergy-messages" element={
+              <RequireAccess rule={ROUTE_ACCESS['clergy-messages']}>
+                <ClergyMessagesPage />
+              </RequireAccess>
+            } />
           </Route>
 
           <Route path="/" element={<Navigate to="/admin" replace />} />

@@ -9,8 +9,21 @@ import { scopeCommunityIdOf } from '../../utils/userScope';
 import './ModulePages.css';
 import './CatechesisPage.css';
 
-/** Pastoral da Catequese: mesma regra do backend (nome contém "catequ") */
-const CATECHESIS_PASTORAL_NAME = /catequ/i;
+/**
+ * Pastoral da Catequese: campo `isCatechesis` da pastoral global (mesma regra
+ * do backend). Servidor antigo sem o campo: o nome contém "catequ".
+ */
+type CatechesisPastoralLike = {
+  name?: string | null;
+  isCatechesis?: boolean | null;
+  globalPastoral?: { name?: string | null; isCatechesis?: boolean | null } | null;
+};
+const isCatechesisPastoral = (pastoral: CatechesisPastoralLike | null | undefined): boolean => {
+  if (!pastoral) return false;
+  const flag = pastoral.globalPastoral?.isCatechesis ?? pastoral.isCatechesis;
+  if (typeof flag === 'boolean') return flag;
+  return /catequ/i.test(pastoral.globalPastoral?.name ?? pastoral.name ?? '');
+};
 /** Vínculo de coordenação (servidor antigo, sem coordinatedPastoralIds) */
 const COORDINATOR_MEMBERSHIP_ROLE = /^(coordinator|coordenador)$/i;
 
@@ -25,7 +38,7 @@ function sessionCatechesisCoordCommunities(user: User | null | undefined): Set<s
   const coordinated = Array.isArray(user.coordinatedPastoralIds) ? new Set(user.coordinatedPastoralIds) : null;
   for (const pastoral of user.pastorals ?? []) {
     const isCoordination = coordinated ? coordinated.has(pastoral.id) : COORDINATOR_MEMBERSHIP_ROLE.test(pastoral.role ?? '');
-    if (isCoordination && CATECHESIS_PASTORAL_NAME.test(pastoral.name ?? '') && pastoral.communityId) {
+    if (isCoordination && isCatechesisPastoral(pastoral as CatechesisPastoralLike) && pastoral.communityId) {
       ids.add(pastoral.communityId);
     }
   }
@@ -731,7 +744,7 @@ const CatechesisPage: React.FC = () => {
         const ids = new Set(fromSession);
         for (const item of Array.isArray(data) ? data : []) {
           const pastoral = item?.communityPastoral ?? item;
-          if (pastoral?.communityId && CATECHESIS_PASTORAL_NAME.test(pastoral?.globalPastoral?.name ?? '')) {
+          if (pastoral?.communityId && isCatechesisPastoral(pastoral)) {
             ids.add(pastoral.communityId);
           }
         }

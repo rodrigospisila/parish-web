@@ -1,5 +1,15 @@
-# CI do painel (achado B55): a Vercel publica a cada push; este workflow avisa
-# quando o commit quebra o type-check ou o build.
+# CI do painel (achados B55 e eng-qualidade-08): a Vercel publica a cada push;
+# este workflow avisa quando o commit quebra o type-check ou o build.
+#
+# Node 20 = o mesmo do backend (Dockerfile) e do EAS. A versão de Node do
+# projeto na Vercel é configurada no painel (Settings → Build and Deployment →
+# Node.js Version) e não está no repositório — conferir que é 20.x (ou fixar
+# "engines": { "node": "20.x" } no package.json).
+#
+# Lint: o painel ainda NÃO tem ESLint (nem dependência, nem configuração, nem
+# script "lint" no package.json). Quando entrar (typescript-eslint, react-hooks,
+# jsx-a11y — começando em modo aviso), acrescentar aqui um passo
+# "npx eslint src" com continue-on-error até a contagem zerar.
 name: CI
 
 on:
@@ -10,6 +20,9 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   web:
@@ -24,8 +37,14 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      # "tsc && vite build"
-      - run: npm run build
+      # O "npm run build" da Vercel é "tsc && vite build"; aqui em passos
+      # separados para o erro aparecer com nome (tipos x bundle).
+      - name: Tipos (src)
+        run: npx tsc --noEmit -p tsconfig.json
+      - name: Tipos (vite.config.ts)
+        run: npx tsc --noEmit -p tsconfig.node.json
+      - name: Build (vite)
+        run: npx vite build
       - name: vercel.json válido (cabeçalhos de segurança)
         run: node -e "const v=require('./vercel.json');const h=v.headers?.[0]?.headers?.map(x=>x.key)||[];for(const k of ['Content-Security-Policy','X-Frame-Options','X-Content-Type-Options'])if(!h.includes(k)){console.error('faltando '+k);process.exit(1)};const csp=v.headers[0].headers.find(x=>x.key==='Content-Security-Policy').value;const api=new URL(process.env.VITE_API_URL).origin;const cs=(csp.match(/connect-src([^;]*)/)||[])[1]||'';if(!cs.split(/\s+/).includes(api)){console.error('connect-src da CSP não inclui a API '+api);process.exit(1)}"
       # Aviso, não bloqueio: um alerta novo publicado não pode derrubar um commit que não mexeu em nada

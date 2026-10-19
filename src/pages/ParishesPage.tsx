@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import TitleIcon from '../components/TitleIcon';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
+import api, { getErrorMessage } from '../services/api';
 import { notify, confirm } from '../services/notification.service';
+import { csvInstantDate, downloadCsv } from '../utils/csvExport';
+import { isPagedResponse, useDebouncedValue } from '../utils/useDebouncedValue';
 import PatronSaintsManager, { usePatronSaints, PatronSaintsBadge } from '../components/PatronSaintsManager';
 import SearchSelect from '../components/SearchSelect';
 import SaintAvatar, { avatarColor, initials } from '../components/SaintAvatar';
@@ -32,6 +35,7 @@ interface Parish {
   zipCode: string;
   phone?: string;
   email?: string;
+  dioceseId?: string;
   diocese: Diocese;
   createdAt: string;
 }
@@ -78,6 +82,24 @@ const ParishesPage: React.FC = () => {
   const [selectedParishes, setSelectedParishes] = useState<string[]>([]);
   const [filterDiocese, setFilterDiocese] = useState('');
 
+  /**
+   * Escopo amplo (plataforma ~12,8 mil paróquias; diocese): lista paginada no
+   * servidor (`page`, `pageSize`, `search` sem acento por nome/cidade) com
+   * debounce. Filtro por diocese usa a lista leve `?dioceseId=` (no máximo
+   * algumas centenas), filtrada aqui. Servidor antigo que ignora `page`
+   * devolve tudo — a tela volta ao modo local.
+   */
+  const serverMode = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN'].includes(currentUser?.role ?? '');
+  const [pagedByServer, setPagedByServer] = useState(false);
+  const [serverTotal, setServerTotal] = useState(0);
+  const [listLoading, setListLoading] = useState(false);
+  const debouncedSearch = useDebouncedValue(searchTerm.trim(), 350);
+  const serverPaged = serverMode && !filterDiocese && pagedByServer;
+  const requestSeq = useRef(0);
+  // Nome da diocese na lista leve (sem refazer a busca quando as dioceses chegam)
+  const diocesesRef = useRef<Diocese[]>([]);
+  diocesesRef.current = dioceses;
+
   const [formData, setFormData] = useState({
     name: '',
     city: '',
@@ -91,7 +113,59 @@ const ParishesPage: React.FC = () => {
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Lista do escopo amplo: página do servidor ou, com diocese escolhida, a lista leve dela. */
+  const fetchServerList = useCallback(async () => {
+    const seq = ++requestSeq.current;
+    setListLoading(true);
+    try {
+      if (filterDiocese) {
+        const { data } = await api.get('/parishes', { params: { dioceseId: filterDiocese } });
+        if (seq !== requestSeq.current) return;
+        const diocese = diocesesRef.current.find((d) => d.id === filterDiocese);
+        setParishes(
+          (Array.isArray(data) ? data : []).map((parish: any) => ({
+            ...parish,
+            diocese: parish.diocese ?? { id: filterDiocese, name: diocese?.name ?? '' },
+          })),
+        );
+        return;
+      }
+      const { data } = await api.get('/parishes', {
+        params: { page: currentPage, pageSize: itemsPerPage, search: debouncedSearch || undefined },
+      });
+      if (seq !== requestSeq.current) return;
+      if (isPagedResponse<Parish>(data)) {
+        setParishes(data.items);
+        setServerTotal(data.total);
+        setPagedByServer(true);
+      } else {
+        setParishes(Array.isArray(data) ? data : []);
+        setPagedByServer(false);
+      }
+    } catch (error) {
+      if (seq === requestSeq.current) notify.error(getErrorMessage(error, 'Erro ao carregar paróquias'));
+    } finally {
+      if (seq === requestSeq.current) {
+        setListLoading(false);
+        setLoading(false);
+      }
+    }
+  }, [filterDiocese, currentPage, itemsPerPage, debouncedSearch]);
+
+  useEffect(() => {
+    if (serverMode) fetchServerList();
+  }, [serverMode, fetchServerList]);
+
+  // Nova busca/filtro volta para a primeira página
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, filterDiocese]);
+
+  /** Recarrega a lista depois de criar/editar/excluir */
+  const refreshList = () => (serverMode ? fetchServerList() : fetchData());
 
   const fetchData = async () => {
     try {
@@ -100,6 +174,14 @@ const ParishesPage: React.FC = () => {
       if (userStr) {
         const user = JSON.parse(userStr);
         setCurrentUserRole(user.role);
+      }
+      if (serverMode) {
+        // A lista vem por página (fetchServerList); aqui só as dioceses
+        const diocesesRes = await axios.get(`${API_URL}/dioceses`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setDioceses(diocesesRes.data);
+        return;
       }
       const [parishesRes, diocesesRes] = await Promise.all([
         axios.get(`${API_URL}/parishes`, {
@@ -145,26 +227,40 @@ const ParishesPage: React.FC = () => {
 
       setShowModal(false);
       resetForm();
-      fetchData();
+      refreshList();
     } catch (error: any) {
       console.error('Erro ao salvar paróquia:', error);
       notify.error(error.response?.data?.message || 'Erro ao salvar paróquia');
     }
   };
 
-  const handleEdit = (parish: Parish) => {
+  const openEditForm = (parish: Parish) => {
     setEditingParish(parish);
     setFormData({
       name: parish.name,
-      city: parish.city,
-      state: parish.state,
-      address: parish.address,
-      zipCode: parish.zipCode,
+      city: parish.city ?? '',
+      state: parish.state ?? '',
+      address: parish.address ?? '',
+      zipCode: parish.zipCode ?? '',
       phone: parish.phone || '',
       email: parish.email || '',
-      dioceseId: parish.diocese.id,
+      dioceseId: parish.diocese?.id ?? parish.dioceseId ?? '',
     });
     setShowModal(true);
+  };
+
+  const handleEdit = async (parish: Parish) => {
+    if (!serverMode) {
+      openEditForm(parish);
+      return;
+    }
+    // Lista do escopo amplo pode ser a leve (sem endereço/CEP): ficha completa antes de editar
+    try {
+      const { data } = await api.get(`/parishes/${parish.id}`);
+      openEditForm({ ...parish, ...data });
+    } catch (error) {
+      notify.error(getErrorMessage(error, 'Não foi possível abrir a paróquia'));
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -177,7 +273,7 @@ const ParishesPage: React.FC = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       notify.success('Paróquia excluída com sucesso!');
-      fetchData();
+      refreshList();
     } catch (error: any) {
       console.error('Erro ao excluir paróquia:', error);
       notify.error(error.response?.data?.message || 'Erro ao excluir paróquia');
@@ -198,44 +294,55 @@ const ParishesPage: React.FC = () => {
     setEditingParish(null);
   };
 
-  // Filtros
-  const filteredParishes = parishes.filter((parish) => {
-    const matchesSearch =
-      parish.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      parish.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      parish.diocese.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesDiocese = !filterDiocese || parish.diocese.id === filterDiocese;
-    return matchesSearch && matchesDiocese;
-  });
+  // Filtros (modo local). Paginado no servidor, a busca já veio aplicada lá
+  // (sem acento, por nome/cidade) e a ordem é a do servidor (nome).
+  const normalizeText = (text: string | null | undefined) =>
+    (text ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const term = normalizeText(searchTerm.trim());
+  const filteredParishes = serverPaged
+    ? parishes
+    : parishes.filter((parish) => {
+        const matchesSearch =
+          !term ||
+          normalizeText(parish.name).includes(term) ||
+          normalizeText(parish.city).includes(term) ||
+          normalizeText(parish.diocese?.name).includes(term);
+        const matchesDiocese = !filterDiocese || parish.diocese?.id === filterDiocese;
+        return matchesSearch && matchesDiocese;
+      });
 
   // Ordenação
-  const sortedParishes = [...filteredParishes].sort((a, b) => {
-    let comparison = 0;
-    switch (sortField) {
-      case 'name':
-        comparison = a.name.localeCompare(b.name);
-        break;
-      case 'city':
-        comparison = a.city.localeCompare(b.city);
-        break;
-      case 'diocese':
-        comparison = a.diocese.name.localeCompare(b.diocese.name);
-        break;
-      case 'createdAt':
-        comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-        break;
-    }
-    return sortDirection === 'asc' ? comparison : -comparison;
-  });
+  const sortedParishes = serverPaged
+    ? filteredParishes
+    : [...filteredParishes].sort((a, b) => {
+        let comparison = 0;
+        switch (sortField) {
+          case 'name':
+            comparison = a.name.localeCompare(b.name);
+            break;
+          case 'city':
+            comparison = (a.city ?? '').localeCompare(b.city ?? '');
+            break;
+          case 'diocese':
+            comparison = (a.diocese?.name ?? '').localeCompare(b.diocese?.name ?? '');
+            break;
+          case 'createdAt':
+            comparison = new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime();
+            break;
+        }
+        return sortDirection === 'asc' ? comparison : -comparison;
+      });
 
-  // Paginação
-  const totalPages = Math.ceil(sortedParishes.length / itemsPerPage);
-  const paginatedParishes = sortedParishes.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  // Paginação (no servidor, `parishes` já é a página atual)
+  const totalCount = serverPaged ? serverTotal : sortedParishes.length;
+  const totalPages = Math.ceil(totalCount / itemsPerPage);
+  const paginatedParishes = serverPaged
+    ? sortedParishes
+    : sortedParishes.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   const handleSort = (field: typeof sortField) => {
+    // Paginado no servidor a ordem é a do servidor (nome)
+    if (serverPaged) return;
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
@@ -274,7 +381,7 @@ const ParishesPage: React.FC = () => {
       }
       notify.success(`${selectedParishes.length} paróquia(s) excluída(s) com sucesso!`);
       setSelectedParishes([]);
-      fetchData();
+      refreshList();
     } catch (error: any) {
       console.error('Erro ao excluir paróquias:', error);
       notify.error(error.response?.data?.message || 'Erro ao excluir paróquias');
@@ -282,31 +389,27 @@ const ParishesPage: React.FC = () => {
   };
 
   const exportToCSV = () => {
-    const headers = ['Nome', 'Diocese', 'Cidade', 'Estado', 'Endereço', 'CEP', 'Telefone', 'Email'];
-    const rows = sortedParishes.map((parish) => [
-      parish.name,
-      parish.diocese.name,
-      parish.city,
-      parish.state,
-      parish.address,
-      parish.zipCode,
-      parish.phone || '',
-      parish.email || '',
-    ]);
-
-    const csvContent = [headers, ...rows]
-      .map((row) => row.map((cell) => `"${cell}"`).join(','))
-      .join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `paroquias_${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
+    // Excel pt-BR: ';', BOM UTF-8, datas dd/mm/aaaa. Paginado no servidor,
+    // exporta a página exibida (a lista inteira seria o país).
+    downloadCsv(
+      'paroquias',
+      ['Nome', 'Diocese', 'Cidade', 'Estado', 'Endereço', 'CEP', 'Telefone', 'Email', 'Criada em'],
+      sortedParishes.map((parish) => [
+        parish.name,
+        parish.diocese?.name ?? '',
+        parish.city,
+        parish.state,
+        parish.address,
+        parish.zipCode,
+        parish.phone || '',
+        parish.email || '',
+        csvInstantDate(parish.createdAt),
+      ]),
+    );
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR');
+  const formatDate = (dateString?: string) => {
+    return dateString ? new Date(dateString).toLocaleDateString('pt-BR') : '-';
   };
 
   if (loading) return <div className="loading">Carregando...</div>;
@@ -326,10 +429,11 @@ const ParishesPage: React.FC = () => {
         <div className="filters">
           <input
             type="text"
-            placeholder="Buscar por nome, cidade ou diocese..."
+            placeholder={serverPaged ? 'Buscar por nome ou cidade...' : 'Buscar por nome, cidade ou diocese...'}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="search-input"
+            aria-label="Buscar paróquias"
           />
           <SearchSelect
             options={dioceseOptions}
@@ -339,6 +443,7 @@ const ParishesPage: React.FC = () => {
             allOption
             searchPlaceholder="Buscar diocese..."
           />
+          {listLoading && <span style={{ alignSelf: 'center', color: '#888', fontSize: 13 }}>Buscando…</span>}
         </div>
 
         <div className="view-toggle">
@@ -371,7 +476,7 @@ const ParishesPage: React.FC = () => {
                   <div className="entity-heading">
                     <h3 className="entity-title">{parish.name}</h3>
                     <div className="entity-chips">
-                      <span className="entity-chip soft-blue">{parish.diocese.name}</span>
+                      <span className="entity-chip soft-blue">{parish.diocese?.name}</span>
                     </div>
                   </div>
                 </div>
@@ -504,7 +609,7 @@ const ParishesPage: React.FC = () => {
                     <strong>{parish.name}</strong>
                   </td>
                   <td>
-                    <span className="entity-chip soft-blue">{parish.diocese.name}</span>
+                    <span className="entity-chip soft-blue">{parish.diocese?.name}</span>
                   </td>
                   <td>{parish.city} - {parish.state}</td>
                   <td>{parish.address}</td>
@@ -565,7 +670,7 @@ const ParishesPage: React.FC = () => {
             ‹
           </button>
           <span className="pagination-info">
-            Página {currentPage} de {totalPages} ({sortedParishes.length} paróquias)
+            Página {currentPage} de {totalPages} ({totalCount.toLocaleString('pt-BR')} paróquias)
           </span>
           <button aria-label="Próxima página"
             className="pagination-btn"

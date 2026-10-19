@@ -287,13 +287,110 @@ function attachRefreshInterceptor(instance: { interceptors: any }) {
 attachRefreshInterceptor(api);
 attachRefreshInterceptor(axios);
 
+/**
+ * Código curto do erro do servidor (contrato 7): os 8 primeiros caracteres do
+ * `requestId` que o backend devolve no corpo (ou no header `X-Request-Id`,
+ * quando o navegador o expõe). Só para 5xx — é o que a pessoa informa ao
+ * suporte para acharmos o erro no log.
+ */
+export function serverErrorCode(error: unknown): string | null {
+  if (!axios.isAxiosError(error)) return null;
+  const status = error.response?.status ?? 0;
+  if (status < 500) return null;
+  const data: any = error.response?.data;
+  const headers: any = error.response?.headers;
+  const fromHeader = typeof headers?.get === 'function' ? headers.get('x-request-id') : headers?.['x-request-id'];
+  const raw = (data && typeof data === 'object' && typeof data.requestId === 'string' && data.requestId) || fromHeader;
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  return raw.trim().slice(0, 8);
+}
+
+/** Acrescenta "(código XXXXXXXX)" a uma mensagem de erro 5xx (sem repetir). */
+export function withServerErrorCode(message: string, error: unknown): string {
+  const code = serverErrorCode(error);
+  if (!code || message.includes(code)) return message;
+  return `${message} (código ${code})`;
+}
+
 export function getErrorMessage(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
     const message = error.response?.data?.message;
     if (Array.isArray(message)) return message.join('; ');
-    if (typeof message === 'string') return message;
+    if (typeof message === 'string') return withServerErrorCode(message, error);
+    // 5xx sem corpo JSON (proxy, servidor fora do ar): texto da tela + código
+    return withServerErrorCode(fallback, error);
   }
   return fallback;
 }
+
+/**
+ * Erro 5xx: a mensagem do corpo ganha o código curto já no interceptor, para
+ * que as telas legadas que leem `error.response.data.message` direto também
+ * mostrem o código (idempotente: não repete se já estiver no texto).
+ */
+function attachServerErrorCodeInterceptor(instance: { interceptors: any }) {
+  instance.interceptors.response.use(
+    (response: any) => response,
+    (error: any) => {
+      const data = error?.response?.data;
+      if (data && typeof data === 'object' && typeof data.message === 'string') {
+        data.message = withServerErrorCode(data.message, error);
+      }
+      return Promise.reject(error);
+    },
+  );
+}
+
+attachServerErrorCodeInterceptor(api);
+attachServerErrorCodeInterceptor(axios);
+
+/**
+ * Perfil possivelmente desatualizado (eng-acessos-26): o AuthContext escuta
+ * este evento e recarrega o /users/me. Disparado quando a API recusa por
+ * permissão (403 comum — o papel pode ter mudado) e depois de ações que mudam
+ * papel/coordenação do próprio usuário.
+ */
+export const PROFILE_STALE_EVENT = 'parish:profile-stale';
+
+const MUTATING_METHODS = new Set(['post', 'put', 'patch', 'delete']);
+// Ações que podem mudar o papel ou a coordenação de quem está logado
+const ROLE_CHANGING_PATHS = [/\/users\/me\/community/, /\/pastorals\/members/, /coordinat/i, /\/promote/i];
+
+function ownUserPath(url: string): boolean {
+  try {
+    const stored = JSON.parse(localStorage.getItem('user') || 'null');
+    return !!stored?.id && new RegExp(`/users/${stored.id}(/|$|[?])`).test(url);
+  } catch {
+    return false;
+  }
+}
+
+function signalProfileStale() {
+  window.dispatchEvent(new CustomEvent(PROFILE_STALE_EVENT));
+}
+
+function attachProfileStaleInterceptor(instance: { interceptors: any }) {
+  instance.interceptors.response.use(
+    (response: any) => {
+      const config = response?.config;
+      const method = String(config?.method ?? 'get').toLowerCase();
+      const url = String(config?.url ?? '');
+      if (MUTATING_METHODS.has(method) && (ROLE_CHANGING_PATHS.some((re) => re.test(url)) || ownUserPath(url))) {
+        signalProfileStale();
+      }
+      return response;
+    },
+    (error: any) => {
+      const data = error?.response?.data;
+      const code = data && typeof data === 'object' ? data.code : undefined;
+      // 403 sem código próprio (plano, troca de senha, termos têm o seu): permissão mudou?
+      if (error?.response?.status === 403 && !code) signalProfileStale();
+      return Promise.reject(error);
+    },
+  );
+}
+
+attachProfileStaleInterceptor(api);
+attachProfileStaleInterceptor(axios);
 
 export default api;

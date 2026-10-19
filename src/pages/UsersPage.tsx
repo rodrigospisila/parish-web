@@ -4,8 +4,12 @@ import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { notify, confirm } from '../services/notification.service';
 import { avatarColor, initials } from '../components/SaintAvatar';
+import TempPasswordModal from '../components/TempPasswordModal';
 import api, { getErrorMessage } from '../services/api';
 import { scopeCommunityIdOf } from '../utils/userScope';
+import { canManageUserTarget } from '../utils/userManagement';
+import { formatPhoneDisplay, maskBrPhone, phoneForApi } from '../utils/phone';
+import { csvInstantDate, downloadCsv } from '../utils/csvExport';
 import './UsersPage.css';
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -116,6 +120,8 @@ const UsersPage: React.FC = () => {
   const [filterRole, setFilterRole] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterCommunityId, setFilterCommunityId] = useState('');
+  // Conta que vai receber a senha provisória (modal com confirmação)
+  const [tempPasswordTarget, setTempPasswordTarget] = useState<User | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -170,24 +176,15 @@ const UsersPage: React.FC = () => {
    * escopo (diocese / paróquia / comunidade). Sem isso o painel mostrava
    * Editar/Desativar/2FA/Excluir que terminavam em 403.
    */
-  const canManageTarget = (target: User): boolean => {
-    if (!currentUser || !canManageUsers) return false;
-    if (currentUser.role === 'SYSTEM_ADMIN') return true;
-    if (target.id === currentUser.id) return false;
-    const actorLevel = allRoles.find((r) => r.value === currentUser.role)?.level;
-    const targetLevel = allRoles.find((r) => r.value === target.role)?.level;
-    if (actorLevel === undefined || targetLevel === undefined || targetLevel <= actorLevel) return false;
-    switch (currentUser.role) {
-      case 'DIOCESAN_ADMIN':
-        return !!currentUser.dioceseId && target.dioceseId === currentUser.dioceseId;
-      case 'PARISH_ADMIN':
-        return !!currentUser.parishId && target.parishId === currentUser.parishId;
-      case 'COMMUNITY_COORDINATOR':
-        return !!actorScopeCommunityId && target.communityId === actorScopeCommunityId;
-      default:
-        return false;
-    }
-  };
+  const canManageTarget = (target: User): boolean => canManageUsers && canManageUserTarget(currentUser, target);
+
+  /**
+   * Escopo amplo (plataforma / diocese): o território tem ~12,8 mil paróquias
+   * e ~53 mil comunidades. Nada de baixar tudo — os seletores vão em cascata
+   * (diocese → paróquias da diocese → comunidades da paróquia) pelas listas
+   * leves `?dioceseId=` / `?parishId=`.
+   */
+  const wideScope = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN'].includes(currentUser?.role ?? '');
 
   // Filtrar dioceses disponíveis baseado no usuário logado
   const availableDioceses = useMemo(() => {
@@ -339,14 +336,80 @@ const UsersPage: React.FC = () => {
     setCurrentPage(1);
   }, [searchTerm, filterRole, filterStatus, filterCommunityId, sortField, sortDirection]);
 
+  // Cascata do escopo amplo: paróquias da diocese escolhida (lista leve)
+  useEffect(() => {
+    if (!wideScope || !showModal || !formData.dioceseId) return;
+    let cancelled = false;
+    api
+      .get('/parishes', { params: { dioceseId: formData.dioceseId } })
+      .then((res) => {
+        if (!cancelled) setParishes(Array.isArray(res.data) ? res.data : []);
+      })
+      .catch((error) => {
+        if (!cancelled) notify.error(getErrorMessage(error, 'Erro ao carregar as paróquias da diocese'));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wideScope, showModal, formData.dioceseId]);
+
+  // ... comunidades da paróquia escolhida
+  useEffect(() => {
+    if (!wideScope || !showModal || !formData.parishId) return;
+    let cancelled = false;
+    api
+      .get('/communities', { params: { parishId: formData.parishId } })
+      .then((res) => {
+        if (!cancelled) setCommunities(Array.isArray(res.data) ? res.data : []);
+      })
+      .catch((error) => {
+        if (!cancelled) notify.error(getErrorMessage(error, 'Erro ao carregar as comunidades da paróquia'));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wideScope, showModal, formData.parishId]);
+
+  // ... e pastorais da comunidade escolhida (Coordenador de Pastoral)
+  useEffect(() => {
+    if (!wideScope || !showModal || formData.role !== 'PASTORAL_COORDINATOR' || !formData.communityId) return;
+    let cancelled = false;
+    api
+      .get('/pastorals/community', { params: { communityId: formData.communityId } })
+      .then((res) => {
+        if (!cancelled) setPastorals(mapPastorals(res.data));
+      })
+      .catch((error) => {
+        if (!cancelled) notify.error(getErrorMessage(error, 'Erro ao carregar as pastorais da comunidade'));
+      });
+    return () => {
+      cancelled = true;
+    };
+    // mapPastorals é pura (não depende de estado)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wideScope, showModal, formData.role, formData.communityId]);
+
+  const mapPastorals = (rows: any[]): Pastoral[] =>
+    (rows ?? []).map((pastoral: any) => ({
+      id: pastoral.id,
+      name: pastoral.globalPastoral?.name || pastoral.name,
+      communityId: pastoral.communityId,
+      communityName: pastoral.community?.name,
+    }));
+
   const fetchData = async () => {
     try {
+      if (wideScope) {
+        // Escopo amplo: só usuários e dioceses; paróquias, comunidades e
+        // pastorais vêm sob demanda conforme o formulário (efeitos acima)
+        const [usersRes, diocesesRes] = await Promise.all([api.get('/users'), api.get('/dioceses')]);
+        setUsers(usersRes.data);
+        setDioceses(diocesesRes.data);
+        return;
+      }
       const token = localStorage.getItem('token');
-      const [usersRes, diocesesRes, parishesRes, communitiesRes, pastoralsRes] = await Promise.all([
+      const [usersRes, parishesRes, communitiesRes, pastoralsRes] = await Promise.all([
         axios.get(`${API_URL}/users`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        axios.get(`${API_URL}/dioceses`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         axios.get(`${API_URL}/parishes`, {
@@ -360,17 +423,9 @@ const UsersPage: React.FC = () => {
         }),
       ]);
       setUsers(usersRes.data);
-      setDioceses(diocesesRes.data);
       setParishes(parishesRes.data);
       setCommunities(communitiesRes.data);
-      setPastorals(
-        pastoralsRes.data.map((pastoral: any) => ({
-          id: pastoral.id,
-          name: pastoral.globalPastoral?.name || pastoral.name,
-          communityId: pastoral.communityId,
-          communityName: pastoral.community?.name,
-        })),
-      );
+      setPastorals(mapPastorals(pastoralsRes.data));
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
       notify.error('Erro ao carregar dados');
@@ -399,7 +454,8 @@ const UsersPage: React.FC = () => {
       const dataToSend: any = {
         name: formData.name,
         email: formData.email,
-        phone: formData.phone,
+        // +55DDNÚMERO: o login pelo celular procura o número nesse formato
+        phone: phoneForApi(formData.phone),
         role: formData.role,
         // Cargo eclesiástico: valor selecionado ou null para limpar
         clergyTitle: formData.clergyTitle || null,
@@ -460,7 +516,7 @@ const UsersPage: React.FC = () => {
     setFormData({
       name: user.name,
       email: user.email,
-      phone: user.phone || '',
+      phone: maskBrPhone(user.phone) || user.phone || '',
       password: '',
       role: user.role,
       clergyTitle: user.clergyTitle || '',
@@ -638,27 +694,22 @@ const UsersPage: React.FC = () => {
 
   // Exportar CSV
   const handleExportCSV = () => {
-    const headers = ['Nome', 'Email', 'Telefone', 'Função', 'Status', 'Diocese', 'Comunidades'];
-    const rows = filteredAndSortedUsers.map(user => [
-      user.name,
-      user.email,
-      user.phone || '',
-      getRoleLabel(user.role),
-      user.isActive ? 'Ativo' : 'Inativo',
-      user.diocese?.name || '',
-      user.communities?.map(uc => uc.community.name).join('; ') || '',
-    ]);
-
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${cell}"`).join(',')),
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `usuarios_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
+    // Excel pt-BR: ';', BOM UTF-8, datas dd/mm/aaaa e rótulos em português
+    downloadCsv(
+      'usuarios',
+      ['Nome', 'Email', 'Telefone', 'Função', 'Status', 'Diocese', 'Comunidades', 'Pastorais', 'Criado em'],
+      filteredAndSortedUsers.map((user) => [
+        user.name,
+        user.email,
+        formatPhoneDisplay(user.phone),
+        getRoleLabel(user.role),
+        user.isActive ? 'Ativo' : 'Inativo',
+        user.diocese?.name || '',
+        user.communities?.map((uc) => uc.community.name).join(', ') || '',
+        user.pastorals?.map((pastoral) => pastoral.name).join(', ') || '',
+        csvInstantDate(user.createdAt),
+      ]),
+    );
   };
 
   // Filtrar e ordenar usuários
@@ -720,13 +771,28 @@ const UsersPage: React.FC = () => {
     setFilterCommunityId('');
   };
 
+  /**
+   * Opções do filtro "comunidade". No escopo amplo, só as comunidades que
+   * aparecem nos vínculos dos usuários listados (a lista completa seria o país).
+   */
+  const filterCommunities = useMemo<Community[]>(() => {
+    if (!wideScope) return communities;
+    const byId = new Map<string, Community>();
+    users.forEach((user) =>
+      user.communities?.forEach((link) => {
+        if (link.community?.id && !byId.has(link.community.id)) byId.set(link.community.id, link.community);
+      }),
+    );
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [wideScope, communities, users]);
+
   const getSelectedCommunityName = () => {
     if (filterCommunityId === 'NO_COMMUNITY') {
       return 'Sem comunidade';
     }
-    const community = communities.find(c => c.id === filterCommunityId);
+    const community = filterCommunities.find(c => c.id === filterCommunityId);
     if (community) {
-      const parish = parishes.find(p => p.id === community.parishId);
+      const parish = community.parish ?? parishes.find(p => p.id === community.parishId);
       return parish ? `${parish.name} - ${community.name}` : community.name;
     }
     return '';
@@ -786,8 +852,8 @@ const UsersPage: React.FC = () => {
           >
             <option value="">Todas as comunidades</option>
             <option value="NO_COMMUNITY">Sem comunidade</option>
-            {communities.map((community) => {
-              const parish = parishes.find(p => p.id === community.parishId);
+            {filterCommunities.map((community) => {
+              const parish = community.parish ?? parishes.find(p => p.id === community.parishId);
               return (
                 <option key={community.id} value={community.id}>
                   {parish ? `${parish.name} - ${community.name}` : community.name}
@@ -944,7 +1010,7 @@ const UsersPage: React.FC = () => {
                   {user.phone && (
                     <div className="entity-field">
                       <span className="entity-field-label">Telefone</span>
-                      <span className="entity-field-value">{user.phone}</span>
+                      <span className="entity-field-value">{formatPhoneDisplay(user.phone)}</span>
                     </div>
                   )}
                   {user.diocese && (
@@ -974,6 +1040,13 @@ const UsersPage: React.FC = () => {
                     </button>
                     <button className="entity-btn accent" onClick={() => handleToggleActive(user)}>
                       {user.isActive ? 'Desativar' : 'Ativar'}
+                    </button>
+                    <button
+                      className="entity-btn"
+                      onClick={() => setTempPasswordTarget(user)}
+                      title="Gerar uma senha provisória (a pessoa troca no primeiro acesso)"
+                    >
+                      Gerar senha provisória
                     </button>
                     {canResetTwoFactor && (
                       <button
@@ -1046,7 +1119,7 @@ const UsersPage: React.FC = () => {
                       <strong>{user.name}</strong>
                     </td>
                     <td>{user.email}</td>
-                    <td>{user.phone || '-'}</td>
+                    <td>{formatPhoneDisplay(user.phone) || '-'}</td>
                     <td>
                       <span className="entity-chip soft-blue">{getRoleShortLabel(user.role)}</span>
                     </td>
@@ -1070,6 +1143,14 @@ const UsersPage: React.FC = () => {
                             title={user.isActive ? 'Desativar' : 'Ativar'}
                           >
                             {user.isActive ? '🚫' : '✅'}
+                          </button>
+                          <button
+                            className="entity-icon-btn"
+                            onClick={() => setTempPasswordTarget(user)}
+                            title="Gerar senha provisória"
+                            aria-label={`Gerar senha provisória para ${user.name}`}
+                          >
+                            🔑
                           </button>
                           {canResetTwoFactor && (
                             <button
@@ -1135,6 +1216,15 @@ const UsersPage: React.FC = () => {
         </div>
       )}
 
+      {tempPasswordTarget && (
+        <TempPasswordModal
+          userId={tempPasswordTarget.id}
+          userName={tempPasswordTarget.name}
+          phone={tempPasswordTarget.phone}
+          onClose={() => setTempPasswordTarget(null)}
+        />
+      )}
+
       {showModal && (
         <div className="modal-overlay" onClick={() => { setShowModal(false); resetForm(); }}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -1173,12 +1263,18 @@ const UsersPage: React.FC = () => {
               )}
 
               <div className="form-group">
-                <label>Telefone</label>
+                <label>Celular</label>
                 <input
-                  type="text"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="(00) 90000-0000"
                   value={formData.phone}
-                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, phone: maskBrPhone(e.target.value) })}
                 />
+                <small style={{ color: '#888', fontSize: '0.8rem' }}>
+                  Com DDD. A pessoa também pode entrar no app digitando este celular.
+                </small>
               </div>
 
               <div className="form-group">

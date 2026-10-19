@@ -157,7 +157,7 @@ const KINDS = Object.keys(KIND_LABEL) as ProposalKind[];
 const grupoDoKind = (k: ProposalKind) => (k.startsWith('SCHEDULE') ? 'horario' : k.endsWith('WEBSITE') ? 'site' : 'cadastro');
 const ehHorario = (k: ProposalKind) => k === 'SCHEDULE_CREATE' || k === 'SCHEDULE_UPDATE' || k === 'SCHEDULE_RECURRENCE';
 
-const TIPO_LABEL: Record<string, string> = { MASS: 'Missa', CONFESSION: 'Confissão', ADORATION: 'Adoração', ROSARY: 'Terço' };
+const TIPO_LABEL: Record<string, string> = { MASS: 'Missa', WORD_CELEBRATION: 'Celebração da Palavra', CONFESSION: 'Confissão', ADORATION: 'Adoração', ROSARY: 'Terço' };
 const TIPOS = Object.keys(TIPO_LABEL);
 
 const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];

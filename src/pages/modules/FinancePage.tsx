@@ -9,7 +9,8 @@ import PresentialTab from './finance/PresentialTab';
 import StatementsTab from './finance/StatementsTab';
 import RetentionTab from './finance/RetentionTab';
 import GuestsTab from './finance/GuestsTab';
-import { formatBRL, httpStatus, friendlyError, plural, downloadBlob, providerStatusLabel } from './finance/financeShared';
+import { formatBRL, httpStatus, friendlyError, plural, downloadBlob, providerStatusLabel, contributionMethodLabel } from './finance/financeShared';
+import { formatCivilDate } from '../../utils/dateFormat';
 import './ModulePages.css';
 
 interface Transaction {
@@ -878,7 +879,8 @@ const FinancePage: React.FC = () => {
     }
   };
 
-  const formatDate = (value: string) => new Date(value).toLocaleDateString('pt-BR');
+  // Data civil (lançamento/pagamento): lida pela parte AAAA-MM-DD, sem escorregar pelo fuso
+  const formatDate = (value: string) => formatCivilDate(value);
   // Admin diocesano/sistema recebe comunidades de todas as paróquias: só as da paróquia escolhida servem para campanhas e balancetes
   const campaignCommunities = configParishId ? communities.filter((c) => !c.parishId || c.parishId === configParishId) : communities;
   const monthTotal = contributions.reduce((sum, c) => sum + c.amount, 0);
@@ -1692,7 +1694,7 @@ const FinancePage: React.FC = () => {
                     <tr key={c.contributionId}>
                       <td><strong>{c.member.name}</strong></td>
                       <td>{formatBRL(c.amount)}</td>
-                      <td>{c.method}</td>
+                      <td>{contributionMethodLabel(c.method)}</td>
                       <td>{formatDate(c.date)}</td>
                     </tr>
                   ))}
@@ -1838,7 +1840,7 @@ const FinancePage: React.FC = () => {
             <h2>Lançar Contribuição</h2>
             <div className="privacy-note" style={{ marginBottom: '1rem' }}>
               Atendendo o fiel no balcão? Use o <strong>Registro presencial</strong>: busca por nome, nº de dizimista, CPF ou telefone,
-              comprovante em PDF e opção de desfazer em 48 h.{' '}
+              comprovante em PDF e opção de desfazer em até 24 h.{' '}
               <button
                 type="button"
                 className="btn-small"

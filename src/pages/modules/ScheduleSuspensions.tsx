@@ -15,10 +15,12 @@ import './ScheduleSuspensions.css';
  * - DELETE /mass-schedules/:id/cancellations/:date → volta a acontecer
  */
 
-export type ScheduleType = 'MASS' | 'CONFESSION' | 'ADORATION' | 'ROSARY';
+export type ScheduleType = 'MASS' | 'WORD_CELEBRATION' | 'CONFESSION' | 'ADORATION' | 'ROSARY';
 
 export const TYPE_META: Record<ScheduleType, { label: string; color: string; icon: string }> = {
   MASS: { label: 'Missa', color: 'blue', icon: '⛪' },
+  // Presidida por ministro leigo, sem padre: não é Missa (cat-pastoral-03)
+  WORD_CELEBRATION: { label: 'Celebração da Palavra', color: 'green', icon: '📖' },
   CONFESSION: { label: 'Confissão', color: 'yellow', icon: '🙏' },
   ADORATION: { label: 'Adoração', color: 'green', icon: '✨' },
   ROSARY: { label: 'Terço', color: 'gray', icon: '📿' },

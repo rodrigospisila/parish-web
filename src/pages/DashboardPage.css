@@ -202,6 +202,83 @@
   color: rgba(255, 255, 255, 0.6);
 }
 
+.dash-pending__item--static {
+  cursor: default;
+  grid-template-columns: auto 1fr auto;
+}
+
+.dash-pending__item--static:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: none;
+}
+
+/* Hora da última atualização (ao lado do botão Atualizar) */
+.dash-updated {
+  font-size: 0.78rem;
+  color: var(--dash-muted);
+  white-space: nowrap;
+}
+
+/* Recurso fora do plano da comunidade (contrato 5) */
+.dash-locked {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.dash-locked__card {
+  background: var(--dash-surface);
+  border: 1px dashed var(--dash-border);
+  border-radius: var(--dash-radius);
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.dash-locked__eyebrow {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dash-gold);
+}
+
+.dash-locked__title {
+  color: var(--dash-navy);
+  font-size: 1rem;
+}
+
+.dash-locked__text {
+  margin: 0;
+  font-size: 0.84rem;
+  color: var(--dash-text);
+  line-height: 1.45;
+}
+
+.dash-locked__text .dash-link {
+  font-size: inherit;
+}
+
+/* Falha ao carregar indicadores/orações (ux-dashboards-26) */
+.dash-alert {
+  margin: 0;
+  padding: 0.6rem 0.85rem;
+  border-radius: 10px;
+  background: var(--dash-warn-soft);
+  color: #8a5a06;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.dash-alert__detail {
+  color: var(--dash-text);
+}
+
+.dash-alert .dash-link {
+  font-size: 0.84rem;
+}
+
 /* Indicadores */
 .dash-kpis {
   display: grid;

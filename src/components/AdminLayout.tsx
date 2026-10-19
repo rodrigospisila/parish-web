@@ -5,23 +5,14 @@ import UserPhotoAvatar from './UserPhotoAvatar';
 import api from '../services/api';
 import { installPlanErrorHandler, PLAN_REQUIRED_EVENT, type PlanRequiredDetail } from '../services/planErrors';
 import { usePlanEntitlements } from '../hooks/usePlanEntitlements';
+import { useModuleAccess } from '../hooks/useModuleAccess';
+import { COORDINATION_ROLES, canOpen } from './accessRules';
+import ErrorBoundary from './ErrorBoundary';
 import './AdminLayout.css';
 
-// Aviso amigável para 403 PLAN_REQUIRED/PLAN_SCOPE/PLAN_MEMBER_LIMIT (uma vez por app)
+// Aviso amigável para 403 PLAN_REQUIRED/PLAN_SCOPE/PLAN_MEMBER_LIMIT (uma vez
+// por app; o main.tsx já instala — aqui é só garantia, é idempotente)
 installPlanErrorHandler();
-
-/** Matriz de módulos do último carregamento (por papel): o menu abre já certo no F5. */
-const MODULE_ACCESS_CACHE = 'parish:module-access:';
-
-function readCachedDisabled(role: string | undefined): Set<string> | null {
-  if (!role) return null;
-  try {
-    const raw = sessionStorage.getItem(MODULE_ACCESS_CACHE + role);
-    return raw ? new Set(JSON.parse(raw) as string[]) : null;
-  } catch {
-    return null;
-  }
-}
 
 /** Banner "teste até dd/mm": datas em pt-BR, sem hora. */
 const dataCurta = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
@@ -65,7 +56,6 @@ const NavIcon: React.FC<{ name: string }> = ({ name }) => (
 const AdminLayout: React.FC = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const canSeeDashboard = ['PASTORAL_COORDINATOR', 'COMMUNITY_COORDINATOR', 'PARISH_ADMIN', 'DIOCESAN_ADMIN', 'SYSTEM_ADMIN'].includes(user?.role ?? '');
 
   const handleLogout = () => {
     logout();
@@ -73,50 +63,21 @@ const AdminLayout: React.FC = () => {
   };
 
   const isSystemAdmin = user?.role === 'SYSTEM_ADMIN';
-  const isDiocesanAdmin = user?.role === 'DIOCESAN_ADMIN';
-  const isParishAdmin = user?.role === 'PARISH_ADMIN';
-  const isCommunityCoordinator = user?.role === 'COMMUNITY_COORDINATOR';
-  const isPastoralCoordinator = user?.role === 'PASTORAL_COORDINATOR';
-
-  const canManageDioceses = isSystemAdmin || isDiocesanAdmin;
-  const canManageParishes = isSystemAdmin || isDiocesanAdmin || isParishAdmin;
-  const canManageUsers = isSystemAdmin || isDiocesanAdmin || isParishAdmin || isCommunityCoordinator;
-  const canManageSchedules = isSystemAdmin || isDiocesanAdmin || isParishAdmin || isCommunityCoordinator || isPastoralCoordinator;
-  // Módulos de coordenação (Fases 3–4)
-  const isCoordination = canManageSchedules;
-  const isCommunityManagement = isSystemAdmin || isDiocesanAdmin || isParishAdmin || isCommunityCoordinator;
-
-  const displayName = user?.name || user?.email || 'Usuário';
 
   // Matriz do SYSTEM_ADMIN (Configurações): módulos desativados para o papel
-  // deste usuário somem do menu. SYSTEM_ADMIN sempre vê tudo. Enquanto a
-  // matriz não chega, os itens controlados por ela ficam ESCONDIDOS (antes
-  // apareciam e sumiam — o menu "piscava" itens desligados); a última matriz
-  // do papel fica na sessão para o menu abrir certo no recarregamento.
-  const [disabledModules, setDisabledModules] = useState<Set<string> | null>(() => readCachedDisabled(user?.role));
-  useEffect(() => {
-    if (!user?.role || isSystemAdmin) return;
-    setDisabledModules(readCachedDisabled(user.role));
-    api
-      .get('/settings/module-access')
-      .then((res) => {
-        const keys: string[] = (res.data?.disabled ?? [])
-          .filter((d: { role: string }) => d.role === user.role)
-          .map((d: { moduleKey: string }) => d.moduleKey);
-        setDisabledModules(new Set(keys));
-        try {
-          sessionStorage.setItem(MODULE_ACCESS_CACHE + user.role, JSON.stringify(keys));
-        } catch {
-          // sessão indisponível: só perde o atalho do próximo carregamento
-        }
-      })
-      .catch(() => {
-        // Falhou a consulta: menu completo (comportamento padrão do papel)
-        setDisabledModules((current) => current ?? new Set());
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.role]);
-  const modOn = (key: string) => isSystemAdmin || (disabledModules !== null && !disabledModules.has(key));
+  // deste usuário somem do menu — e as rotas usam a MESMA regra (accessRules),
+  // então o que não aparece aqui também não abre pela URL. Enquanto a matriz
+  // não chega, os itens controlados por ela ficam ESCONDIDOS.
+  const { modOn } = useModuleAccess(user?.role);
+  const can = (key: Parameters<typeof canOpen>[1]) => canOpen(user, key, modOn);
+
+  // Início: coordenação por papel OU quem coordena pastoral pelo vínculo
+  // (papel VOLUNTEER/FAITHFUL — ux-dashboards-22)
+  const canSeeDashboard = can('dashboard');
+  // Coordenação por papel (módulos das Fases 3–4)
+  const isCoordination = (COORDINATION_ROLES as readonly string[]).includes(user?.role ?? '');
+
+  const displayName = user?.name || user?.email || 'Usuário';
 
   // Plano da comunidade (/me/entitlements): recurso pago fora do plano ganha o
   // selo "plano" no menu (só no modo "on" — fora dele nada é bloqueado)
@@ -181,20 +142,18 @@ const AdminLayout: React.FC = () => {
               <NavIcon name="planejamento" /> Início
             </NavLink>
           )}
-          {((canManageDioceses && modOn('dioceses')) || (canManageParishes && modOn('parishes')) || modOn('communities')) && (
-            <span className="nav-section-label">Estrutura</span>
-          )}
-          {canManageDioceses && modOn('dioceses') && (
+          {(can('dioceses') || can('parishes') || can('communities')) && <span className="nav-section-label">Estrutura</span>}
+          {can('dioceses') && (
             <NavLink to="/admin/dioceses" className="nav-link">
               <NavIcon name="diocese" /> Dioceses
             </NavLink>
           )}
-          {canManageParishes && modOn('parishes') && (
+          {can('parishes') && (
             <NavLink to="/admin/parishes" className="nav-link">
               <NavIcon name="paroquia" /> Paróquias
             </NavLink>
           )}
-          {modOn('communities') && (
+          {can('communities') && (
             <NavLink to="/admin/communities" className="nav-link">
               <NavIcon name="comunidade" /> Comunidades
             </NavLink>
@@ -202,22 +161,22 @@ const AdminLayout: React.FC = () => {
 
           {/* Sempre há ao menos "Minha Escala" nesta seção */}
           <span className="nav-section-label">Comunidade</span>
-          {modOn('members') && isCoordination && (
+          {can('members') && (
             <NavLink to="/admin/members" className="nav-link">
               <NavIcon name="membros" /> Membros
             </NavLink>
           )}
-          {modOn('events') && (
+          {can('events') && (
             <NavLink to="/admin/events" className="nav-link">
               <NavIcon name="calendario-liturgico" /> Eventos
             </NavLink>
           )}
-          {canManageSchedules && modOn('fixed-schedule') && (
+          {can('fixed-schedule') && (
             <NavLink to="/admin/fixed-schedule" className="nav-link">
               <NavIcon name="missa-proxima" /> Agenda Fixa
             </NavLink>
           )}
-          {canManageSchedules && modOn('schedules') && (
+          {can('schedules') && (
             <NavLink to="/admin/schedules" className="nav-link">
               <NavIcon name="escala" /> Escalas{lock('schedules')}
             </NavLink>
@@ -226,73 +185,71 @@ const AdminLayout: React.FC = () => {
           <NavLink to="/admin/my-schedule" className="nav-link">
             <NavIcon name="escala" /> Minha Escala{lock('schedules')}
           </NavLink>
-          {modOn('swaps') && (
+          {can('swaps') && (
             <NavLink to="/admin/swaps" className="nav-link">
               <NavIcon name="trocas-escala" /> Trocas de Escala{lock('swaps')}
             </NavLink>
           )}
 
-          {(modOn('clergy-messages') || modOn('saints') || isCoordination) && (
-            <span className="nav-section-label">Pastoral</span>
-          )}
-          {modOn('clergy-messages') && (
+          {(can('clergy-messages') || can('saints') || isCoordination) && <span className="nav-section-label">Pastoral</span>}
+          {can('clergy-messages') && (
             <NavLink to="/admin/clergy-messages" className="nav-link">
               <NavIcon name="sacerdote" /> Palavra Pastoral
             </NavLink>
           )}
-          {modOn('saints') && (
+          {can('saints') && (
             <NavLink to="/admin/saints" className="nav-link">
               <NavIcon name="santo" /> Santos
             </NavLink>
           )}
-          {isCoordination && modOn('pastorals') && (
+          {can('pastorals/community') && (
             <NavLink to="/admin/pastorals/community" className="nav-link">
               <NavIcon name="pastoral" /> Pastorais{lock('pastorals')}
             </NavLink>
           )}
-          {isPastoralCoordinator && modOn('my-pastorals') && (
+          {can('pastorals/my') && (
             <NavLink to="/admin/pastorals/my" className="nav-link highlight">
               <NavIcon name="pastoral" /> Minhas Pastorais{lock('pastorals')}
             </NavLink>
           )}
-          {isSystemAdmin && (
+          {can('pastorals/global') && (
             <NavLink to="/admin/pastorals/global" className="nav-link">
               <NavIcon name="igreja" /> Pastorais Globais
             </NavLink>
           )}
-          {isCatechist && !isCoordination && modOn('catechesis') && (
+          {isCatechist && !isCoordination && can('catechesis') && (
             <NavLink to="/admin/catechesis" className="nav-link highlight">
               <NavIcon name="catequese" /> Catequese (minha turma){lock('catechesis')}
             </NavLink>
           )}
           {isCoordination && (
             <>
-              {modOn('catechesis') && (
+              {can('catechesis') && (
                 <NavLink to="/admin/catechesis" className="nav-link">
                   <NavIcon name="catequese" /> Catequese{lock('catechesis')}
                 </NavLink>
               )}
-              {modOn('planning') && (
+              {can('planning') && (
                 <NavLink to="/admin/planning" className="nav-link">
                   <NavIcon name="planejamento" /> Planejamento
                 </NavLink>
               )}
-              {modOn('documents') && (
+              {can('documents') && (
                 <NavLink to="/admin/documents" className="nav-link">
                   <NavIcon name="documento" /> Documentos{lock('documents')}
                 </NavLink>
               )}
-              {modOn('formation') && (
+              {can('formation') && (
                 <NavLink to="/admin/formation" className="nav-link">
                   <NavIcon name="biblia" /> Formação{lock('formation')}
                 </NavLink>
               )}
-              {modOn('rooms') && (
+              {can('rooms') && (
                 <NavLink to="/admin/rooms" className="nav-link">
                   <NavIcon name="espacos" /> Espaços{lock('rooms')}
                 </NavLink>
               )}
-              {modOn('visitation') && (
+              {can('visitation') && (
                 <NavLink to="/admin/visitation" className="nav-link">
                   <NavIcon name="visitacao" /> Visitação{lock('visitation')}
                 </NavLink>
@@ -300,34 +257,36 @@ const AdminLayout: React.FC = () => {
             </>
           )}
 
-          {(isCommunityManagement || canManageUsers || isSystemAdmin) && <span className="nav-section-label">Gestão</span>}
-          {isCommunityManagement && modOn('finance') && (
+          {(can('finance') || can('sacrament-processes') || can('users') || can('audit') || isSystemAdmin) && (
+            <span className="nav-section-label">Gestão</span>
+          )}
+          {can('finance') && (
             <NavLink to="/admin/finance" className="nav-link">
               <NavIcon name="dizimo" /> Financeiro
             </NavLink>
           )}
-          {isCommunityManagement && modOn('sacrament-processes') && (
+          {can('sacrament-processes') && (
             <NavLink to="/admin/sacrament-processes" className="nav-link">
               <NavIcon name="cruz" /> Sacramentos
             </NavLink>
           )}
-          {canManageUsers && modOn('users') && (
+          {can('users') && (
             <NavLink to="/admin/users" className="nav-link">
               <NavIcon name="usuarios" /> Usuários
             </NavLink>
           )}
-          {isCommunityManagement && modOn('audit') && (
+          {can('audit') && (
             <NavLink to="/admin/audit" className="nav-link">
               <NavIcon name="documento" /> Auditoria
             </NavLink>
           )}
-          {isSystemAdmin && (
+          {can('settings') && (
             <NavLink to="/admin/settings" className="nav-link">
               <NavIcon name="planejamento" /> Configurações
             </NavLink>
           )}
 
-          {isSystemAdmin && (
+          {can('platform') && (
             <>
               <span className="nav-section-label">Plataforma</span>
               <NavLink to="/admin/map" className="nav-link">
@@ -384,7 +343,11 @@ const AdminLayout: React.FC = () => {
             </button>
           </div>
         )}
-        <Outlet />
+        {/* Erro numa tela não derruba o painel: o menu fica e a tela mostra
+            "Algo deu errado" com recarregar (trocar de tela limpa o erro) */}
+        <ErrorBoundary resetKey={location.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </main>
     </div>
   );

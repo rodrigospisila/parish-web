@@ -59,7 +59,7 @@ const STATUS_LABEL: Record<Status, string> = { PENDING: 'Pendente', REVIEWED: 'C
 const STATUS_TONE: Record<Status, string> = { PENDING: 'yellow', REVIEWED: 'blue', ACCEPTED: 'green', REJECTED: 'gray' };
 const KIND_LABEL: Record<Kind, string> = { LOCATION: 'Localização', SCHEDULE: 'Horário', INFO: 'Outra informação' };
 const KIND_ICON: Record<Kind, string> = { LOCATION: '📍', SCHEDULE: '🕒', INFO: '💬' };
-const SCHEDULE_TYPE_LABEL: Record<string, string> = { MASS: 'Missa', CONFESSION: 'Confissão', ADORATION: 'Adoração', ROSARY: 'Terço' };
+const SCHEDULE_TYPE_LABEL: Record<string, string> = { MASS: 'Missa', WORD_CELEBRATION: 'Celebração da Palavra', CONFESSION: 'Confissão', ADORATION: 'Adoração', ROSARY: 'Terço' };
 
 const COR_SUGESTAO = '#8E44AD';
 

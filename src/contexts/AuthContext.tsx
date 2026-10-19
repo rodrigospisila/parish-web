@@ -1,8 +1,67 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
-import api, { adoptTokens, endServerSession, getErrorMessage } from '../services/api';
+import api, { adoptTokens, endServerSession, getErrorMessage, PROFILE_STALE_EVENT } from '../services/api';
+import { notify } from '../services/notification.service';
 
-const API_URL = import.meta.env.VITE_API_URL;
+/** Intervalo mínimo entre recargas do perfil ao voltar à aba (eng-acessos-26). */
+const PROFILE_FOCUS_REFRESH_MS = 5 * 60_000;
+/** Intervalo mínimo entre recargas pedidas por 403/ações que mudam papel. */
+const PROFILE_STALE_REFRESH_MS = 15_000;
+
+const ROLE_LABELS: Record<string, string> = {
+  SYSTEM_ADMIN: 'Administrador do Sistema',
+  DIOCESAN_ADMIN: 'Administração Diocesana',
+  PARISH_ADMIN: 'Administração Paroquial',
+  COMMUNITY_COORDINATOR: 'Coordenação de Comunidade',
+  PASTORAL_COORDINATOR: 'Coordenação de Pastoral',
+  VOLUNTEER: 'Voluntário(a)',
+  FAITHFUL: 'Fiel',
+};
+
+/**
+ * Perfil do /users/me no MESMO formato do login (auth.service mapUserResponse):
+ * inclui `scopeCommunityId` e `coordinatedPastoralIds`, que liberam menu e rotas.
+ */
+function mapProfile(fresh: any): User {
+  return {
+    id: fresh.id,
+    email: fresh.email,
+    name: fresh.name,
+    phone: fresh.phone ?? undefined,
+    role: fresh.role,
+    dioceseId: fresh.dioceseId ?? undefined,
+    parishId: fresh.parishId ?? undefined,
+    communityId: fresh.communityId ?? undefined,
+    ...(fresh.scopeCommunityId !== undefined ? { scopeCommunityId: fresh.scopeCommunityId ?? null } : {}),
+    pastoralIds: Array.isArray(fresh.pastoralIds) ? fresh.pastoralIds : [],
+    ...(Array.isArray(fresh.coordinatedPastoralIds) ? { coordinatedPastoralIds: fresh.coordinatedPastoralIds } : {}),
+    pastorals: Array.isArray(fresh.pastorals)
+      ? fresh.pastorals.map((p: any) => ({ id: p.id, name: p.name, communityId: p.communityId, role: p.role }))
+      : [],
+    forcePasswordChange: fresh.forcePasswordChange ?? false,
+    twoFactorEnabled: fresh.twoFactorEnabled ?? false,
+  };
+}
+
+/** Aviso curto quando o papel ou a coordenação mudaram desde a última leitura. */
+function describeAccessChange(previous: User, next: User): string | null {
+  if (previous.role !== next.role) {
+    return `Seu acesso foi atualizado: agora você está como ${ROLE_LABELS[next.role] ?? next.role}.`;
+  }
+  const before = new Set(previous.coordinatedPastoralIds ?? []);
+  const gained = (next.coordinatedPastoralIds ?? []).filter((id) => !before.has(id));
+  if (Array.isArray(previous.coordinatedPastoralIds) && gained.length > 0) {
+    const names = (next.pastorals ?? []).filter((p) => gained.includes(p.id)).map((p) => p.name);
+    return names.length
+      ? `Seu acesso foi atualizado: agora você coordena ${names.join(', ')}.`
+      : 'Seu acesso foi atualizado: você passou a coordenar uma pastoral.';
+  }
+  const after = new Set(next.coordinatedPastoralIds ?? []);
+  if (Array.isArray(next.coordinatedPastoralIds) && [...before].some((id) => !after.has(id))) {
+    return 'Seu acesso foi atualizado: a coordenação de uma pastoral mudou.';
+  }
+  return null;
+}
 
 export interface User {
   id: string;
@@ -224,34 +283,95 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return true;
   }, []);
 
-  const refreshUser = async () => {
-    const storedToken = localStorage.getItem('token');
-    if (!storedToken) return;
+  /**
+   * Recarrega o perfil do servidor (eng-acessos-26 / ux-acesso-15): no boot,
+   * ao voltar à aba (no máximo a cada 5 min) e quando a API indica que o
+   * acesso pode ter mudado. O menu e as rotas acompanham o papel novo sem
+   * sair e entrar.
+   */
+  const lastProfileRefresh = useRef(0);
+  const profileInFlight = useRef<Promise<void> | null>(null);
+  const userRef = useRef<User | null>(user);
+  userRef.current = user;
+
+  const refreshUser = useCallback(async () => {
+    if (profileInFlight.current) return profileInFlight.current;
+    if (!localStorage.getItem('token')) return;
+    // Troca de senha pendente: a API só libera a troca (o perfil volta depois)
+    if (userRef.current?.forcePasswordChange) return;
     try {
-      const response = await axios.get(`${API_URL}/users/me`, {
-        headers: { Authorization: `Bearer ${storedToken}` },
-      });
-      const fresh = response.data;
-      const mapped: User = {
-        id: fresh.id,
-        email: fresh.email,
-        name: fresh.name,
-        phone: fresh.phone ?? undefined,
-        role: fresh.role,
-        dioceseId: fresh.dioceseId ?? undefined,
-        parishId: fresh.parishId ?? undefined,
-        communityId: fresh.communityId ?? undefined,
-        pastoralIds: fresh.pastoralIds ?? [],
-        pastorals: fresh.pastorals ?? [],
-        forcePasswordChange: fresh.forcePasswordChange ?? false,
-        twoFactorEnabled: fresh.twoFactorEnabled ?? false,
-      };
-      setUser(mapped);
-      localStorage.setItem('user', JSON.stringify(mapped));
+      if (JSON.parse(localStorage.getItem('user') || 'null')?.forcePasswordChange) return;
     } catch {
-      // Sessão inválida é tratada pelo interceptor de refresh
+      // usuário guardado ilegível: segue e relê do servidor
     }
-  };
+    const run = (async () => {
+      try {
+        const response = await api.get('/users/me');
+        // Saiu enquanto a resposta vinha: ignora
+        if (!localStorage.getItem('token')) return;
+        const mapped = mapProfile(response.data ?? {});
+        if (!mapped.id) return;
+        lastProfileRefresh.current = Date.now();
+        const previous = userRef.current;
+        if (previous && previous.id !== mapped.id) return;
+        // Campos que o /users/me não traz ficam como estavam
+        const next: User = previous ? { ...previous, ...mapped } : mapped;
+        if (previous && JSON.stringify(previous) === JSON.stringify(next)) return;
+        localStorage.setItem('user', JSON.stringify(next));
+        userRef.current = next;
+        setUser(next);
+        const change = previous ? describeAccessChange(previous, next) : null;
+        if (change) notify.info(change, { autoClose: 6000 });
+      } catch {
+        // Sessão inválida é tratada pelo interceptor de refresh; falha de rede: tenta depois
+      }
+    })();
+    profileInFlight.current = run.finally(() => {
+      profileInFlight.current = null;
+    });
+    return profileInFlight.current;
+  }, []);
+
+  // Boot: o perfil guardado no login pode estar velho (promoção, nova pastoral)
+  const hasSession = !!token;
+  useEffect(() => {
+    if (hasSession) void refreshUser();
+  }, [hasSession, refreshUser]);
+
+  // Volta à aba/janela: recarrega se passaram 5 min desde a última leitura
+  useEffect(() => {
+    if (!hasSession) return;
+    const maybeRefresh = () => {
+      if (document.visibilityState === 'hidden') return;
+      if (Date.now() - lastProfileRefresh.current < PROFILE_FOCUS_REFRESH_MS) return;
+      void refreshUser();
+    };
+    window.addEventListener('focus', maybeRefresh);
+    document.addEventListener('visibilitychange', maybeRefresh);
+    return () => {
+      window.removeEventListener('focus', maybeRefresh);
+      document.removeEventListener('visibilitychange', maybeRefresh);
+    };
+  }, [hasSession, refreshUser]);
+
+  // 403 de permissão ou ação que muda papel/coordenação: relê (com freio)
+  useEffect(() => {
+    if (!hasSession) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onStale = () => {
+      if (timer) return;
+      const wait = Math.max(0, PROFILE_STALE_REFRESH_MS - (Date.now() - lastProfileRefresh.current));
+      timer = setTimeout(() => {
+        timer = null;
+        void refreshUser();
+      }, Math.max(wait, 500));
+    };
+    window.addEventListener(PROFILE_STALE_EVENT, onStale);
+    return () => {
+      window.removeEventListener(PROFILE_STALE_EVENT, onStale);
+      if (timer) clearTimeout(timer);
+    };
+  }, [hasSession, refreshUser]);
 
   return (
     <AuthContext.Provider

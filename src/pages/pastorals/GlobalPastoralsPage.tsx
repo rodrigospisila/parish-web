@@ -15,6 +15,8 @@ interface GlobalPastoral {
   iconUrl?: string;
   colorHex?: string;
   status: string;
+  /** Esta pastoral é a Catequese / Iniciação à Vida Cristã (substitui a detecção pelo nome) */
+  isCatechesis?: boolean;
   createdAt: string;
 }
 
@@ -32,6 +34,7 @@ const GlobalPastoralsPage: React.FC = () => {
     iconUrl: '',
     colorHex: '#075AA9',
     status: 'ACTIVE',
+    isCatechesis: false,
   });
 
   useEffect(() => {
@@ -86,6 +89,7 @@ const GlobalPastoralsPage: React.FC = () => {
       iconUrl: pastoral.iconUrl || '',
       colorHex: pastoral.colorHex || '#075AA9',
       status: pastoral.status,
+      isCatechesis: pastoral.isCatechesis === true,
     });
     setShowModal(true);
   };
@@ -115,6 +119,7 @@ const GlobalPastoralsPage: React.FC = () => {
       iconUrl: '',
       colorHex: '#075AA9',
       status: 'ACTIVE',
+      isCatechesis: false,
     });
     setEditingPastoral(null);
   };
@@ -168,6 +173,11 @@ const GlobalPastoralsPage: React.FC = () => {
                   <span className={`status-badge ${pastoral.status === 'ACTIVE' ? 'green' : 'gray'}`}>
                     {pastoral.status === 'ACTIVE' ? 'Ativo' : 'Inativo'}
                   </span>
+                  {pastoral.isCatechesis && (
+                    <span className="status-badge blue" title="Pastoral da Catequese / Iniciação à Vida Cristã">
+                      Catequese
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -256,6 +266,25 @@ const GlobalPastoralsPage: React.FC = () => {
                     <option value="INACTIVE">Inativo</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="form-group">
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', fontWeight: 'normal' }}>
+                  <input
+                    type="checkbox"
+                    checked={formData.isCatechesis}
+                    onChange={(e) => setFormData({ ...formData, isCatechesis: e.target.checked })}
+                    style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0 }}
+                  />
+                  <span>
+                    <strong>Esta pastoral é a Catequese / Iniciação à Vida Cristã</strong>
+                    <br />
+                    <small style={{ color: '#66788c' }}>
+                      Quem coordena esta pastoral na comunidade enxerga as turmas, pendências e alertas da catequese
+                      no Início. Não depende mais do nome da pastoral.
+                    </small>
+                  </span>
+                </label>
               </div>
 
               <div className="form-actions">

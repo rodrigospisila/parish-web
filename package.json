@@ -26,6 +26,7 @@
     "@fullcalendar/list": "^6.1.19",
     "@fullcalendar/react": "^6.1.19",
     "@fullcalendar/timegrid": "^6.1.19",
+    "@sentry/react": "^11.4.0",
     "@types/react-calendar": "^4.1.0",
     "axios": "^1.13.1",
     "leaflet": "^1.9.4",

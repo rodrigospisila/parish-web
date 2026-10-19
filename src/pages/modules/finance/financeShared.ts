@@ -63,3 +63,25 @@ export const PROVIDER_STATUS_LABEL: Record<string, string> = {
 };
 export const providerStatusLabel = (status: string | null | undefined): string | null =>
   status ? PROVIDER_STATUS_LABEL[status.toLowerCase()] ?? status : null;
+
+/**
+ * Meio da contribuição em português. O campo é texto: há códigos (balcão, app,
+ * provedor) e valores antigos já gravados em português ("Dinheiro", "PIX").
+ */
+const CONTRIBUTION_METHOD_LABEL: Record<string, string> = {
+  CASH: 'Dinheiro',
+  ENVELOPE: 'Envelope',
+  POS: 'Maquininha',
+  PIX: 'Pix',
+  TRANSFER: 'Transferência',
+  CHECK: 'Cheque',
+  CARD: 'Cartão',
+  BOLETO: 'Boleto',
+  GATEWAY: 'Provedor',
+  MANUAL: 'Lançamento manual',
+  GUEST: 'Visitante (página pública)',
+  ONLINE: 'Online',
+};
+
+export const contributionMethodLabel = (method: string | null | undefined): string =>
+  method ? CONTRIBUTION_METHOD_LABEL[method.trim().toUpperCase()] ?? method : '—';

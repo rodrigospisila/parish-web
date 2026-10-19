@@ -28,6 +28,13 @@ interface SearchSelectProps {
   /** Inclui a opção de limpar a seleção (para filtros) */
   allOption?: boolean;
   searchPlaceholder?: string;
+  /**
+   * Busca no servidor: recebe o texto digitado e as `options` já vêm
+   * filtradas (sem filtro local). Ex.: comunidades paginadas do Início.
+   */
+  onSearchChange?: (text: string) => void;
+  /** Linha de rodapé da lista (ex.: "20 de 1.234 — refine a busca") */
+  footer?: string;
 }
 
 const SearchSelect: React.FC<SearchSelectProps> = ({
@@ -37,6 +44,8 @@ const SearchSelect: React.FC<SearchSelectProps> = ({
   placeholder,
   allOption,
   searchPlaceholder,
+  onSearchChange,
+  footer,
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -55,6 +64,7 @@ const SearchSelect: React.FC<SearchSelectProps> = ({
   const selected = options.find((option) => option.value === value);
   const filtered = options.filter(
     (option) =>
+      !!onSearchChange ||
       !search.trim() ||
       normalize(`${option.label} ${option.sublabel ?? ''}`).includes(normalize(search)),
   );
@@ -63,6 +73,7 @@ const SearchSelect: React.FC<SearchSelectProps> = ({
     onChange(nextValue);
     setOpen(false);
     setSearch('');
+    onSearchChange?.('');
   };
 
   return (
@@ -83,7 +94,10 @@ const SearchSelect: React.FC<SearchSelectProps> = ({
             className="saint-picker-search"
             placeholder={searchPlaceholder ?? 'Buscar...'}
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              onSearchChange?.(event.target.value);
+            }}
           />
           <div className="saint-picker-list">
             {allOption && (
@@ -118,6 +132,7 @@ const SearchSelect: React.FC<SearchSelectProps> = ({
             {filtered.length === 0 && (
               <div className="saint-picker-empty">Nada encontrado para "{search}".</div>
             )}
+            {footer && filtered.length > 0 && <div className="saint-picker-empty">{footer}</div>}
           </div>
         </div>
       )}

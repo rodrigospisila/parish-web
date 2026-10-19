@@ -1,6 +1,6 @@
 import React from 'react';
 import axios from 'axios';
-import { getErrorMessage } from '../../services/api';
+import { getErrorMessage, withServerErrorCode } from '../../services/api';
 
 /**
  * Peças comuns das páginas da seção "Plataforma" (SYSTEM_ADMIN): rótulos do
@@ -121,7 +121,7 @@ export function mensagemDeErro(error: unknown, fallback: string): string {
       return 'Esta função ainda não está no ar no servidor (404). Quando o backend for publicado, a tela passa a funcionar.';
     }
     if (status === 403) return 'Sem permissão: esta tela é só do administrador do sistema.';
-    if (status >= 500) return `${fallback} O servidor respondeu com erro (${status}); tente de novo em instantes.`;
+    if (status >= 500) return withServerErrorCode(`${fallback} O servidor respondeu com erro (${status}); tente de novo em instantes.`, error);
   }
   return getErrorMessage(error, fallback);
 }

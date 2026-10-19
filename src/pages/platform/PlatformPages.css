@@ -404,3 +404,15 @@
   .platform-page .pf-lista { max-height: 320px; min-height: 0; }
   .platform-page .pf-sep { display: none; }
 }
+
+/* ── Planos: "O que os bloqueios fariam" (contagem dos enforcements) ── */
+.platform-page .pf-bloqueios { margin: 0 0 1rem; }
+.platform-page .pf-bloqueios .table-container { margin-top: 6px; }
+.platform-page .pf-bloqueios-sub {
+  margin: 14px 0 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: #52606d;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}

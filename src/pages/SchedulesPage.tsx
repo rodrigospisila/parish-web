@@ -24,6 +24,7 @@ interface FixedPendingItem {
 
 const FIXED_TYPE_LABELS: Record<string, string> = {
   MASS: 'Missa',
+  WORD_CELEBRATION: 'Celebração da Palavra',
   CONFESSION: 'Confissão',
   ADORATION: 'Adoração',
   ROSARY: 'Terço',

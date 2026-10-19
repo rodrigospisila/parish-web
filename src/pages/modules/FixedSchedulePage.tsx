@@ -23,6 +23,7 @@ import {
   todayISO,
   type FixedOccurrence,
 } from './ScheduleSuspensions';
+import { formatCivilDate } from '../../utils/dateFormat';
 import './ModulePages.css';
 
 // Papéis que gerenciam a agenda fixa (criam/editam). O coordenador de pastoral
@@ -61,7 +62,7 @@ interface MassSchedule {
   weeksOfMonth?: number[];
   dayOfMonth?: number | null;
   time: string;
-  type: 'MASS' | 'CONFESSION' | 'ADORATION' | 'ROSARY';
+  type: 'MASS' | 'WORD_CELEBRATION' | 'CONFESSION' | 'ADORATION' | 'ROSARY';
   notes?: string | null;
   isSpecial: boolean;
   specialDate?: string | null;
@@ -459,7 +460,7 @@ const FixedSchedulePage: React.FC = () => {
       </div>
 
       <div className="privacy-note" style={{ background: '#eef6ff', borderColor: '#b6d4fe', color: '#084298' }}>
-        Horários fixos (Missa, Confissão, Adoração, Terço) da comunidade — toda semana ou uma vez
+        Horários fixos (Missa, Celebração da Palavra, Confissão, Adoração, Terço) da comunidade — toda semana ou uma vez
         por mês, como <em>1º e 3º sábado</em> ou <em>todo dia 13</em>. Aparecem no
         <strong> calendário de Eventos</strong> nas datas certas. Vincule as <strong>pastorais</strong> que
         servem em cada horário e use <strong>Gerar escala</strong> para criar a escala de uma data — as
@@ -522,7 +523,7 @@ const FixedSchedulePage: React.FC = () => {
                         </td>
                         <td>
                           {schedule.isSpecial && schedule.specialDate
-                            ? `Especial · ${new Date(schedule.specialDate).toLocaleDateString('pt-BR')}`
+                            ? `Especial · ${formatCivilDate(schedule.specialDate)}`
                             : descreverRecorrencia(schedule)}
                           {ehMensal(schedule) && (
                             <span
@@ -945,7 +946,7 @@ const FixedSchedulePage: React.FC = () => {
             <p style={{ color: '#555', marginBottom: 12 }}>
               {TYPE_META[linkTarget.type].label} ·{' '}
               {linkTarget.isSpecial && linkTarget.specialDate
-                ? `Especial ${new Date(linkTarget.specialDate).toLocaleDateString('pt-BR')}`
+                ? `Especial ${formatCivilDate(linkTarget.specialDate)}`
                 : descreverRecorrencia(linkTarget)}{' '}
               às <strong>{linkTarget.time}</strong> · {linkTarget.community.name}
             </p>
@@ -993,7 +994,7 @@ const FixedSchedulePage: React.FC = () => {
             community: { id: suspendTarget.community.id, name: suspendTarget.community.name },
             description:
               suspendTarget.isSpecial && suspendTarget.specialDate
-                ? `Especial ${new Date(suspendTarget.specialDate).toLocaleDateString('pt-BR')}`
+                ? `Especial ${formatCivilDate(suspendTarget.specialDate)}`
                 : descreverRecorrencia(suspendTarget),
           }}
           onClose={() => setSuspendTarget(null)}

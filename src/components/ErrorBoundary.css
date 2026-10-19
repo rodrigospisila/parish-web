@@ -1,0 +1,88 @@
+/* Tela de erro (ErrorBoundary) e de acesso negado (AccessDenied) */
+.error-boundary,
+.access-denied {
+  display: flex;
+  justify-content: center;
+  padding: 3rem 1rem;
+}
+
+.error-boundary--app {
+  min-height: 100vh;
+  align-items: center;
+  background: var(--parish-canvas, #f5f7fa);
+}
+
+.error-boundary__card,
+.access-denied__card {
+  max-width: 480px;
+  width: 100%;
+  background: var(--parish-white, #fff);
+  border: 1px solid var(--parish-border, #d8dee6);
+  border-radius: var(--parish-radius-md, 12px);
+  padding: 1.75rem 1.5rem;
+  text-align: center;
+  box-shadow: 0 4px 18px rgba(11, 28, 44, 0.06);
+}
+
+.error-boundary__title,
+.access-denied__title {
+  color: var(--parish-navy, #17324d);
+  font-size: 1.25rem;
+  margin-bottom: 0.6rem;
+}
+
+.error-boundary__text,
+.access-denied__text {
+  color: var(--parish-slate, #52606d);
+  line-height: 1.5;
+  margin-bottom: 0.75rem;
+}
+
+.error-boundary__code {
+  color: var(--parish-slate, #52606d);
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+}
+
+.error-boundary__code strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--parish-ink, #151a20);
+}
+
+.error-boundary__actions,
+.access-denied__actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+.error-boundary__btn,
+.access-denied__btn {
+  border: 1px solid var(--parish-border, #d8dee6);
+  background: var(--parish-white, #fff);
+  color: var(--parish-primary-strong, #075aa9);
+  border-radius: var(--parish-radius-sm, 8px);
+  padding: 0.55rem 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.error-boundary__btn:hover,
+.access-denied__btn:hover {
+  border-color: var(--parish-primary, #0a84ff);
+}
+
+.error-boundary__btn--primary,
+.access-denied__btn--primary {
+  background: var(--parish-primary-strong, #075aa9);
+  border-color: var(--parish-primary-strong, #075aa9);
+  color: #fff;
+}
+
+.error-boundary__btn--primary:hover,
+.access-denied__btn--primary:hover {
+  background: var(--parish-navy, #17324d);
+}

@@ -22,7 +22,7 @@ export const PLAN_MESSAGES: Record<PlanErrorCode, string> = {
     'Este recurso não faz parte do plano desta comunidade. Calendário, mapa e liturgia continuam liberados; para ativar, fale com a administração da paróquia.',
   PLAN_SCOPE: 'Esta comunidade está fora do seu acesso.',
   PLAN_MEMBER_LIMIT:
-    'A comunidade atingiu o limite de membros da faixa do plano. Fale com a administração da paróquia para mudar de faixa.',
+    'A comunidade atingiu o limite de membros ativos da faixa do plano (conta também quem entrou pelo app). Fale com a administração da paróquia para mudar de faixa.',
 };
 
 export function planErrorCode(error: unknown): PlanErrorCode | null {
@@ -40,28 +40,41 @@ export interface PlanRequiredDetail {
 }
 
 let installed = false;
+/** Erros já tratados: a mesma falha pode passar pelas duas cadeias (api → refresh → axios). */
+const handled = new WeakSet<object>();
 
-/** Instala uma vez (idempotente). Chamado pelo AdminLayout. */
+function onPlanError(error: any) {
+  const code = planErrorCode(error);
+  if (!code || handled.has(error)) return;
+  handled.add(error);
+  const data = error.response.data as { message?: unknown; feature?: unknown; friendly?: boolean };
+  if (!data.friendly) {
+    data.message = PLAN_MESSAGES[code];
+    data.friendly = true;
+  }
+  window.dispatchEvent(
+    new CustomEvent<PlanRequiredDetail>(PLAN_REQUIRED_EVENT, {
+      detail: { code, feature: typeof data.feature === 'string' ? data.feature : null, message: PLAN_MESSAGES[code] },
+    }),
+  );
+}
+
+/**
+ * Instala uma vez (idempotente) na instância `api` E no axios global — as
+ * telas legadas (Escalas, Pastorais, Membros...) ainda chamam o axios direto
+ * (eng-qualidade-01 / ux-web-07). Chamado no main.tsx (e pelo AdminLayout,
+ * por garantia).
+ */
 export function installPlanErrorHandler(): void {
   if (installed) return;
   installed = true;
-  api.interceptors.response.use(
-    (response) => response,
-    (error) => {
-      const code = planErrorCode(error);
-      if (code) {
-        const data = error.response.data as { message?: unknown; feature?: unknown; friendly?: boolean };
-        if (!data.friendly) {
-          data.message = PLAN_MESSAGES[code];
-          data.friendly = true;
-        }
-        window.dispatchEvent(
-          new CustomEvent<PlanRequiredDetail>(PLAN_REQUIRED_EVENT, {
-            detail: { code, feature: typeof data.feature === 'string' ? data.feature : null, message: PLAN_MESSAGES[code] },
-          }),
-        );
-      }
-      return Promise.reject(error);
-    },
-  );
+  for (const instance of [api, axios]) {
+    instance.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        onPlanError(error);
+        return Promise.reject(error);
+      },
+    );
+  }
 }

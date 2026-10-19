@@ -116,3 +116,77 @@ export const toBrazilianInputFormat = (brazilianDate: string): string => {
   // Remove segundos e timezone
   return parsed.substring(0, 16);
 };
+
+/**
+ * Datas CIVIS (só dia: nascimento, aniversário, data de sacramento, validade).
+ *
+ * O backend grava essas datas como meia-noite UTC ('1990-05-10T00:00:00.000Z').
+ * Formatar com o fuso do navegador (getDate / toLocaleDateString sem timeZone)
+ * mostra 09/05 em UTC−3. Aqui a data é lida pela parte AAAA-MM-DD — nunca pelo
+ * fuso local.
+ */
+
+/** Extrai 'AAAA-MM-DD' de uma data civil (string ISO, 'AAAA-MM-DD' ou Date em UTC). */
+export const civilDateParts = (
+  date: string | Date | null | undefined,
+): { year: number; month: number; day: number } | null => {
+  if (!date) return null;
+  if (typeof date === 'string') {
+    const match = date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+  }
+  const d = typeof date === 'string' ? new Date(date) : date;
+  if (isNaN(d.getTime())) return null;
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+};
+
+/** Data civil para o input de data ('AAAA-MM-DD'); vazio se ausente. */
+export const civilDateInputValue = (date: string | Date | null | undefined): string => {
+  const parts = civilDateParts(date);
+  if (!parts) return '';
+  return `${String(parts.year).padStart(4, '0')}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+};
+
+/**
+ * Formata data civil como dd/mm/aaaa sem deslocar o dia pelo fuso.
+ * @param fallback - texto quando não há data (padrão '-')
+ */
+export const formatCivilDate = (date: string | Date | null | undefined, fallback = '-'): string => {
+  const parts = civilDateParts(date);
+  if (!parts) return fallback;
+  return `${String(parts.day).padStart(2, '0')}/${String(parts.month).padStart(2, '0')}/${parts.year}`;
+};
+
+/** Ano 1900 (ou antes) = aniversário importado sem ano: só dia/mês são conhecidos. */
+export const isYearlessBirthDate = (date: string | Date | null | undefined): boolean => {
+  const parts = civilDateParts(date);
+  return !!parts && parts.year <= 1900;
+};
+
+/**
+ * Data de nascimento: dd/mm/aaaa, ou só dd/mm quando o ano não é conhecido
+ * (ano 1900). Com `withNote`, acrescenta "(ano não informado)".
+ */
+export const formatBirthDate = (
+  date: string | Date | null | undefined,
+  options: { withNote?: boolean; fallback?: string } = {},
+): string => {
+  const parts = civilDateParts(date);
+  if (!parts) return options.fallback ?? '-';
+  if (parts.year <= 1900) {
+    const dayMonth = `${String(parts.day).padStart(2, '0')}/${String(parts.month).padStart(2, '0')}`;
+    return options.withNote ? `${dayMonth} (ano não informado)` : dayMonth;
+  }
+  return formatCivilDate(date);
+};
+
+/**
+ * Data civil do formulário ('AAAA-MM-DD') no formato aceito pelo backend:
+ * meia-noite UTC daquele dia, sem passar pelo fuso do navegador.
+ */
+export const civilDateToIso = (value: string | null | undefined): string | undefined => {
+  if (!value) return undefined;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return undefined;
+  return `${match[1]}-${match[2]}-${match[3]}T00:00:00.000Z`;
+};
