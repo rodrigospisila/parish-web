@@ -654,6 +654,9 @@ const MembersPage: React.FC = () => {
 
   // Ordenação
   const handleSort = (field: SortField) => {
+    // Paginado no servidor: o GET /members só ordena por nome (findPage) —
+    // ordenar aqui reordenaria só a página aberta
+    if (serverPaged) return;
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
@@ -771,6 +774,10 @@ const MembersPage: React.FC = () => {
   // Filtrar e ordenar membros (paginado no servidor: a busca/filtros já vieram aplicados)
   const filteredAndSortedMembers = useMemo(() => {
     let result = serverPaged ? [...members] : applyLocalFilters(members);
+
+    // Paginado no servidor: mantém a ordem do servidor (nome A→Z); ordenar só a
+    // página aberta mostraria uma ordem falsa
+    if (serverPaged) return result;
 
     // Ordenar
     result.sort((a, b) => {
@@ -919,6 +926,7 @@ const MembersPage: React.FC = () => {
       {/* Contagem de resultados */}
       <div className="results-info" aria-live="polite">
         {listLoading ? 'Atualizando… ' : ''}Mostrando {paginatedMembers.length} de {totalCount} membro(s)
+        {serverPaged ? ' · ordenado por nome' : ''}
       </div>
 
       {/* Visualização em Cards */}
@@ -1060,24 +1068,24 @@ const MembersPage: React.FC = () => {
                     />
                   </th>
                 )}
-                <th className="sortable" onClick={() => handleSort('fullName')}>
-                  Nome {sortField === 'fullName' && (sortDirection === 'asc' ? '↑' : '↓')}
+                <th className={serverPaged ? undefined : 'sortable'} onClick={() => handleSort('fullName')}>
+                  Nome {!serverPaged && sortField === 'fullName' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
                 <th>CPF</th>
-                <th className="sortable" onClick={() => handleSort('email')}>
-                  Email {sortField === 'email' && (sortDirection === 'asc' ? '↑' : '↓')}
+                <th className={serverPaged ? undefined : 'sortable'} onClick={() => handleSort('email')}>
+                  Email {!serverPaged && sortField === 'email' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
                 <th>Telefone</th>
-                <th className="sortable" onClick={() => handleSort('community')}>
-                  Comunidade {sortField === 'community' && (sortDirection === 'asc' ? '↑' : '↓')}
+                <th className={serverPaged ? undefined : 'sortable'} onClick={() => handleSort('community')}>
+                  Comunidade {!serverPaged && sortField === 'community' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
-                <th className="sortable" onClick={() => handleSort('status')}>
-                  Status {sortField === 'status' && (sortDirection === 'asc' ? '↑' : '↓')}
+                <th className={serverPaged ? undefined : 'sortable'} onClick={() => handleSort('status')}>
+                  Status {!serverPaged && sortField === 'status' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
                 <th>Acesso</th>
                 <th>Cidade</th>
-                <th className="sortable" onClick={() => handleSort('createdAt')}>
-                  Criado em {sortField === 'createdAt' && (sortDirection === 'asc' ? '↑' : '↓')}
+                <th className={serverPaged ? undefined : 'sortable'} onClick={() => handleSort('createdAt')}>
+                  Criado em {!serverPaged && sortField === 'createdAt' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
                 <th>Ações</th>
               </tr>

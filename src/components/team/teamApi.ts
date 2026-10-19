@@ -54,30 +54,40 @@ interface ActorLike {
 }
 
 /**
- * Papéis que quem está logado pode convidar — mesma regra da criação de
- * usuário (papel estritamente abaixo do seu). O titular da paróquia
- * (`parishHolder`) também convida outros administradores paroquiais. O
- * backend continua sendo quem decide.
+ * Papéis que quem está logado pode convidar — mesma regra do backend
+ * (InvitesService.create + resolveCreationScope: papel estritamente abaixo do
+ * seu). O titular da paróquia (`parishHolder`) também convida outros
+ * administradores paroquiais.
+ *
+ * - Coordenação de PASTORAL não tem convite por link (o servidor sempre
+ *   recusa): convida-se como voluntário(a) e nomeia-se a coordenação na pastoral.
+ * - Convite ligado a um cadastro de membro (`memberId`) só vale para
+ *   coordenação de comunidade, voluntário(a) ou fiel (MEMBER_ELIGIBLE_ROLES).
  */
-export function invitableRoles(actor: ActorLike | null | undefined): InviteRole[] {
+export function invitableRoles(
+  actor: ActorLike | null | undefined,
+  opts: { forMember?: boolean } = {},
+): InviteRole[] {
+  let roles: InviteRole[];
   switch (actor?.role) {
     case 'SYSTEM_ADMIN':
     case 'DIOCESAN_ADMIN':
-      return ['PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'PASTORAL_COORDINATOR', 'VOLUNTEER', 'FAITHFUL'];
+      roles = ['PARISH_ADMIN', 'COMMUNITY_COORDINATOR', 'VOLUNTEER', 'FAITHFUL'];
+      break;
     case 'PARISH_ADMIN':
-      return [
-        ...(actor.parishHolder ? (['PARISH_ADMIN'] as InviteRole[]) : []),
-        'COMMUNITY_COORDINATOR',
-        'PASTORAL_COORDINATOR',
-        'VOLUNTEER',
-        'FAITHFUL',
-      ];
+      roles = [...(actor.parishHolder ? (['PARISH_ADMIN'] as InviteRole[]) : []), 'COMMUNITY_COORDINATOR', 'VOLUNTEER', 'FAITHFUL'];
+      break;
     case 'COMMUNITY_COORDINATOR':
-      return ['PASTORAL_COORDINATOR', 'VOLUNTEER', 'FAITHFUL'];
+      roles = ['VOLUNTEER', 'FAITHFUL'];
+      break;
     default:
-      return [];
+      roles = [];
   }
+  return opts.forMember ? roles.filter((role) => MEMBER_INVITE_ROLES.includes(role)) : roles;
 }
+
+/** Papéis aceitos em convite ligado a um cadastro de membro (backend: MEMBER_ELIGIBLE_ROLES). */
+export const MEMBER_INVITE_ROLES: InviteRole[] = ['COMMUNITY_COORDINATOR', 'VOLUNTEER', 'FAITHFUL'];
 
 /** Quem pode marcar o convite de administrador como titular da paróquia. */
 export const canGrantHolder = (actor: ActorLike | null | undefined): boolean =>

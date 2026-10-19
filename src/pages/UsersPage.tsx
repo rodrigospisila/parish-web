@@ -7,7 +7,7 @@ import { avatarColor, initials } from '../components/SaintAvatar';
 import TempPasswordModal from '../components/TempPasswordModal';
 import api, { getErrorMessage } from '../services/api';
 import { scopeCommunityIdOf } from '../utils/userScope';
-import { canIssueTempPassword, canManageUserTarget } from '../utils/userManagement';
+import { canIssueTempPassword, canManageUserTarget, isHolderPeerTarget } from '../utils/userManagement';
 import { formatPhoneDisplay, maskBrPhone, phoneForApi, phoneForApiOnEdit, phoneInputValue } from '../utils/phone';
 import { csvInstantDate, downloadCsv } from '../utils/csvExport';
 import InviteModal from '../components/team/InviteModal';
@@ -78,6 +78,8 @@ interface User {
   role: string;
   clergyTitle?: 'BISHOP' | 'PRIEST' | 'DEACON' | null;
   isActive: boolean;
+  /** Titular da paróquia (PARISH_ADMIN) */
+  parishHolder?: boolean | null;
   diocese?: Diocese;
   dioceseId?: string;
   parishId?: string;
@@ -166,9 +168,11 @@ const UsersPage: React.FC = () => {
     
     const currentUserLevel = allRoles.find(r => r.value === currentUser.role)?.level || 999;
     
-    // Só pode criar usuários de nível inferior
-    return allRoles.filter(r => r.level > currentUserLevel);
-  }, [currentUser]);
+    // Só pode criar usuários de nível inferior — exceto o titular editando outro
+    // administrador paroquial não titular da paróquia (mesma regra do backend)
+    const holderEditingPeer = !!editingUser && isHolderPeerTarget(currentUser, editingUser);
+    return allRoles.filter(r => r.level > currentUserLevel || (holderEditingPeer && r.value === 'PARISH_ADMIN'));
+  }, [currentUser, editingUser]);
 
   // Quem pode abrir a tela (mesmos papéis do GET /users no backend)
   const canManageUsers = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(
@@ -1120,7 +1124,7 @@ const UsersPage: React.FC = () => {
                         Gerar senha provisória
                       </button>
                     )}
-                    {canResetTwoFactor && (
+                    {canResetTwoFactor && !isHolderPeerTarget(currentUser, user) && (
                       <button
                         className="entity-btn"
                         onClick={() => handleResetTwoFactor(user)}
@@ -1226,7 +1230,7 @@ const UsersPage: React.FC = () => {
                               🔑
                             </button>
                           )}
-                          {canResetTwoFactor && (
+                          {canResetTwoFactor && !isHolderPeerTarget(currentUser, user) && (
                             <button
                               className="entity-icon-btn"
                               onClick={() => handleResetTwoFactor(user)}

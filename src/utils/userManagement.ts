@@ -21,6 +21,8 @@ interface Actor {
   parishId?: string | null;
   communityId?: string | null;
   scopeCommunityId?: string | null;
+  /** Titular da paróquia (PARISH_ADMIN) — gerencia os outros administradores paroquiais */
+  parishHolder?: boolean | null;
 }
 
 interface Target {
@@ -29,18 +31,39 @@ interface Target {
   dioceseId?: string | null;
   parishId?: string | null;
   communityId?: string | null;
+  parishHolder?: boolean | null;
+}
+
+/**
+ * Titular gerenciando um PAR (eng-acessos-03; backend canHolderManage): o
+ * PARISH_ADMIN titular edita, desativa, remove e gera senha provisória dos
+ * outros PARISH_ADMIN NÃO titulares da mesma paróquia — nunca a si mesmo nem
+ * outro titular. (Redefinir o 2FA continua exigindo papel acima.)
+ */
+export function isHolderPeerTarget(actor: Actor | null | undefined, target: Target): boolean {
+  return (
+    actor?.role === 'PARISH_ADMIN' &&
+    actor.parishHolder === true &&
+    !!actor.parishId &&
+    target.role === 'PARISH_ADMIN' &&
+    target.parishId === actor.parishId &&
+    target.id !== actor.id &&
+    target.parishHolder !== true
+  );
 }
 
 /**
  * Mesma regra do backend (assertUserScope): fora o administrador do sistema,
  * só se gerencia quem tem papel ESTRITAMENTE abaixo do seu e está no seu
- * escopo (diocese / paróquia / comunidade). Vale para editar, desativar,
- * redefinir 2FA e gerar senha provisória.
+ * escopo (diocese / paróquia / comunidade) — ou, para o titular, os outros
+ * administradores paroquiais não titulares da paróquia (isHolderPeerTarget).
+ * Vale para editar, desativar e gerar senha provisória.
  */
 export function canManageUserTarget(actor: Actor | null | undefined, target: Target): boolean {
   if (!actor?.role || !USER_MANAGER_ROLES.includes(actor.role)) return false;
   if (actor.role === 'SYSTEM_ADMIN') return true;
   if (target.id === actor.id) return false;
+  if (isHolderPeerTarget(actor, target)) return true;
   const actorLevel = ROLE_LEVELS[actor.role];
   const targetLevel = ROLE_LEVELS[target.role];
   if (actorLevel === undefined || targetLevel === undefined || targetLevel <= actorLevel) return false;

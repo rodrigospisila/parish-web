@@ -64,6 +64,42 @@ async function blobErrorMessage(error: unknown, fallback: string): Promise<strin
 
 type Dialog = null | 'export' | 'closure';
 
+/** Estado do pedido de encerramento: datas conhecidas, "existe mas sem data" (409) ou nenhum. */
+interface ClosureState {
+  requestedAt: string | null;
+  effectiveAt: string | null;
+}
+
+/**
+ * O GET /parishes/:id ainda não devolve closureRequestedAt/closureEffectiveAt
+ * (select do ParishesService.findOne). Enquanto isso, a tela usa a resposta do
+ * POST/DELETE de closure-request e guarda o pedido neste navegador; quando o GET
+ * passar a trazer os campos, eles vencem.
+ */
+const closureKey = (parishId: string) => `parish-closure:${parishId}`;
+
+function readStoredClosure(parishId: string): ClosureState | null {
+  try {
+    const raw = localStorage.getItem(closureKey(parishId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object'
+      ? { requestedAt: parsed.requestedAt ?? null, effectiveAt: parsed.effectiveAt ?? null }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeClosure(parishId: string, value: ClosureState | null) {
+  try {
+    if (value) localStorage.setItem(closureKey(parishId), JSON.stringify(value));
+    else localStorage.removeItem(closureKey(parishId));
+  } catch {
+    // armazenamento indisponível: só não lembra entre visitas
+  }
+}
+
 const MyParishPage: React.FC = () => {
   const { user } = useAuth();
   const parishId = user?.parishId ?? '';
@@ -82,6 +118,17 @@ const MyParishPage: React.FC = () => {
   const [dialogError, setDialogError] = useState('');
   const [working, setWorking] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [closure, setClosure] = useState<ClosureState | null>(null);
+  /** O GET traz os campos do encerramento? (senão, oferece "cancelar pedido existente") */
+  const [closureFromServer, setClosureFromServer] = useState(false);
+
+  const applyClosure = useCallback(
+    (value: ClosureState | null) => {
+      setClosure(value);
+      if (parishId) storeClosure(parishId, value);
+    },
+    [parishId],
+  );
 
   const load = useCallback(async () => {
     if (!parishId) {
@@ -95,6 +142,17 @@ const MyParishPage: React.FC = () => {
       const { data } = await api.get<ParishData>(`/parishes/${parishId}`);
       setParish(data);
       setCnpj(maskCnpj(data.cnpj));
+      if (data && 'closureRequestedAt' in data) {
+        setClosureFromServer(true);
+        const value = data.closureRequestedAt
+          ? { requestedAt: data.closureRequestedAt, effectiveAt: data.closureEffectiveAt ?? null }
+          : null;
+        setClosure(value);
+        storeClosure(parishId, value);
+      } else {
+        setClosureFromServer(false);
+        setClosure(readStoredClosure(parishId));
+      }
     } catch (error) {
       setLoadError(getErrorMessage(error, 'Não foi possível carregar os dados da paróquia'));
     } finally {
@@ -188,12 +246,22 @@ const MyParishPage: React.FC = () => {
     setWorking(true);
     setDialogError('');
     try {
-      await api.post(`/parishes/${parishId}/closure-request`, { password, reason: reason.trim() });
+      const { data } = await api.post(`/parishes/${parishId}/closure-request`, { password, reason: reason.trim() });
+      applyClosure({
+        requestedAt: data?.closureRequestedAt ?? new Date().toISOString(),
+        effectiveAt: data?.closureEffectiveAt ?? null,
+      });
       setDialog(null);
       notify.info('Pedido de encerramento registrado. A equipe do Parish vai entrar em contato.');
-      await load();
     } catch (error) {
-      setDialogError(getErrorMessage(error, 'Não foi possível registrar o pedido'));
+      if (axios.isAxiosError(error) && error.response?.status === 409) {
+        // Já existe um pedido (feito por outra pessoa ou em outro navegador): mostra o estado e o botão de cancelar
+        applyClosure(closure ?? { requestedAt: null, effectiveAt: null });
+        setDialog(null);
+        notify.info('Já existe um pedido de encerramento para esta paróquia. Você pode cancelá-lo no aviso do topo.');
+      } else {
+        setDialogError(getErrorMessage(error, 'Não foi possível registrar o pedido'));
+      }
     } finally {
       setWorking(false);
     }
@@ -203,10 +271,16 @@ const MyParishPage: React.FC = () => {
     setCancelling(true);
     try {
       await api.delete(`/parishes/${parishId}/closure-request`);
+      applyClosure(null);
       notify.success('Pedido de encerramento cancelado. A conta segue normalmente.');
-      await load();
     } catch (error) {
-      notify.error(getErrorMessage(error, 'Não foi possível cancelar o pedido'));
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        // Não há pedido (já cancelado por outra pessoa)
+        applyClosure(null);
+        notify.info('Não há pedido de encerramento em andamento para esta paróquia.');
+      } else {
+        notify.error(getErrorMessage(error, 'Não foi possível cancelar o pedido'));
+      }
     } finally {
       setCancelling(false);
     }
@@ -227,7 +301,7 @@ const MyParishPage: React.FC = () => {
     );
   }
 
-  const closurePending = Boolean(parish.closureRequestedAt);
+  const closurePending = Boolean(closure);
   const cityState = [parish.city, parish.state].filter(Boolean).join(' - ');
 
   return (
@@ -240,9 +314,13 @@ const MyParishPage: React.FC = () => {
 
       {closurePending && (
         <div className="my-parish__alert is-warning" role="status">
-          <strong>Encerramento pedido em {formatDate(parish.closureRequestedAt)}.</strong>{' '}
-          {parish.closureEffectiveAt
-            ? `Previsto para ${formatDate(parish.closureEffectiveAt)}. `
+          <strong>
+            {closure?.requestedAt
+              ? `Encerramento pedido em ${formatDate(closure.requestedAt)}.`
+              : 'Há um pedido de encerramento da conta em andamento.'}
+          </strong>{' '}
+          {closure?.effectiveAt
+            ? `Previsto para ${formatDate(closure.effectiveAt)}. `
             : 'Previsto para 30 dias após o pedido. '}
           Até lá tudo funciona normalmente e nada é apagado sem a confirmação da equipe do Parish.{' '}
           <button type="button" className="btn-small" onClick={() => void cancelClosure()} disabled={cancelling}>
@@ -349,9 +427,19 @@ const MyParishPage: React.FC = () => {
           </li>
         </ul>
         {!closurePending ? (
-          <button type="button" className="btn-small danger" onClick={() => openDialog('closure')}>
-            Pedir o encerramento da conta
-          </button>
+          <>
+            <button type="button" className="btn-small danger" onClick={() => openDialog('closure')}>
+              Pedir o encerramento da conta
+            </button>
+            {!closureFromServer && (
+              <p className="my-parish__muted">
+                Alguém da paróquia já pediu o encerramento?{' '}
+                <button type="button" className="btn-small" onClick={() => void cancelClosure()} disabled={cancelling}>
+                  {cancelling ? 'Cancelando…' : 'Cancelar o pedido existente'}
+                </button>
+              </p>
+            )}
+          </>
         ) : (
           <p className="my-parish__muted">Já existe um pedido em andamento (veja o aviso no topo da página).</p>
         )}

@@ -5,6 +5,7 @@ import TitleIcon from '../components/TitleIcon';
 import UserPhotoAvatar, { announceAvatarUpdated } from '../components/UserPhotoAvatar';
 import { useAuth } from '../contexts/AuthContext';
 import { notify, confirm } from '../services/notification.service';
+import { displayEmail } from '../utils/displayEmail';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -225,7 +226,7 @@ const MyAccountPage: React.FC = () => {
           <UserPhotoAvatar userId={user?.id} name={user?.name || user?.email || 'Usuário'} size={72} />
           <div>
             <p style={{ margin: '0.2rem 0' }}>
-              <strong>{user?.name}</strong> · {user?.email}
+              <strong>{user?.name}</strong>{displayEmail(user?.email) ? ` · ${displayEmail(user?.email)}` : ''}
             </p>
             <p style={{ margin: '0.2rem 0', color: '#66788c' }}>
               {ROLE_LABELS[user?.role ?? ''] ?? user?.role}

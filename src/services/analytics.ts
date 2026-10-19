@@ -49,7 +49,15 @@ const BATCH_MAX = 50;
 const QUEUE_MAX = 200;
 
 const API_BASE = String(import.meta.env.VITE_API_URL ?? '');
-const APP_VERSION = String(import.meta.env.VITE_RELEASE ?? '').trim().slice(0, 40) || undefined;
+/**
+ * Versão no formato curto que o backend aceita (1.2 ou 1.2.3 — mesma regex do
+ * ProductEventsService). VITE_RELEASE costuma ser o commit (40 caracteres), que
+ * passaria do @MaxLength(32) do DTO e derrubaria o lote inteiro com 400: fora
+ * do formato, o campo nem vai.
+ */
+const APP_VERSION_FORMAT = /^\d{1,3}\.\d{1,3}(?:\.\d{1,4})?$/;
+const RELEASE = String(import.meta.env.VITE_RELEASE ?? '').trim().replace(/^v/i, '');
+const APP_VERSION = APP_VERSION_FORMAT.test(RELEASE) ? RELEASE : undefined;
 
 let queue: QueuedEvent[] = [];
 let timer: ReturnType<typeof setInterval> | null = null;

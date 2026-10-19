@@ -18,10 +18,11 @@ import {
   prepareRows,
   readImportResponse,
   suggestMapping,
+  type ImportAction,
   type ImportKind,
   type ImportReport,
   type PreparedRow,
-  type RowOutcome,
+  type PreviewRow,
 } from '../components/import/importSchema';
 import './modules/ModulePages.css';
 import './ImportPage.css';
@@ -54,23 +55,41 @@ const KIND_INFO: Record<ImportKind, { title: string; description: string }> = {
   },
 };
 
-const OUTCOME_LABEL: Record<RowOutcome | 'local', string> = {
-  ok: 'Pronta',
-  updated: 'Atualiza',
-  duplicate: 'Duplicado provável',
-  skipped: 'Ignorada',
-  error: 'Erro',
-  local: 'Erro',
+/** Padrão do servidor para o duplicado provável FORTE (member-import.service.planRow). */
+const DEFAULT_STRONG_ACTION: Record<ImportKind, ImportAction> = { MEMBERS: 'SKIP', TITHERS: 'UPDATE' };
+
+/** Opções para o duplicado forte (CPF, nome + nascimento ou celular + mesmo nome). */
+const STRONG_OPTIONS: Record<ImportKind, Array<{ value: ImportAction; label: string }>> = {
+  MEMBERS: [
+    { value: 'SKIP', label: 'Não importar essas linhas — o cadastro que já existe fica como está (recomendado)' },
+    { value: 'UPDATE', label: 'Completar o cadastro que já existe (só preenche campos vazios; nada é sobrescrito)' },
+    { value: 'CREATE', label: 'Criar outro cadastro mesmo assim (não vale para CPF repetido)' },
+  ],
+  TITHERS: [
+    {
+      value: 'UPDATE',
+      label: 'Usar o cadastro que já existe e registrar a pessoa como dizimista (recomendado; só preenche campos vazios)',
+    },
+    { value: 'SKIP', label: 'Não importar essas linhas — essas pessoas NÃO viram dizimistas' },
+    { value: 'CREATE', label: 'Criar outro cadastro mesmo assim (não vale para CPF repetido)' },
+  ],
 };
 
-const OUTCOME_TONE: Record<RowOutcome | 'local', string> = {
-  ok: 'is-ok',
-  updated: 'is-ok',
-  duplicate: 'is-warn',
-  skipped: 'is-muted',
-  error: 'is-bad',
-  local: 'is-bad',
-};
+/** Rótulo e cor da situação de uma linha, pela ação efetiva (a do servidor, salvo escolha do usuário). */
+function describeRow(result: PreviewRow | undefined, kind: ImportKind, action: ImportAction | null | undefined) {
+  if (result?.status === 'error') return { label: 'Erro', tone: 'is-bad' };
+  const dup = result?.duplicate;
+  if (action === 'SKIP') return { label: dup || result?.status === 'duplicate' ? 'Duplicado — não entra' : 'Ignorada', tone: 'is-muted' };
+  if (action === 'UPDATE') {
+    if (kind === 'TITHERS') {
+      return { label: dup?.isTither ? 'Já é dizimista — atualiza' : 'Já cadastrada — vira dizimista', tone: 'is-ok' };
+    }
+    return { label: 'Completa o cadastro existente', tone: 'is-ok' };
+  }
+  if (dup && !dup.strong) return { label: 'Novo cadastro (mesmo celular)', tone: 'is-warn' };
+  if (dup) return { label: 'Novo cadastro (duplicado)', tone: 'is-warn' };
+  return { label: kind === 'TITHERS' ? 'Novo dizimista' : 'Novo cadastro', tone: 'is-ok' };
+}
 
 const STEP_LABELS = ['Tipo', 'Arquivo', 'Colunas', 'Prévia', 'Relatório'];
 
@@ -109,7 +128,10 @@ const ImportPage: React.FC = () => {
   const [prepared, setPrepared] = useState<PreparedRow[]>([]);
   const [sent, setSent] = useState<PreparedRow[]>([]);
   const [preview, setPreview] = useState<ImportReport | null>(null);
-  const [skipDuplicates, setSkipDuplicates] = useState(true);
+  /** O que fazer com o duplicado provável FORTE (vai como `onDuplicate`; a prévia é refeita ao trocar) */
+  const [strongAction, setStrongAction] = useState<ImportAction>('SKIP');
+  /** Duplicado FRACO (só o celular bate, nome diferente — familiar): por padrão vira cadastro novo */
+  const [skipWeak, setSkipWeak] = useState(false);
   const [busy, setBusy] = useState(false);
   const [stepError, setStepError] = useState('');
   const [report, setReport] = useState<ImportReport | null>(null);
@@ -216,6 +238,28 @@ const ImportPage: React.FC = () => {
     }
   };
 
+  /** Prévia no servidor (dryRun) com a escolha atual para o duplicado forte. */
+  const runPreview = async (rows: PreparedRow[], onDuplicate: ImportAction) => {
+    setPreview(null);
+    if (rows.length === 0) return;
+    setBusy(true);
+    setStepError('');
+    try {
+      const { data } = await api.post('/members/import', {
+        kind,
+        communityId,
+        rows: rows.map((row) => row.data),
+        dryRun: true,
+        onDuplicate,
+      });
+      setPreview(readImportResponse(data, rows.length));
+    } catch (error) {
+      setStepError(getErrorMessage(error, 'Não foi possível conferir a planilha no servidor'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const goToPreview = async () => {
     setStepError('');
     if (mapping.fullName === undefined) {
@@ -234,25 +278,19 @@ const ImportPage: React.FC = () => {
       return;
     }
     const valid = rows.filter((row) => row.errors.length === 0);
+    const initial = DEFAULT_STRONG_ACTION[kind];
     setPrepared(rows);
     setSent(valid);
-    setPreview(null);
+    setStrongAction(initial);
+    setSkipWeak(false);
     setStep(4);
-    if (valid.length === 0) return;
-    setBusy(true);
-    try {
-      const { data } = await api.post('/members/import', {
-        kind,
-        communityId,
-        rows: valid.map((row) => row.data),
-        dryRun: true,
-      });
-      setPreview(readImportResponse(data, valid.length));
-    } catch (error) {
-      setStepError(getErrorMessage(error, 'Não foi possível conferir a planilha no servidor'));
-    } finally {
-      setBusy(false);
-    }
+    await runPreview(valid, initial);
+  };
+
+  const changeStrongAction = (value: ImportAction) => {
+    if (value === strongAction || busy) return;
+    setStrongAction(value);
+    void runPreview(sent, value);
   };
 
   /** Resultado do servidor (prévia) para a linha enviada na posição `index`. */
@@ -262,29 +300,66 @@ const ImportPage: React.FC = () => {
     return map;
   }, [preview]);
 
-  const toImport = useMemo(
-    () =>
-      sent.filter((_, index) => {
-        const outcome = previewByIndex.get(index)?.status ?? 'ok';
-        if (outcome === 'error' || outcome === 'skipped') return false;
-        if (outcome === 'duplicate' && skipDuplicates) return false;
-        return true;
-      }),
-    [sent, previewByIndex, skipDuplicates],
-  );
+  /**
+   * Ação efetiva de cada linha enviada (índice em `sent`): a da prévia do
+   * servidor (que já usou o `onDuplicate` escolhido) — o duplicado forte de
+   * dizimista é UPDATE (vira dizimista) e o fraco, só o celular, é CREATE —; o
+   * fraco vira SKIP só se a pessoa pedir. null = erro (não vai).
+   * Servidor antigo (sem `action`): duplicado não entra.
+   */
+  const actionByIndex = useMemo(() => {
+    const map = new Map<number, ImportAction | null>();
+    sent.forEach((_, index) => {
+      const result = previewByIndex.get(index);
+      let action: ImportAction | null;
+      if (!result) action = preview ? 'CREATE' : null;
+      else if (result.status === 'error') action = null;
+      else if (!result.action) action = result.status === 'duplicate' || result.status === 'skipped' ? 'SKIP' : 'CREATE';
+      else if (result.action === 'CREATE' && result.duplicate && !result.duplicate.strong && skipWeak) action = 'SKIP';
+      else action = result.action;
+      map.set(index, action);
+    });
+    return map;
+  }, [sent, previewByIndex, preview, skipWeak]);
+
+  /** Linhas que vão na gravação (todas menos as com erro; as SKIP vão para o relatório contar). */
+  const toSend = useMemo(() => sent.filter((_, index) => actionByIndex.get(index)), [sent, actionByIndex]);
+  const counts = useMemo(() => {
+    const total = { create: 0, update: 0, skip: 0 };
+    actionByIndex.forEach((action) => {
+      if (action === 'CREATE') total.create++;
+      else if (action === 'UPDATE') total.update++;
+      else if (action === 'SKIP') total.skip++;
+    });
+    return total;
+  }, [actionByIndex]);
+  const toImportCount = counts.create + counts.update;
+  const liveRows = preview?.rows.filter((row) => row.status !== 'error') ?? [];
+  // Conta também as que viraram erro (ex.: "criar outro" com CPF repetido) para a escolha não sumir da tela
+  const strongDuplicates = preview?.rows.filter((row) => row.duplicate?.strong && (row.action || row.status === 'error')).length ?? 0;
+  const weakDuplicates = liveRows.filter((row) => row.duplicate && !row.duplicate.strong && row.action).length;
+  const legacyDuplicates = liveRows.filter((row) => row.status === 'duplicate' && !row.action).length;
 
   const confirmImport = async () => {
-    if (toImport.length === 0 || busy) return;
+    if (toImportCount === 0 || busy) return;
     setBusy(true);
     setStepError('');
+    // Decisão explícita por linha (chave 1 = primeira linha de `rows`), igual à prévia
+    const rowActions: Record<string, ImportAction> = {};
+    toSend.forEach((row, position) => {
+      const action = actionByIndex.get(sent.indexOf(row));
+      if (action) rowActions[String(position + 1)] = action;
+    });
     try {
       const { data } = await api.post('/members/import', {
         kind,
         communityId,
-        rows: toImport.map((row) => row.data),
+        rows: toSend.map((row) => row.data),
+        onDuplicate: strongAction,
+        rowActions,
       });
-      setReport(readImportResponse(data, toImport.length));
-      setReportRows(toImport);
+      setReport(readImportResponse(data, toSend.length));
+      setReportRows(toSend);
       setStep(5);
     } catch (error) {
       setStepError(getErrorMessage(error, 'A importação falhou. Nada foi confirmado — confira a conexão e tente de novo.'));
@@ -310,11 +385,12 @@ const ImportPage: React.FC = () => {
     });
     sent.forEach((row, index) => {
       const result = previewByIndex.get(index);
-      if (result && result.status !== 'ok') {
+      const action = actionByIndex.get(index);
+      if (result && (result.status === 'error' || result.duplicate || action !== 'CREATE' || result.messages.length)) {
         lines.push([
           row.line,
           row.data.fullName ?? '',
-          OUTCOME_LABEL[result.status],
+          describeRow(result, kind, action).label,
           [result.duplicateOf ? `Parecido com ${result.duplicateOf}` : '', ...result.messages].filter(Boolean).join(' | '),
         ]);
       }
@@ -613,7 +689,17 @@ const ImportPage: React.FC = () => {
               </span>
               {preview && (
                 <span className="is-ok">
-                  <strong>{preview.created + preview.updated}</strong> pronta(s)
+                  <strong>{counts.create}</strong> novo(s)
+                </span>
+              )}
+              {preview && counts.update > 0 && (
+                <span className="is-ok">
+                  <strong>{counts.update}</strong> {kind === 'TITHERS' ? 'já cadastrado(s) — vira(m) dizimista(s)' : 'completa(m) cadastro existente'}
+                </span>
+              )}
+              {preview && counts.skip > 0 && (
+                <span className="is-muted">
+                  <strong>{counts.skip}</strong> não entra(m)
                 </span>
               )}
               {preview && preview.duplicates > 0 && (
@@ -633,11 +719,42 @@ const ImportPage: React.FC = () => {
               )}
             </div>
 
-            {preview && preview.duplicates > 0 && (
-              <label className="import-check">
-                <input type="checkbox" checked={skipDuplicates} onChange={(e) => setSkipDuplicates(e.target.checked)} />
-                Não importar as linhas com duplicado provável (recomendado — confira depois em Membros)
-              </label>
+            {preview && strongDuplicates > 0 && (
+              <fieldset className="import-field" disabled={busy}>
+                <legend className="import-label">
+                  {strongDuplicates} linha(s) parecem ser alguém que já está cadastrado (mesmo CPF, nome e nascimento, ou
+                  celular e nome). O que fazer com elas?
+                </legend>
+                {STRONG_OPTIONS[kind].map((option) => (
+                  <label key={option.value} className="import-check">
+                    <input
+                      type="radio"
+                      name="import-strong-duplicate"
+                      value={option.value}
+                      checked={strongAction === option.value}
+                      onChange={() => changeStrongAction(option.value)}
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </fieldset>
+            )}
+            {preview && weakDuplicates > 0 && (
+              <div className="import-field">
+                <span className="import-muted">
+                  {weakDuplicates} linha(s) têm o mesmo celular de outra pessoa já cadastrada, com nome diferente (provável
+                  familiar): entram como cadastro novo.
+                </span>
+                <label className="import-check">
+                  <input type="checkbox" checked={skipWeak} onChange={(e) => setSkipWeak(e.target.checked)} />
+                  Não importar essas {weakDuplicates} linha(s) com celular repetido
+                </label>
+              </div>
+            )}
+            {preview && legacyDuplicates > 0 && (
+              <p className="import-muted">
+                {legacyDuplicates} linha(s) com duplicado provável não serão importadas — confira depois em Membros.
+              </p>
             )}
 
             <div className="import-table-wrap">
@@ -656,7 +773,9 @@ const ImportPage: React.FC = () => {
                   {prepared.slice(0, 500).map((row) => {
                     const sentIndex = sent.indexOf(row);
                     const result = sentIndex >= 0 ? previewByIndex.get(sentIndex) : undefined;
-                    const outcome: RowOutcome | 'local' = row.errors.length ? 'local' : result?.status ?? 'ok';
+                    const situation = row.errors.length
+                      ? { label: 'Erro', tone: 'is-bad' }
+                      : describeRow(result, kind, sentIndex >= 0 ? actionByIndex.get(sentIndex) : undefined);
                     const details = [
                       ...row.errors,
                       ...(result?.duplicateOf ? [`Parecido com: ${result.duplicateOf}`] : []),
@@ -669,8 +788,8 @@ const ImportPage: React.FC = () => {
                         <td>{row.data.fullName || '—'}</td>
                         <td>{formatPhoneDisplay(row.data.phone) || '—'}</td>
                         <td>
-                          <span className={`import-pill ${OUTCOME_TONE[outcome]}`}>
-                            {preview || outcome === 'local' ? OUTCOME_LABEL[outcome] : '…'}
+                          <span className={`import-pill ${situation.tone}`}>
+                            {preview || row.errors.length ? situation.label : '…'}
                           </span>
                         </td>
                         <td className="import-muted">{details.join(' · ') || '—'}</td>
@@ -695,10 +814,10 @@ const ImportPage: React.FC = () => {
                 type="button"
                 className="btn-primary"
                 onClick={() => void confirmImport()}
-                disabled={busy || !preview || toImport.length === 0}
+                disabled={busy || !preview || toImportCount === 0}
                 aria-busy={busy}
               >
-                {busy && preview ? 'Importando…' : `Importar ${toImport.length} linha(s) em ${selectedCommunityName || 'comunidade'}`}
+                {busy && preview ? 'Importando…' : `Importar ${toImportCount} linha(s) em ${selectedCommunityName || 'comunidade'}`}
               </button>
             </div>
           </>
@@ -716,12 +835,13 @@ const ImportPage: React.FC = () => {
               </span>
               {report.updated > 0 && (
                 <span className="is-ok">
-                  <strong>{report.updated}</strong> atualizado(s)
+                  <strong>{report.updated}</strong>{' '}
+                  {kind === 'TITHERS' ? 'já cadastrado(s) — registrado(s) como dizimista(s)' : 'cadastro(s) existente(s) completado(s)'}
                 </span>
               )}
-              {report.skipped + report.duplicates > 0 && (
+              {report.skipped > 0 && (
                 <span className="is-muted">
-                  <strong>{report.skipped + report.duplicates}</strong> ignorado(s)
+                  <strong>{report.skipped}</strong> não importado(s) (duplicado provável ou ignorado)
                 </span>
               )}
               {report.errors > 0 && (

@@ -1,6 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import PublicFrame, { postWithOptionalSession, publicApi, publicMessage } from '../../components/team/PublicFrame';
+import PublicFrame, {
+  postWithOptionalSession,
+  publicApi,
+  publicMessage,
+  sessionAccount,
+  sessionAccountLabel,
+} from '../../components/team/PublicFrame';
 import { httpStatus } from '../../components/team/teamApi';
 import { maskBrPhone, phoneForApi, whatsappNumber } from '../../utils/phone';
 import { SUPPORT_EMAIL } from './LandingSupport';
@@ -28,6 +34,18 @@ type Channel = 'PHONE' | 'EMAIL';
 type Step = 'form' | 'verify' | 'code' | 'done';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Mesma exigência do servidor (CreateClaimDto: IsUrl só com https e domínio). */
+function isHttpsUrl(value: string): boolean {
+  if (/\s/.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname.includes('.');
+  } catch {
+    return false;
+  }
+}
+
 /** Prazo de análise anunciado (dias úteis); configurável sem mexer no código. */
 const REVIEW_DAYS = Number(import.meta.env.VITE_CLAIM_REVIEW_DAYS) > 0 ? Number(import.meta.env.VITE_CLAIM_REVIEW_DAYS) : 2;
 
@@ -58,6 +76,9 @@ const ClaimParishPage: React.FC = () => {
   const [message, setMessage] = useState('');
   const [evidenceUrl, setEvidenceUrl] = useState('');
   const [consent, setConsent] = useState(false);
+  /** Conta conectada neste navegador: o pedido vai ligado a ela (Bearer) — só se a pessoa mantiver */
+  const [account] = useState(() => sessionAccount());
+  const [linkAccount, setLinkAccount] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -119,8 +140,10 @@ const ClaimParishPage: React.FC = () => {
     if (!EMAIL_RE.test(email.trim())) return setFormError('Informe um e-mail válido para recebermos a resposta.');
     if (phone.trim() && !whatsappNumber(phone)) return setFormError('Confira o celular: DDD + número.');
     if (!role) return setFormError('Escolha o seu cargo na paróquia.');
-    if (evidenceUrl.trim() && !/^https?:\/\/\S+$/i.test(evidenceUrl.trim())) {
-      return setFormError('O link do documento deve começar com http:// ou https://');
+    if (evidenceUrl.trim() && !isHttpsUrl(evidenceUrl.trim())) {
+      return setFormError(
+        'O link do documento precisa ser seguro e completo, começando com https:// (ex.: https://drive.google.com/...). Links http:// não são aceitos.',
+      );
     }
     if (!consent) return setFormError('Para enviar, autorize o uso dos dados para analisar o pedido.');
 
@@ -136,10 +159,12 @@ const ClaimParishPage: React.FC = () => {
       if (phoneValue) body.phone = phoneValue;
       if (message.trim()) body.message = message.trim();
       if (evidenceUrl.trim()) body.evidenceUrl = evidenceUrl.trim();
-      const data = await postWithOptionalSession<{ claimId: string; canVerifyBy?: Channel[] }>(
-        `/public/parishes/${encodeURIComponent(info.parishId || parishId)}/claims`,
-        body,
-      );
+      const url = `/public/parishes/${encodeURIComponent(info.parishId || parishId)}/claims`;
+      // Com a conta conectada (e a pessoa de acordo) o pedido fica ligado a ela; senão vai sem o Bearer
+      const data =
+        account && linkAccount
+          ? await postWithOptionalSession<{ claimId: string; canVerifyBy?: Channel[] }>(url, body)
+          : (await publicApi.post<{ claimId: string; canVerifyBy?: Channel[] }>(url, body)).data;
       setClaimId(data.claimId);
       const channels = (data.canVerifyBy ?? []).filter((c) => c === 'PHONE' || c === 'EMAIL');
       setCanVerifyBy(channels);
@@ -347,9 +372,35 @@ const ClaimParishPage: React.FC = () => {
                   aria-describedby="claim-evidence-hint"
                 />
                 <div className="donate-hint" id="claim-evidence-hint">
-                  Um documento compartilhado (Drive, site da diocese) agiliza a análise.
+                  Um documento compartilhado (Drive, site da diocese) agiliza a análise. O link precisa começar com
+                  https://.
                 </div>
               </div>
+              {account && (
+                <div className="donate-alert is-info" role="status" style={{ marginBottom: 12 }}>
+                  {linkAccount ? (
+                    <>
+                      Você está conectado(a) como <strong>{sessionAccountLabel(account)}</strong>. O pedido ficará ligado
+                      a esta conta: se for aprovado, <strong>é ela que recebe o acesso de administração</strong> da
+                      paróquia.
+                    </>
+                  ) : (
+                    <>
+                      O pedido será enviado sem ligar à conta conectada ({sessionAccountLabel(account)}). Se for
+                      aprovado, a equipe do Parish manda um convite (link) para você criar o seu próprio acesso.
+                    </>
+                  )}
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 8, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={!linkAccount}
+                      onChange={(e) => setLinkAccount(!e.target.checked)}
+                      style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0 }}
+                    />
+                    <span>Enviar sem vincular à conta conectada (por exemplo, se o computador é de outra pessoa)</span>
+                  </label>
+                </div>
+              )}
               <label className="donate-field" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
                 <input
                   type="checkbox"

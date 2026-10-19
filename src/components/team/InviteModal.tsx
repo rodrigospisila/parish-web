@@ -161,7 +161,7 @@ interface InviteModalProps {
 const InviteModal: React.FC<InviteModalProps> = ({ onClose, onCreated, preset, title }) => {
   const { user } = useAuth();
   const actor = user as (typeof user & { parishHolder?: boolean }) | null;
-  const roles = useMemo(() => invitableRoles(actor), [actor]);
+  const roles = useMemo(() => invitableRoles(actor, { forMember: Boolean(preset?.memberId) }), [actor, preset?.memberId]);
   const wideScope = actor?.role === 'SYSTEM_ADMIN' || actor?.role === 'DIOCESAN_ADMIN';
   const actorCommunityId = scopeCommunityIdOf(actor);
   const lockedCommunity = Boolean(preset?.communityId);
@@ -422,11 +422,10 @@ const InviteModal: React.FC<InviteModalProps> = ({ onClose, onCreated, preset, t
               ))}
             </fieldset>
 
-            {role === 'PASTORAL_COORDINATOR' && (
-              <div className="team-info">
-                Depois que a pessoa aceitar, defina em <strong>Pastorais</strong> quais pastorais ela coordena.
-              </div>
-            )}
+            <p className="team-hint" style={{ margin: '0 0 0.75rem' }}>
+              Coordenação de pastoral: convide a pessoa como <strong>voluntário(a)</strong> e, depois que ela aceitar,
+              nomeie a coordenação em <strong>Pastorais</strong>.
+            </p>
 
             {lockedCommunity && needsCommunity && (
               <p className="team-hint" style={{ margin: '0 0 0.75rem' }}>

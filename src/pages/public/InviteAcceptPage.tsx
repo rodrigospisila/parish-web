@@ -1,7 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import axios from 'axios';
-import PublicFrame, { postWithOptionalSession, publicApi, publicMessage, sessionAuthHeader } from '../../components/team/PublicFrame';
+import PublicFrame, {
+  publicApi,
+  publicMessage,
+  sessionAccount,
+  sessionAccountLabel,
+  sessionAuthHeader,
+} from '../../components/team/PublicFrame';
 import { httpStatus, shortDate } from '../../components/team/teamApi';
 import { maskBrPhone, phoneForApi, whatsappNumber } from '../../utils/phone';
 import { SUPPORT_EMAIL } from './LandingSupport';
@@ -15,6 +21,11 @@ import { SUPPORT_EMAIL } from './LandingSupport';
  * do mesmo jeito que o AuthContext grava no login (token, refreshToken e
  * user no localStorage) e a página recarrega no painel — o AuthProvider lê a
  * sessão no boot e o perfil é atualizado pelo /users/me.
+ *
+ * Com uma conta já conectada neste navegador, o convite pode ser aplicado
+ * NELA (o servidor ignora senha, celular e e-mail nesse caso): o formulário
+ * só pede o nome e o aceite, e diz que a senha continua a mesma. "Criar um
+ * acesso novo" manda o pedido sem o Bearer.
  */
 
 interface InviteInfo {
@@ -92,7 +103,9 @@ const InviteAcceptPage: React.FC = () => {
   const [formError, setFormError] = useState('');
   const [done, setDone] = useState(false);
 
-  const loggedIn = Object.keys(sessionAuthHeader()).length > 0;
+  const [account] = useState(() => sessionAccount());
+  /** Aplicar o convite na conta conectada (Bearer) em vez de criar outra */
+  const [useOwnAccount, setUseOwnAccount] = useState(() => !!account);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,7 +115,7 @@ const InviteAcceptPage: React.FC = () => {
       .then(({ data }) => {
         if (cancelled) return;
         setInfo(data);
-        setName((current) => current || data.name || '');
+        setName((current) => current || data.name || account?.name || '');
       })
       .catch((error) => {
         if (cancelled) return;
@@ -134,22 +147,33 @@ const InviteAcceptPage: React.FC = () => {
     if (submitting) return;
     setFormError('');
     if (name.trim().length < 3) return setFormError('Informe o seu nome completo.');
+    const withSession = useOwnAccount && !!account;
     const phoneValue = phoneForApi(phone);
-    if (phone.trim() && !whatsappNumber(phone)) return setFormError('Confira o celular: DDD + número.');
-    if (email.trim() && !EMAIL_RE.test(email.trim())) return setFormError('Confira o e-mail digitado.');
-    if (!phoneValue && !email.trim()) {
-      return setFormError('Informe o celular (ou um e-mail): é com ele que você vai entrar.');
+    if (!withSession) {
+      if (phone.trim() && !whatsappNumber(phone)) return setFormError('Confira o celular: DDD + número.');
+      if (email.trim() && !EMAIL_RE.test(email.trim())) return setFormError('Confira o e-mail digitado.');
+      if (!phoneValue && !email.trim()) {
+        return setFormError('Informe o celular (ou um e-mail): é com ele que você vai entrar.');
+      }
+      if (password.length < MIN_PASSWORD) return setFormError(`A senha precisa ter pelo menos ${MIN_PASSWORD} caracteres.`);
+      if (password !== confirmPassword) return setFormError('As duas senhas não são iguais.');
     }
-    if (password.length < MIN_PASSWORD) return setFormError(`A senha precisa ter pelo menos ${MIN_PASSWORD} caracteres.`);
-    if (password !== confirmPassword) return setFormError('As duas senhas não são iguais.');
     if (!acceptTerms) return setFormError('Para continuar, aceite os Termos de Uso e a Política de Privacidade.');
 
     setSubmitting(true);
     try {
-      const body: Record<string, unknown> = { name: name.trim(), password, acceptTerms: true };
-      if (phoneValue) body.phone = phoneValue;
-      if (email.trim()) body.email = email.trim();
-      const data = await postWithOptionalSession<LoginBody>(`/public/invites/${encodeURIComponent(token)}/accept`, body);
+      const url = `/public/invites/${encodeURIComponent(token)}/accept`;
+      let data: LoginBody;
+      if (withSession) {
+        // Conta conectada: o servidor aplica o papel nela e ignora senha/celular/e-mail — nada disso vai
+        ({ data } = await publicApi.post<LoginBody>(url, { name: name.trim(), acceptTerms: true }, { headers: sessionAuthHeader() }));
+      } else {
+        const body: Record<string, unknown> = { name: name.trim(), password, acceptTerms: true };
+        if (phoneValue) body.phone = phoneValue;
+        if (email.trim()) body.email = email.trim();
+        // Acesso novo: sem o Bearer (nunca liga o convite à conta conectada)
+        ({ data } = await publicApi.post<LoginBody>(url, body));
+      }
       if (data?.requiresTwoFactor) {
         // Conta existente com verificação em duas etapas: conclui pelo login normal
         navigate('/login', { replace: true });
@@ -168,6 +192,14 @@ const InviteAcceptPage: React.FC = () => {
         setGone(publicMessage(error, 'Este convite não vale mais.'));
         return;
       }
+      if (status === 401 && useOwnAccount) {
+        // Sessão deste navegador venceu: não dá para usar a conta sem entrar de novo
+        setUseOwnAccount(false);
+        setFormError(
+          'Sua sessão neste navegador expirou. Entre de novo e abra este link outra vez para usar a sua conta — ou crie um acesso novo abaixo.',
+        );
+        return;
+      }
       setFormError(publicMessage(error, 'Não foi possível criar o seu acesso. Tente novamente em instantes.'));
     } finally {
       setSubmitting(false);
@@ -176,6 +208,7 @@ const InviteAcceptPage: React.FC = () => {
 
   const where = info ? [info.communityName, info.parishName].filter(Boolean).join(' · ') : '';
   const strength = passwordStrength(password);
+  const withSession = useOwnAccount && !!account;
 
   if (loading) {
     return (
@@ -249,11 +282,39 @@ const InviteAcceptPage: React.FC = () => {
       </section>
 
       <section className="donate-card">
-        <h2 className="donate-section-title">Crie o seu acesso</h2>
-        {loggedIn && (
+        <h2 className="donate-section-title">{withSession ? 'Aceitar com a sua conta' : 'Crie o seu acesso'}</h2>
+        {withSession && (
           <div className="donate-alert is-info" role="status" style={{ marginBottom: 12 }}>
-            Você já está conectado(a) neste navegador. Se o celular ou o e-mail forem os mesmos da sua conta, o convite é
-            aplicado nela.
+            Você está conectado(a) como <strong>{sessionAccountLabel(account)}</strong>. O convite será aplicado nesta
+            conta (vale se o celular ou o e-mail dela forem os do convite). <strong>Sua senha continua a mesma</strong> —
+            não é preciso criar outra.{' '}
+            <button
+              type="button"
+              className="donate-btn is-ghost"
+              style={{ width: 'auto', padding: '4px 12px', marginTop: 8 }}
+              onClick={() => {
+                setUseOwnAccount(false);
+                setFormError('');
+              }}
+            >
+              Criar um acesso novo em vez disso
+            </button>
+          </div>
+        )}
+        {!withSession && account && (
+          <div className="donate-alert is-info" role="status" style={{ marginBottom: 12 }}>
+            O acesso novo será criado sem usar a conta conectada neste navegador.{' '}
+            <button
+              type="button"
+              className="donate-btn is-ghost"
+              style={{ width: 'auto', padding: '4px 12px', marginTop: 8 }}
+              onClick={() => {
+                setUseOwnAccount(true);
+                setFormError('');
+              }}
+            >
+              Usar a conta conectada
+            </button>
           </div>
         )}
         <form onSubmit={submit} noValidate>
@@ -276,88 +337,92 @@ const InviteAcceptPage: React.FC = () => {
               required
             />
           </div>
-          <div className="donate-field">
-            <label className="donate-label" htmlFor="invite-accept-phone">
-              Celular *
-            </label>
-            <input
-              id="invite-accept-phone"
-              className="donate-input"
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel"
-              placeholder="(00) 90000-0000"
-              value={phone}
-              onChange={(e) => setPhone(maskBrPhone(e.target.value))}
-              aria-describedby="invite-accept-phone-hint"
-            />
-            <div className="donate-hint" id="invite-accept-phone-hint">
-              Você vai entrar com este celular.
-              {info.phoneMasked ? ` O convite foi feito para ${info.phoneMasked}.` : ''}
-            </div>
-          </div>
-          <div className="donate-field">
-            <label className="donate-label" htmlFor="invite-accept-email">
-              E-mail (opcional)
-            </label>
-            <input
-              id="invite-accept-email"
-              className="donate-input"
-              type="email"
-              autoComplete="email"
-              maxLength={160}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              aria-describedby="invite-accept-email-hint"
-            />
-            <div className="donate-hint" id="invite-accept-email-hint">
-              Serve para recuperar a senha.{info.emailMasked ? ` O convite foi feito para ${info.emailMasked}.` : ''}
-            </div>
-          </div>
-          <div className="donate-field">
-            <label className="donate-label" htmlFor="invite-accept-password">
-              Crie uma senha *
-            </label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                id="invite-accept-password"
-                className="donate-input"
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="new-password"
-                minLength={MIN_PASSWORD}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                aria-describedby="invite-accept-password-hint"
-                style={{ flex: 1 }}
-              />
-              <button
-                type="button"
-                className="donate-btn is-ghost"
-                style={{ width: 'auto', padding: '0 14px' }}
-                onClick={() => setShowPassword((v) => !v)}
-                aria-pressed={showPassword}
-                aria-controls="invite-accept-password"
-              >
-                {showPassword ? 'Ocultar' : 'Mostrar'}
-              </button>
-            </div>
-            <div className="donate-hint" id="invite-accept-password-hint" aria-live="polite">
-              {strength ? <span style={{ color: strength.tone, fontWeight: 600 }}>Senha: {strength.label}</span> : `Mínimo de ${MIN_PASSWORD} caracteres.`}
-            </div>
-          </div>
-          <div className="donate-field">
-            <label className="donate-label" htmlFor="invite-accept-password2">
-              Repita a senha *
-            </label>
-            <input
-              id="invite-accept-password2"
-              className="donate-input"
-              type={showPassword ? 'text' : 'password'}
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-            />
-          </div>
+          {!withSession && (
+            <>
+              <div className="donate-field">
+                <label className="donate-label" htmlFor="invite-accept-phone">
+                  Celular *
+                </label>
+                <input
+                  id="invite-accept-phone"
+                  className="donate-input"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="(00) 90000-0000"
+                  value={phone}
+                  onChange={(e) => setPhone(maskBrPhone(e.target.value))}
+                  aria-describedby="invite-accept-phone-hint"
+                />
+                <div className="donate-hint" id="invite-accept-phone-hint">
+                  Você vai entrar com este celular.
+                  {info.phoneMasked ? ` O convite foi feito para ${info.phoneMasked}.` : ''}
+                </div>
+              </div>
+              <div className="donate-field">
+                <label className="donate-label" htmlFor="invite-accept-email">
+                  E-mail (opcional)
+                </label>
+                <input
+                  id="invite-accept-email"
+                  className="donate-input"
+                  type="email"
+                  autoComplete="email"
+                  maxLength={160}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  aria-describedby="invite-accept-email-hint"
+                />
+                <div className="donate-hint" id="invite-accept-email-hint">
+                  Serve para recuperar a senha.{info.emailMasked ? ` O convite foi feito para ${info.emailMasked}.` : ''}
+                </div>
+              </div>
+              <div className="donate-field">
+                <label className="donate-label" htmlFor="invite-accept-password">
+                  Crie uma senha *
+                </label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    id="invite-accept-password"
+                    className="donate-input"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    minLength={MIN_PASSWORD}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    aria-describedby="invite-accept-password-hint"
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="donate-btn is-ghost"
+                    style={{ width: 'auto', padding: '0 14px' }}
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-pressed={showPassword}
+                    aria-controls="invite-accept-password"
+                  >
+                    {showPassword ? 'Ocultar' : 'Mostrar'}
+                  </button>
+                </div>
+                <div className="donate-hint" id="invite-accept-password-hint" aria-live="polite">
+                  {strength ? <span style={{ color: strength.tone, fontWeight: 600 }}>Senha: {strength.label}</span> : `Mínimo de ${MIN_PASSWORD} caracteres.`}
+                </div>
+              </div>
+              <div className="donate-field">
+                <label className="donate-label" htmlFor="invite-accept-password2">
+                  Repita a senha *
+                </label>
+                <input
+                  id="invite-accept-password2"
+                  className="donate-input"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+              </div>
+            </>
+          )}
           <label className="donate-field" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
             <input
               type="checkbox"
@@ -378,11 +443,17 @@ const InviteAcceptPage: React.FC = () => {
             </span>
           </label>
           <button type="submit" className="donate-btn" disabled={submitting || done} aria-busy={submitting}>
-            {submitting ? 'Criando o seu acesso…' : done ? 'Entrando…' : 'Aceitar convite e entrar'}
+            {submitting
+              ? withSession
+                ? 'Aplicando o convite…'
+                : 'Criando o seu acesso…'
+              : done
+                ? 'Entrando…'
+                : 'Aceitar convite e entrar'}
           </button>
           {done && (
             <p className="donate-hint donate-center" role="status" style={{ marginTop: 12 }}>
-              Acesso criado! Se a página não abrir sozinha, <Link to="/login">entre com o seu celular ou e-mail</Link>.
+              {withSession ? 'Convite aceito!' : 'Acesso criado!'} Se a página não abrir sozinha, <Link to="/login">entre com o seu celular ou e-mail</Link>.
             </p>
           )}
         </form>

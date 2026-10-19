@@ -161,8 +161,11 @@ const ClaimsPage: React.FC = () => {
         } else {
           notify.success('Reivindicação aprovada. A conta de quem pediu já tem a gestão da paróquia.');
         }
+      } else if (typeof data?.warning === 'string' && data.warning) {
+        // Aprovação desfeita: a conta que já recebeu a gestão NÃO é rebaixada sozinha
+        notify.warning(data.warning);
       } else {
-        notify.success('Reivindicação recusada.');
+        notify.success(claim.status === 'APPROVED' ? 'Aprovação desfeita. O convite pendente foi revogado.' : 'Reivindicação recusada.');
       }
       // Atualiza a linha sem perder o link do convite da tela
       setLista((prev) =>
@@ -356,7 +359,7 @@ const ClaimsPage: React.FC = () => {
                 </div>
               )}
 
-              {aberta && (
+              {(aberta || c.status === 'APPROVED') && (
                 <div className="pf-revisao">
                   <label className="pf-campo">
                     Nota {conf === 'REJECT' ? '(obrigatória na recusa — a pessoa recebe)' : '(opcional)'}
@@ -388,12 +391,20 @@ const ClaimsPage: React.FC = () => {
                     </div>
                   ) : (
                     <div className="pf-acoes">
-                      <button type="button" className="pf-btn pf-btn-mini pf-btn-ok" onClick={() => setConfirmando({ id: c.id, action: 'APPROVE' })}>
-                        Aprovar
-                      </button>
-                      <button type="button" className="pf-btn pf-btn-mini pf-btn-perigo" onClick={() => setConfirmando({ id: c.id, action: 'REJECT' })}>
-                        Recusar
-                      </button>
+                      {aberta ? (
+                        <>
+                          <button type="button" className="pf-btn pf-btn-mini pf-btn-ok" onClick={() => setConfirmando({ id: c.id, action: 'APPROVE' })}>
+                            Aprovar
+                          </button>
+                          <button type="button" className="pf-btn pf-btn-mini pf-btn-perigo" onClick={() => setConfirmando({ id: c.id, action: 'REJECT' })}>
+                            Recusar
+                          </button>
+                        </>
+                      ) : (
+                        <button type="button" className="pf-btn pf-btn-mini pf-btn-perigo" onClick={() => setConfirmando({ id: c.id, action: 'REJECT' })}>
+                          Desfazer aprovação
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

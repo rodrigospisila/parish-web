@@ -24,6 +24,29 @@ export function sessionAuthHeader(): Record<string, string> {
   }
 }
 
+/** Conta conectada neste navegador (o `user` gravado no login), para avisar em nome de quem o pedido vai. */
+export function sessionAccount(): { name: string; email: string; phone: string; role: string } | null {
+  if (!sessionAuthHeader().Authorization) return null;
+  try {
+    const raw = JSON.parse(localStorage.getItem('user') ?? 'null');
+    if (!raw || typeof raw !== 'object') return { name: '', email: '', phone: '', role: '' };
+    const text = (value: unknown) => (typeof value === 'string' ? value : '');
+    // E-mail técnico (conta só com celular, convite C2) não diz nada à pessoa
+    const email = text(raw.email).toLowerCase().endsWith('.parish.invalid') ? '' : text(raw.email);
+    return { name: text(raw.name), email, phone: text(raw.phone), role: text(raw.role) };
+  } catch {
+    return { name: '', email: '', phone: '', role: '' };
+  }
+}
+
+/** "Maria Silva (maria@…)" — o que der para mostrar da conta conectada. */
+export function sessionAccountLabel(account: ReturnType<typeof sessionAccount>): string {
+  if (!account) return '';
+  const contact = account.email || account.phone;
+  if (account.name && contact) return `${account.name} (${contact})`;
+  return account.name || contact || 'a conta conectada neste navegador';
+}
+
 /**
  * POST com a sessão (se houver); token vencido (401) não bloqueia o pedido
  * público: repete sem o Bearer.

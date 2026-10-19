@@ -10,6 +10,7 @@ import { useModuleAccess } from '../hooks/useModuleAccess';
 import { COORDINATION_ROLES, canOpen } from './accessRules';
 import ErrorBoundary from './ErrorBoundary';
 import './AdminLayout.css';
+import { displayEmail } from '../utils/displayEmail';
 
 /** Aviso da plataforma (GET /announcements/active — saas-implantacao-29). */
 interface PlatformAnnouncement {
@@ -106,7 +107,7 @@ const AdminLayout: React.FC = () => {
   // Coordenação por papel (módulos das Fases 3–4)
   const isCoordination = (COORDINATION_ROLES as readonly string[]).includes(user?.role ?? '');
 
-  const displayName = user?.name || user?.email || 'Usuário';
+  const displayName = user?.name || displayEmail(user?.email) || 'Usuário';
 
   // Plano da comunidade (/me/entitlements): recurso pago fora do plano ganha o
   // selo "plano" no menu (só no modo "on" — fora dele nada é bloqueado)
@@ -195,7 +196,7 @@ const AdminLayout: React.FC = () => {
               <UserPhotoAvatar userId={user?.id} name={displayName} size={40} className="sidebar-user-avatar" />
               <div className="sidebar-user-info">
                 <span className="sidebar-user-name" title={displayName}>{displayName}</span>
-                <span className="sidebar-user-email" title={user?.email}>{user?.email}</span>
+                <span className="sidebar-user-email" title={displayEmail(user?.email)}>{displayEmail(user?.email)}</span>
               </div>
             </div>
             <span className="sidebar-user-role">{ROLE_LABELS[user?.role ?? ''] ?? user?.role}</span>
