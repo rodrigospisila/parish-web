@@ -1,0 +1,336 @@
+/* Vitrine do plano completo (recursos pagos), Início do plano grátis e blocos
+   do "Meu plano". Mesmo vocabulário do painel: cartões brancos com borda
+   #e3e8ef, azul-marinho #17324d, azul #075aa9 nas ações e dourado #d8a83e
+   como cor do plano. */
+
+.planv-page {
+  padding: 2rem;
+  max-width: 1080px;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.planv-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.planv-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #075aa9;
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-decoration: none;
+  padding: 0.35rem 0;
+}
+.planv-back:hover { text-decoration: underline; }
+
+/* ── Selos ── */
+.planv-badge {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.planv-badge--plan { background: #fdf3d9; color: #7a5a10; border: 1px solid #ecd28f; }
+.planv-badge--on { background: #e3f4ea; color: #1b6b40; border: 1px solid #b9dfc8; }
+.planv-badge--free { background: #eaf4ff; color: #0b4f94; border: 1px solid #c3dcf5; margin-right: 0.4rem; }
+
+/* ── Botões ── */
+.planv-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.6rem 1.25rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 0.98rem;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.planv-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.planv-btn--primary { background: #075aa9; color: #fff; }
+.planv-btn--primary:hover:not(:disabled) { background: #064a8c; }
+.planv-btn--ghost { background: #fff; color: #075aa9; border-color: #b9d2ec; }
+.planv-btn--ghost:hover { background: #eef5fd; }
+.planv-btn--gold { background: #d8a83e; color: #2b2005; }
+.planv-btn--gold:hover { background: #e3b854; }
+.planv-btn:focus-visible,
+.planv-back:focus-visible,
+.planv-card:focus-visible,
+.planv-step:focus-visible,
+.planv-chip:focus-visible {
+  outline: 3px solid #8ec5ff;
+  outline-offset: 2px;
+}
+
+/* ── Chamada para ação (teste / ver planos / peça ao responsável) ── */
+.planv-cta { display: flex; flex-direction: column; gap: 0.5rem; }
+.planv-cta--center { align-items: center; text-align: center; }
+.planv-cta__buttons { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.planv-cta__hint { margin: 0; font-size: 0.84rem; color: #52606d; }
+.planv-cta__ask {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  background: #f4f7fb;
+  border: 1px solid #dfe6ee;
+  color: #33475b;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.module-modal.planv-dialog h2 { color: #17324d; margin-bottom: 0.9rem; }
+.module-modal.planv-dialog p { margin: 0 0 0.75rem; color: #3e4c59; line-height: 1.5; }
+.module-modal.planv-dialog .btn-submit { background: #075aa9; font-weight: 700; min-height: 44px; }
+.module-modal.planv-dialog .btn-cancel { min-height: 44px; }
+
+/* ── Vitrine de um recurso ── */
+.planv-show {
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  border-radius: 16px;
+  padding: 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  box-shadow: 0 1px 2px rgba(16, 42, 67, 0.05);
+}
+.planv-show__head { display: flex; align-items: flex-start; gap: 1.1rem; }
+.planv-show__icon { border-radius: 14px; flex-shrink: 0; }
+.planv-show__intro { display: flex; flex-direction: column; align-items: flex-start; gap: 0.4rem; min-width: 0; }
+.planv-page .planv-show__title { margin: 0; font-size: 1.9rem; line-height: 1.15; color: #17324d; font-weight: 800; }
+.planv-show__tagline { margin: 0; font-size: 1.08rem; line-height: 1.45; color: #3e4c59; max-width: 62ch; }
+.planv-page .planv-show__subtitle {
+  margin: 0 0 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a6a1c;
+}
+.planv-bullets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.55rem; }
+.planv-bullets li {
+  position: relative;
+  padding-left: 1.9rem;
+  color: #243b53;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+.planv-bullets li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  top: 0.05rem;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 50%;
+  background: #e3f4ea;
+  color: #1b6b40;
+  font-size: 0.8rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.planv-show__where { margin: 0.9rem 0 0; font-size: 0.88rem; color: #6b7785; }
+.planv-show__foot { border-top: 1px solid #eef1f5; padding-top: 1.1rem; display: flex; flex-direction: column; gap: 0.75rem; align-items: flex-start; }
+.planv-show__state { margin: 0; color: #3e4c59; font-size: 0.95rem; }
+
+/* ── "Continua liberado no plano grátis" ── */
+.planv-free {
+  background: #f4f9ff;
+  border: 1px solid #d3e4f7;
+  border-radius: 14px;
+  padding: 1.1rem 1.25rem;
+}
+.planv-page .planv-free__title,
+.myplan-page .planv-free__title { margin: 0 0 0.6rem; font-size: 1rem; color: #17324d; }
+.planv-free__sub { margin: 0 0 0.4rem; font-size: 0.85rem; color: #52606d; font-weight: 700; }
+.planv-free__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 0.35rem 1rem;
+  color: #243b53;
+  font-size: 0.93rem;
+}
+.planv-free__list li { position: relative; padding-left: 1.25rem; line-height: 1.4; }
+.planv-free__list li::before { content: '✓'; position: absolute; left: 0; color: #238a52; font-weight: 800; }
+.planv-free__cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem 1.5rem; }
+.planv-free--two .planv-free__list { grid-template-columns: 1fr; }
+.planv-free__note { margin: 0.6rem 0 0; font-size: 0.88rem; font-weight: 700; color: #1b6b40; }
+
+/* ── Índice: cartões ── */
+.planv-index__head { display: flex; flex-direction: column; gap: 0.75rem; }
+.planv-page .planv-index__title { margin: 0; font-size: 1.9rem; color: #17324d; display: flex; align-items: center; flex-wrap: wrap; }
+.planv-index__lead { margin: 0; font-size: 1.05rem; line-height: 1.5; color: #3e4c59; max-width: 70ch; }
+.planv-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 0.9rem;
+}
+.planv-grid > li { display: flex; }
+.planv-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 1.1rem;
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  border-radius: 14px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.planv-card:hover { border-color: #b9d2ec; box-shadow: 0 6px 18px rgba(11, 28, 44, 0.08); transform: translateY(-1px); }
+.planv-card__top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.planv-card__icon { border-radius: 10px; }
+.planv-card__name { font-size: 1.08rem; font-weight: 800; color: #17324d; }
+.planv-card__text { font-size: 0.92rem; line-height: 1.45; color: #52606d; flex: 1; }
+.planv-card__more { font-size: 0.88rem; font-weight: 700; color: #075aa9; }
+
+/* ── Início do plano grátis ── */
+.planv-home .dash-head__scope { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+.planv-home .dash-panel__title { font-size: 1.05rem; }
+.planv-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.planv-step {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.75rem 0.9rem;
+  min-height: 56px;
+  border: 1px solid #e3e8ef;
+  border-radius: 12px;
+  background: #fff;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.planv-step:hover { border-color: #b9d2ec; background: #f7fbff; }
+.planv-step__check {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  border: 2px solid #c4cfda;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #fff;
+}
+.planv-step.is-done .planv-step__check { background: #238a52; border-color: #238a52; }
+.planv-step__body { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; flex: 1; }
+.planv-step__title { font-weight: 700; color: #17324d; font-size: 0.98rem; }
+.planv-step__text { font-size: 0.86rem; color: #52606d; line-height: 1.4; }
+.planv-step__arrow { color: #075aa9; font-weight: 700; flex-shrink: 0; }
+
+.planv-band {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem 2rem;
+  flex-wrap: wrap;
+  padding: 1.4rem 1.5rem;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #17324d 0%, #0b1c2c 100%);
+  color: #fff;
+}
+.planv-band__text { display: flex; flex-direction: column; gap: 0.45rem; flex: 1 1 320px; min-width: 0; }
+.planv-band__eyebrow { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #e6bd5c; }
+/* Título sobre fundo escuro: seletor de alta especificidade (o h2 genérico do painel vence no bundle) */
+.module-page.planv-home .planv-band h2.planv-band__title { margin: 0; font-size: 1.45rem; font-weight: 800; color: #fff; }
+.planv-band__lead { margin: 0; font-size: 0.98rem; line-height: 1.5; color: rgba(255, 255, 255, 0.86); max-width: 60ch; }
+.planv-band__chips { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.planv-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0.2rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.planv-chip:hover { background: rgba(255, 255, 255, 0.12); }
+.planv-band__actions { display: flex; flex-direction: column; gap: 0.5rem; }
+
+/* ── "Meu plano": situação e comparativo grátis × completo ── */
+.planv-status { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 1rem 1.5rem; }
+.planv-status__main { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.myplan-page .planv-status__title { margin: 0; font-size: 1.35rem; color: #17324d; }
+.planv-status__text { margin: 0; color: #3e4c59; font-size: 0.95rem; line-height: 1.5; }
+.planv-status__counts { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+.planv-status__aside { display: flex; flex-direction: column; gap: 0.5rem; align-items: flex-start; }
+
+.planv-compare-wrap { overflow-x: auto; }
+.planv-compare { width: 100%; border-collapse: collapse; font-size: 0.93rem; }
+.planv-compare caption { text-align: left; color: #52606d; font-size: 0.86rem; padding-bottom: 0.5rem; }
+.planv-compare th,
+.planv-compare td { padding: 0.5rem 0.6rem; border-bottom: 1px solid #eef1f5; text-align: left; }
+.planv-compare thead th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: #52606d; }
+.planv-compare tbody th { font-weight: 600; color: #243b53; }
+.planv-compare tbody th a { color: #075aa9; font-weight: 700; }
+.planv-compare .planv-compare__col { text-align: center; width: 96px; white-space: nowrap; }
+.planv-compare .planv-compare__group th { background: #f6f8fb; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.06em; color: #52606d; }
+.planv-yes { color: #1b6b40; font-weight: 800; }
+.planv-no { color: #9aa5b1; }
+
+@media (max-width: 760px) {
+  .planv-page { padding: 1rem; gap: 1rem; }
+  .planv-show { padding: 1.1rem; }
+  .planv-show__head { flex-direction: column; gap: 0.7rem; }
+  .planv-show__icon { width: 52px; height: 52px; }
+  .planv-page .planv-show__title,
+  .planv-page .planv-index__title { font-size: 1.5rem; }
+  .planv-show__tagline { font-size: 1rem; }
+  .planv-cta__buttons { width: 100%; flex-direction: column; }
+  .planv-cta__buttons .planv-btn { width: 100%; }
+  .planv-show__foot > .planv-btn { width: 100%; }
+  .planv-free__cols { grid-template-columns: 1fr; }
+  .planv-band { padding: 1.1rem; }
+  .planv-band__actions,
+  .planv-band__actions .planv-btn { width: 100%; }
+  .planv-status__aside,
+  .planv-status__aside .planv-cta { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .planv-btn,
+  .planv-card,
+  .planv-step { transition: none; }
+  .planv-card:hover { transform: none; }
+}
+
+@media (max-width: 760px) {
+  .planv-compare { font-size: 0.88rem; }
+  .planv-compare th,
+  .planv-compare td { padding: 0.45rem 0.35rem; }
+  .planv-compare .planv-compare__col { width: 68px; }
+  .planv-compare thead th { font-size: 0.7rem; letter-spacing: 0.02em; }
+}

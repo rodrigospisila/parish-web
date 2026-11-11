@@ -45,6 +45,8 @@ export const ROUTE_ACCESS = {
   members: { roles: COORDINATION_ROLES, module: 'members' },
   events: { module: 'events' },
   'fixed-schedule': { roles: COORDINATION_ROLES, module: 'fixed-schedule' },
+  // Minha localização (plano grátis): pino/endereço das PRÓPRIAS comunidades — mesmos papéis do PATCH /communities/:id/location
+  'minha-localizacao': { roles: COMMUNITY_MANAGEMENT_ROLES },
   schedules: { roles: COORDINATION_ROLES, module: 'schedules' },
   swaps: { module: 'swaps' },
   'clergy-messages': { module: 'clergy-messages' },
@@ -66,6 +68,8 @@ export const ROUTE_ACCESS = {
   settings: { roles: ['SYSTEM_ADMIN'] },
   map: { roles: ['SYSTEM_ADMIN'] },
   platform: { roles: ['SYSTEM_ADMIN'] },
+  // Índice dos recursos do plano completo (vitrine): equipe de coordenação
+  recursos: { roles: COORDINATION_ROLES, pastoralCoordination: true },
 } satisfies Record<string, AccessRule>;
 
 export type RouteKey = keyof typeof ROUTE_ACCESS;

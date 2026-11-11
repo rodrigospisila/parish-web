@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import SearchSelect from '../components/SearchSelect';
 import {
   CHART,
@@ -19,6 +19,9 @@ import { useModuleAccess } from '../hooks/useModuleAccess';
 import { ROUTE_ACCESS, canOpen, type RouteKey } from '../components/accessRules';
 import { isPagedResponse, useDebouncedValue } from '../utils/useDebouncedValue';
 import OnboardingChecklistCard from '../components/team/OnboardingChecklistCard';
+import { usePlanEntitlements } from '../hooks/usePlanEntitlements';
+import { planFeaturePath } from '../services/planErrors';
+import FreeHome from './plan/FreeHome';
 import './modules/ModulePages.css';
 import './DashboardPage.css';
 
@@ -289,7 +292,7 @@ const horaCurta = (date: Date) => date.toLocaleTimeString('pt-BR', { hour: '2-di
  * se resolve), indicadores com tendência e gráficos de catequese, escalas e
  * comunidade no escopo do usuário. Orações são moderadas aqui mesmo.
  */
-const DashboardPage: React.FC = () => {
+const CoordinatorDashboard: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isAdmin = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN'].includes(user?.role ?? '');
@@ -668,25 +671,18 @@ const DashboardPage: React.FC = () => {
 
           {/* ---------- Recursos fora do plano (contrato 5) ---------- */}
           {lockedCards.length > 0 && (
-            <section className="dash-locked" aria-label="Recursos do plano da comunidade">
+            <section className="dash-locked" aria-label="Recursos do plano completo">
               {lockedCards.map((feature) => (
                 <div key={feature} className="dash-locked__card">
-                  <span className="dash-locked__eyebrow">Recurso do plano da comunidade</span>
+                  <span className="dash-locked__eyebrow">Recurso do plano completo</span>
                   <strong className="dash-locked__title">{PLAN_FEATURE_LABEL[feature]}</strong>
                   <p className="dash-locked__text">
-                    Não faz parte do plano {communityId || scopeCount === 1 ? 'desta comunidade' : 'de comunidades do seu escopo'}.
-                    Calendário, mapa e liturgia continuam liberados.{' '}
-                    {isParishAdmin ? (
-                      <>
-                        Para ativar,{' '}
-                        <a href="/suporte" target="_blank" rel="noopener noreferrer" className="dash-link">
-                          fale com o Parish
-                        </a>
-                        .
-                      </>
-                    ) : (
-                      'Para ativar, fale com a administração da paróquia.'
-                    )}
+                    Não está ativo {communityId || scopeCount === 1 ? 'nesta comunidade' : 'em comunidades do seu escopo'}, que{' '}
+                    {communityId || scopeCount === 1 ? 'está' : 'estão'} no plano grátis.{' '}
+                    <Link to={planFeaturePath(feature)} className="dash-link">
+                      Conhecer este recurso
+                    </Link>
+                    {isParishAdmin ? '' : ' — para ativar, peça ao responsável pela paróquia.'}
                   </p>
                 </div>
               ))}
@@ -1148,6 +1144,26 @@ const DashboardPage: React.FC = () => {
       )}
     </div>
   );
+};
+
+/**
+ * Início: no plano grátis (recurso `dashboard` bloqueado — modo "on" e
+ * comunidade sem acesso) entra o Início enxuto, que só usa rotas grátis;
+ * com acesso, o painel da coordenação de sempre. Enquanto os entitlements
+ * carregam, só o "carregando" (nenhum dos dois pisca).
+ */
+const DashboardPage: React.FC = () => {
+  const { isLocked, ready } = usePlanEntitlements();
+  if (!ready) {
+    return (
+      <div className="module-page">
+        <div className="loading" role="status">
+          Carregando o painel...
+        </div>
+      </div>
+    );
+  }
+  return isLocked('dashboard') ? <FreeHome /> : <CoordinatorDashboard />;
 };
 
 export default DashboardPage;

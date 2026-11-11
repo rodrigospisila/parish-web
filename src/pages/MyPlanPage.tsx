@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import TitleIcon from '../components/TitleIcon';
 import SearchSelect from '../components/SearchSelect';
@@ -10,7 +10,11 @@ import { notify } from '../services/notification.service';
 import { maskBrPhone, phoneForApi } from '../utils/phone';
 import { isPagedResponse, useDebouncedValue } from '../utils/useDebouncedValue';
 import type { AccessRule } from '../components/accessRules';
-import { PlanBadge, brl, dataBR, diasAte, num, O_QUE_O_PLANO_LIBERA, UFS } from './platform/platformShared';
+import { PlanBadge, brl, dataBR, diasAte, num, UFS } from './platform/platformShared';
+import { usePlanTrial } from '../hooks/usePlanTrial';
+import { PLAN_FEATURES_PATH, planFeaturePath } from '../services/planErrors';
+import { FEATURE_CATALOG, FREE_PLAN_FAITHFUL_ITEMS, FREE_PLAN_ITEMS, TRIAL_DAYS } from './plan/featureCatalog';
+import { TrialConfirmDialog } from './plan/PlanCta';
 import { SUPPORT_EMAIL, supportMailto, supportWhatsappUrl } from './public/LandingSupport';
 import {
   ACCOUNT_STATUS_LABEL,
@@ -28,10 +32,12 @@ import {
   parseBillingMe,
   paymentStatusLabel,
   suggestTier,
+  summarizePlans,
   tierPrice,
 } from './MyPlanPage.billing';
 import './modules/ModulePages.css';
 import './MyPlanPage.css';
+import './plan/plan.css';
 
 /**
  * "Meu plano" (saas-implantacao-07 / -03, eng-acessos-24): o plano de cada
@@ -179,6 +185,16 @@ const MyPlanPage: React.FC = () => {
   useEffect(() => {
     trackOnce('web_billing');
   }, []);
+
+  // ── Teste de 30 dias por pedido (contrato 5): uma vez por paróquia ──
+  const { starting: iniciandoTeste, start: iniciarTeste } = usePlanTrial(parishId || null, { autoLoad: false });
+  const [confirmarTeste, setConfirmarTeste] = useState(false);
+  const resumo = useMemo(() => summarizePlans(dados?.communities ?? []), [dados]);
+  const comecarTeste = async () => {
+    await iniciarTeste();
+    setConfirmarTeste(false);
+    await carregar();
+  };
 
   // ── Contratação: comunidades escolhidas, faixa por comunidade e ciclo ──
   const [ciclo, setCiclo] = useState<BillingCycle>('MONTHLY');
@@ -420,9 +436,167 @@ const MyPlanPage: React.FC = () => {
 
       {dados && (
         <>
-          <p className="myplan-libera">
-            <strong>O plano libera, por comunidade:</strong> {O_QUE_O_PLANO_LIBERA}
-          </p>
+          {/* ── Seu plano hoje ── */}
+          <section className="myplan-card" aria-labelledby="myplan-hoje">
+            <div className="planv-status">
+              <div className="planv-status__main">
+                <h2 id="myplan-hoje" className="planv-status__title">
+                  {resumo.total === 0
+                    ? 'Seu plano hoje'
+                    : resumo.free === resumo.total
+                      ? 'Plano grátis'
+                      : resumo.free === 0 && resumo.trial === 0
+                        ? 'Plano completo'
+                        : resumo.free === 0 && resumo.paid === 0 && resumo.pilot === 0
+                          ? `Teste do plano completo${resumo.trialEndsAt ? ` até ${dataBR(resumo.trialEndsAt)}` : ''}`
+                          : 'Plano por comunidade'}
+                </h2>
+                {resumo.total > 0 && (
+                  <ul className="planv-status__counts" aria-label="Situação das comunidades">
+                    {resumo.free > 0 && <li className="planv-badge planv-badge--free">{num(resumo.free)} no plano grátis</li>}
+                    {resumo.trial > 0 && (
+                      <li className="planv-badge planv-badge--plan">
+                        {num(resumo.trial)} em teste{resumo.trialEndsAt ? ` até ${dataBR(resumo.trialEndsAt)}` : ''}
+                      </li>
+                    )}
+                    {resumo.paid > 0 && <li className="planv-badge planv-badge--on">{num(resumo.paid)} com plano completo</li>}
+                    {resumo.pilot > 0 && <li className="planv-badge planv-badge--on">{num(resumo.pilot)} com acesso de piloto</li>}
+                  </ul>
+                )}
+                <p className="planv-status__text">
+                  {resumo.free > 0
+                    ? 'No plano grátis a equipe cuida do cadastro de membros, dos horários de missa e confissão e da localização das comunidades. Os demais recursos fazem parte do plano completo, contratado por comunidade.'
+                    : resumo.trial > 0
+                      ? 'Durante o teste, todos os recursos ficam liberados. Quando ele terminar, as comunidades sem plano contratado voltam ao plano grátis — nenhum dado é apagado.'
+                      : 'Todos os recursos do Parish estão liberados para as comunidades desta paróquia.'}
+                </p>
+                {dados.trial && !dados.trial.available && dados.trial.usedAt && resumo.trial === 0 && resumo.free > 0 && (
+                  <p className="myplan-meta">
+                    O teste de {TRIAL_DAYS} dias desta paróquia já foi usado (pedido em {dataBR(dados.trial.usedAt)}).
+                  </p>
+                )}
+              </div>
+              <div className="planv-status__aside">
+                {dados.trial?.available && (
+                  <>
+                    <button
+                      type="button"
+                      className="planv-btn planv-btn--primary"
+                      onClick={() => setConfirmarTeste(true)}
+                      disabled={iniciandoTeste}
+                    >
+                      Testar grátis por {TRIAL_DAYS} dias
+                    </button>
+                    <p className="planv-cta__hint">Sem cartão. Uma vez por paróquia; vale para todas as comunidades.</p>
+                  </>
+                )}
+                <Link to={PLAN_FEATURES_PATH} className="planv-btn planv-btn--ghost">
+                  Conhecer os recursos
+                </Link>
+              </div>
+            </div>
+          </section>
+
+          {/* ── Grátis × completo ── */}
+          <section className="myplan-card" aria-labelledby="myplan-comparativo">
+            <h2 id="myplan-comparativo">O que cada plano inclui</h2>
+            <div className="planv-compare-wrap">
+              <table className="planv-compare">
+                <caption>O plano completo é contratado por comunidade. O fiel nunca paga.</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Recurso</th>
+                    <th scope="col" className="planv-compare__col">
+                      Grátis
+                    </th>
+                    <th scope="col" className="planv-compare__col">
+                      Completo
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="planv-compare__group">
+                    <th scope="colgroup" colSpan={3}>
+                      Equipe da paróquia
+                    </th>
+                  </tr>
+                  {FREE_PLAN_ITEMS.map((item) => (
+                    <tr key={item}>
+                      <th scope="row">{item}</th>
+                      <td className="planv-compare__col">
+                        <span className="planv-yes" aria-hidden="true">
+                          ✓
+                        </span>
+                        <span className="planv-sr">incluído</span>
+                      </td>
+                      <td className="planv-compare__col">
+                        <span className="planv-yes" aria-hidden="true">
+                          ✓
+                        </span>
+                        <span className="planv-sr">incluído</span>
+                      </td>
+                    </tr>
+                  ))}
+                  {FEATURE_CATALOG.map((feature) => (
+                    <tr key={feature.key}>
+                      <th scope="row">
+                        <Link to={planFeaturePath(feature.key)}>{feature.name}</Link>
+                      </th>
+                      <td className="planv-compare__col">
+                        <span className="planv-no" aria-hidden="true">
+                          —
+                        </span>
+                        <span className="planv-sr">não incluído</span>
+                      </td>
+                      <td className="planv-compare__col">
+                        <span className="planv-yes" aria-hidden="true">
+                          ✓
+                        </span>
+                        <span className="planv-sr">incluído</span>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="planv-compare__group">
+                    <th scope="colgroup" colSpan={3}>
+                      Fiéis, no aplicativo
+                    </th>
+                  </tr>
+                  {FREE_PLAN_FAITHFUL_ITEMS.map((item) => (
+                    <tr key={item}>
+                      <th scope="row">{item}</th>
+                      <td className="planv-compare__col">
+                        <span className="planv-yes" aria-hidden="true">
+                          ✓
+                        </span>
+                        <span className="planv-sr">incluído</span>
+                      </td>
+                      <td className="planv-compare__col">
+                        <span className="planv-yes" aria-hidden="true">
+                          ✓
+                        </span>
+                        <span className="planv-sr">incluído</span>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <th scope="row">Escalas, catequese, eventos, avisos, dízimo e mural de orações da comunidade</th>
+                      <td className="planv-compare__col">
+                        <span className="planv-no" aria-hidden="true">
+                          —
+                        </span>
+                        <span className="planv-sr">não incluído</span>
+                      </td>
+                      <td className="planv-compare__col">
+                        <span className="planv-yes" aria-hidden="true">
+                          ✓
+                        </span>
+                        <span className="planv-sr">incluído</span>
+                      </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
 
           {/* ── Assinatura ── */}
           <section className="myplan-card" aria-labelledby="myplan-assinatura">
@@ -443,7 +617,8 @@ const MyPlanPage: React.FC = () => {
               </dl>
             ) : (
               <p className="myplan-meta">
-                Nenhuma assinatura contratada. As comunidades novas da paróquia têm {dados.trialDays} dias de teste.
+                Nenhuma assinatura contratada: as comunidades ficam no plano grátis até a paróquia contratar. O teste de{' '}
+                {dados.trialDays} dias não começa sozinho — é pedido pelo botão, uma vez por paróquia.
               </p>
             )}
             {contaStatus === 'PAST_DUE' && (
@@ -834,15 +1009,19 @@ const MyPlanPage: React.FC = () => {
         </>
       )}
 
+      {confirmarTeste && (
+        <TrialConfirmDialog busy={iniciandoTeste} onConfirm={() => void comecarTeste()} onClose={() => setConfirmarTeste(false)} />
+      )}
+
       {cancelarAberto && (
         <div className="module-modal-overlay" onMouseDown={(e) => e.target === e.currentTarget && !cancelando && setCancelarAberto(false)}>
           <div className="module-modal myplan-modal" role="dialog" aria-modal="true" aria-labelledby="myplan-cancelar-titulo">
             <h2 id="myplan-cancelar-titulo">Cancelar a assinatura?</h2>
             <p>
               As próximas cobranças deixam de ser geradas. As comunidades seguem com o plano até o fim do período já pago
-              {conta?.nextDueDate ? ` (próximo vencimento: ${dataBR(conta.nextDueDate)})` : ''}. Depois disso, pastorais,
-              escalas, catequese e os demais recursos do plano ficam suspensos; calendário, mapa e liturgia continuam
-              liberados.
+              {conta?.nextDueDate ? ` (próximo vencimento: ${dataBR(conta.nextDueDate)})` : ''}. Depois disso elas voltam ao
+              plano grátis: o cadastro de membros, os horários de missa e confissão e a localização continuam; os demais
+              recursos (escalas, catequese, pastorais, eventos, dízimo…) ficam suspensos.
             </p>
             <p>
               <strong>Nenhum dado é apagado.</strong> Você pode contratar de novo quando quiser.

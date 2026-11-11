@@ -1,0 +1,366 @@
+/* "Minha localização" — ajuste do pino das próprias comunidades.
+   Pensada para o celular: a equipe usa dentro da igreja. */
+
+.myloc-page {
+  max-width: 960px;
+}
+
+.myloc-page .myloc-intro {
+  background: #eef6ff;
+  border-color: #b6d4fe;
+  color: #084298;
+  line-height: 1.45;
+}
+
+.myloc-summary {
+  color: #52606d;
+  font-size: 0.92rem;
+  margin: 0 0 0.75rem;
+}
+
+.myloc-search {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid #d8dee6;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+/* ---------- Lista ---------- */
+.myloc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.myloc-card {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  text-align: left;
+  background: #fff;
+  border: 1px solid #e8ecf1;
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+  padding: 0.85rem 1rem;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  min-height: 64px;
+}
+
+.myloc-card:hover {
+  border-color: #9ec5fe;
+  background: #f8fbff;
+}
+
+.myloc-card:focus-visible,
+.myloc-btn:focus-visible,
+.myloc-link:focus-visible {
+  outline: 3px solid #86b7fe;
+  outline-offset: 2px;
+}
+
+.myloc-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.myloc-card-name {
+  font-weight: 700;
+  color: #1f2d3a;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.myloc-main {
+  margin-left: 0.4rem;
+  font-size: 0.7rem;
+  vertical-align: middle;
+}
+
+.myloc-card-parish {
+  color: #075aa9;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.myloc-card-address {
+  color: #6b7785;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.myloc-card-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.myloc-card-go {
+  color: #075aa9;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+/* ---------- Editor ---------- */
+.myloc-editor {
+  background: #fff;
+  border: 1px solid #e8ecf1;
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+  padding: 1rem 1.25rem 1.25rem;
+  min-width: 0;
+}
+
+.myloc-link {
+  background: none;
+  border: none;
+  padding: 0.2rem 0;
+  color: #075aa9;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.myloc-back {
+  margin-bottom: 0.6rem;
+  text-decoration: none;
+  padding: 0.4rem 0;
+}
+
+.myloc-editor-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+/* Especificidade alta: regras genéricas de h2 de outras páginas não devem vencer */
+.module-page.myloc-page .myloc-editor h2.myloc-editor-title {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #2c3e50;
+  overflow-wrap: anywhere;
+}
+
+.myloc-hint {
+  color: #52606d;
+  font-size: 0.9rem;
+  margin: 0.5rem 0 0.9rem;
+  line-height: 1.4;
+}
+
+.myloc-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.myloc-btn {
+  border: 1px solid #d8dee6;
+  background: #f4f6f8;
+  color: #1f2d3a;
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.myloc-btn:hover:not(:disabled) {
+  background: #e9edf1;
+}
+
+.myloc-btn.primary {
+  background: #075aa9;
+  border-color: #075aa9;
+  color: #fff;
+}
+
+.myloc-btn.primary:hover:not(:disabled) {
+  background: #05478a;
+}
+
+.myloc-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.myloc-tip {
+  color: #6b7785;
+  font-size: 0.82rem;
+  margin: 0.6rem 0 0.6rem;
+  line-height: 1.4;
+}
+
+.myloc-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.9rem;
+  margin: 0.6rem 0 1rem;
+  font-size: 0.85rem;
+}
+
+.myloc-coords {
+  color: #52606d;
+  font-variant-numeric: tabular-nums;
+}
+
+.myloc-status-info {
+  color: #0f5132;
+  font-weight: 600;
+}
+
+.myloc-status-warn {
+  color: #842029;
+  font-weight: 700;
+}
+
+.myloc-address {
+  border: 1px solid #edf0f4;
+  border-radius: 12px;
+  padding: 0.75rem;
+  margin: 0 0 1rem;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 2fr 90px 140px;
+  gap: 0.6rem 0.75rem;
+}
+
+.myloc-address legend {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #444;
+  padding: 0 0.3rem;
+}
+
+.myloc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.myloc-field-wide {
+  grid-column: 1 / -1;
+}
+
+.myloc-field label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #555;
+}
+
+.myloc-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font: inherit;
+  /* 16px evita o zoom automático do iOS ao focar o campo */
+  font-size: 1rem;
+}
+
+.myloc-error {
+  background: #fdecee;
+  border: 1px solid #f1aeb5;
+  color: #842029;
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+.myloc-save-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+}
+
+.myloc-save-note {
+  color: #6b7785;
+  font-size: 0.85rem;
+}
+
+.myloc-save {
+  padding: 0.8rem 1.5rem;
+  font-size: 1rem;
+}
+
+@media (max-width: 600px) {
+  .module-page.myloc-page {
+    padding: 1rem 0.75rem 1.5rem;
+  }
+
+  .module-page.myloc-page .page-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .myloc-editor {
+    padding: 0.85rem;
+  }
+
+  .myloc-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .myloc-card-side {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .myloc-tools .myloc-btn {
+    flex: 1 1 100%;
+  }
+
+  .myloc-address {
+    grid-template-columns: 1fr 72px;
+  }
+
+  .myloc-address .myloc-field:nth-of-type(2) {
+    grid-column: 1;
+  }
+
+  .myloc-address .myloc-field:last-of-type {
+    grid-column: 1 / -1;
+  }
+
+  /* Salvar sempre ao alcance do polegar */
+  .myloc-save-bar {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    padding: 0.6rem 0;
+    border-top: 1px solid #edf0f4;
+    margin-top: 0.5rem;
+    z-index: 1001;
+  }
+
+  .myloc-save {
+    width: 100%;
+  }
+}

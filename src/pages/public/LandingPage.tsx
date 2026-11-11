@@ -6,98 +6,18 @@ import { trackOnce } from '../../services/analytics';
 import PricingSection from './PricingSection';
 import DemoRequestForm, { type DemoPrefill } from './DemoRequestForm';
 import LandingFindParish from './LandingFindParish';
+import { COMPARATIVO, GRATIS_PAROQUIA, PASSOS, PERGUNTAS, PLANO_COMPLETO } from './landingContent';
 import { SUPPORT_EMAIL, SUPPORT_WHATSAPP_LABEL, supportMailto, supportWhatsappUrl } from './LandingSupport';
 import './LandingPage.css';
 
 /**
- * Site de vendas do Parish em "/" (saas-implantacao-14 / -20): o que é, para
- * quem, planos (GET /public/plans), "Encontre sua paróquia" (mapa público) e
- * "Pedir demonstração" (POST /public/leads). Quem já está logado nem chega
- * aqui — a rota "/" manda direto para o painel.
+ * Site do Parish em "/" (lançamento do plano grátis enxuto): "toda paróquia
+ * tem o Parish de graça" + a vitrine do plano completo. Planos vêm de
+ * GET /public/plans, as lojas de GET /public/app-config; "Encontre sua
+ * paróquia" usa o mapa público e leva à reivindicação; "Pedir demonstração"
+ * cria um Lead (POST /public/leads). Quem já está logado nem chega aqui — a
+ * rota "/" manda direto para o painel. Os textos ficam em landingContent.ts.
  */
-
-const RECURSOS: Array<{ icon: string; titulo: string; texto: string }> = [
-  {
-    icon: 'membros',
-    titulo: 'Secretaria sem planilha',
-    texto: 'Cadastro de membros e famílias, sacramentos, documentos e certidões num só lugar, com busca rápida.',
-  },
-  {
-    icon: 'catequese',
-    titulo: 'Catequese do começo ao fim',
-    texto: 'A família faz a inscrição pelo celular. Turmas, chamada, catequistas e avisos aos pais organizados.',
-  },
-  {
-    icon: 'escala',
-    titulo: 'Escalas que se confirmam',
-    texto: 'Escalas de missa e de pastorais com confirmação pelo app e troca entre voluntários, sem grupo de mensagens lotado.',
-  },
-  {
-    icon: 'dizimo',
-    titulo: 'Dízimo e ofertas com Pix',
-    texto: 'O fiel contribui pelo app, recebe o comprovante, e a paróquia acompanha o balancete do mês.',
-  },
-  {
-    icon: 'comunidade',
-    titulo: 'Mapa com 53 mil comunidades',
-    texto: 'Horários de missa e confissão das igrejas do Brasil. O fiel encontra a igreja mais perto de onde está.',
-  },
-  {
-    icon: 'sino',
-    titulo: 'Comunicação com a comunidade',
-    texto: 'Eventos, avisos e a palavra do pároco chegam como notificação no celular de quem participa.',
-  },
-];
-
-const PUBLICO: Array<{ titulo: string; texto: string }> = [
-  {
-    titulo: 'Pároco',
-    texto: 'Vê a paróquia inteira de um lugar só: comunidades, pastorais, catequese e finanças, com números para decidir.',
-  },
-  {
-    titulo: 'Secretaria',
-    texto: 'Cadastros, documentos e agenda sem papel solto. Importa as planilhas que já existem.',
-  },
-  {
-    titulo: 'Coordenação',
-    texto: 'Monta a escala, acompanha a turma e fala com a equipe sem depender de dez grupos de WhatsApp.',
-  },
-  {
-    titulo: 'Fiel',
-    texto: 'Horários de missa, a própria escala, inscrição na catequese e dízimo pelo celular. Sempre grátis.',
-  },
-];
-
-const PASSOS: Array<{ titulo: string; texto: string }> = [
-  { titulo: 'Encontre sua paróquia', texto: 'Ela provavelmente já está no mapa do Parish, com as comunidades e os horários.' },
-  { titulo: 'Teste por 30 dias', texto: 'Liberamos o acesso da paróquia depois de conferir quem pediu. Não precisa de cartão.' },
-  { titulo: 'Chame a equipe', texto: 'Convide secretaria e coordenadores por link e traga os cadastros das planilhas.' },
-  { titulo: 'Contrate pelo painel', texto: 'Escolha as comunidades e a faixa, e pague por Pix, boleto ou cartão.' },
-];
-
-const PERGUNTAS: Array<{ p: string; r: string }> = [
-  { p: 'O fiel paga alguma coisa?', r: 'Não. O app do fiel é gratuito. Quem contrata é a paróquia, por comunidade.' },
-  {
-    p: 'O que continua grátis se a paróquia não contratar?',
-    r: 'Calendário e eventos, mapa e horários de missa e a liturgia do dia. Os demais recursos dependem do plano da comunidade.',
-  },
-  {
-    p: 'E se o pagamento atrasar ou a paróquia desistir?',
-    r: 'Os recursos do plano ficam suspensos, mas nenhum dado é apagado. A paróquia pode exportar os próprios dados quando quiser.',
-  },
-  {
-    p: 'Dá para trazer os cadastros que já temos?',
-    r: 'Sim. Membros e dizimistas podem vir de planilha, com uma prévia antes de gravar para conferir duplicados.',
-  },
-  {
-    p: 'Quem na paróquia vê os dados de cada pessoa?',
-    r: 'Cada pessoa da equipe vê só o que o papel dela permite (paróquia, comunidade ou pastoral). A gestão pode ligar a verificação em duas etapas no login.',
-  },
-  {
-    p: 'Precisa instalar alguma coisa?',
-    r: 'A equipe usa o painel no navegador, no computador ou no celular. Os fiéis usam o app Parish, disponível para iPhone e Android.',
-  },
-];
 
 /** Leva a seção ao topo com rolagem suave e foco (teclado e leitor de tela). */
 function irPara(id: string) {
@@ -105,7 +25,7 @@ function irPara(id: string) {
   if (!el) return;
   const reduz = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   el.scrollIntoView({ behavior: reduz ? 'auto' : 'smooth', block: 'start' });
-  const foco = el.querySelector<HTMLElement>('h2') ?? el;
+  const foco = el.querySelector<HTMLElement>('h2, h3') ?? el;
   foco.setAttribute('tabindex', '-1');
   foco.focus({ preventScroll: true });
 }
@@ -126,7 +46,7 @@ const LandingPage: React.FC = () => {
     trackOnce('landing_view');
     // Título e descrição da página (o index.html é compartilhado com o painel)
     tituloAnterior.current = document.title;
-    document.title = 'Parish · Gestão paroquial: catequese, escalas, dízimo e horários';
+    document.title = 'Parish · Grátis para toda paróquia: horários de missa, confissão e membros';
     let meta = document.querySelector<HTMLMetaElement>('meta[name="description"]');
     const criada = !meta;
     if (!meta) {
@@ -136,7 +56,7 @@ const LandingPage: React.FC = () => {
     }
     const descricaoAnterior = meta.content;
     meta.content =
-      'Parish organiza a paróquia: secretaria, catequese, escalas, dízimo com Pix e o mapa com os horários de 53 mil comunidades. Teste grátis por 30 dias.';
+      'Toda paróquia tem o Parish de graça: horários de missa e de confissão no mapa, cadastro de membros e localização das igrejas. O plano completo traz catequese, escalas, dízimo e sacramentos.';
     // Chegou com âncora (/#planos, /#demonstracao): rola depois de montar
     const hash = window.location.hash.replace('#', '');
     if (hash) window.setTimeout(() => irPara(hash), 50);
@@ -168,6 +88,7 @@ const LandingPage: React.FC = () => {
   }, []);
 
   const pedirDemo = useCallback(() => navegar('demonstracao'), [navegar]);
+  const encontrar = useCallback(() => navegar('encontre'), [navegar]);
 
   const escolherParoquia = useCallback(
     (p: DemoPrefill) => {
@@ -202,11 +123,14 @@ const LandingPage: React.FC = () => {
             <span className="lp-sr">{menuAberto ? 'Fechar menu' : 'Abrir menu'}</span>
           </button>
           <nav id="lp-nav" className={`lp-nav${menuAberto ? ' aberto' : ''}`} aria-label="Seções do site">
+            <button type="button" onClick={() => navegar('gratis')}>
+              Grátis
+            </button>
             <button type="button" onClick={() => navegar('recursos')}>
-              Recursos
+              Plano completo
             </button>
             <button type="button" onClick={() => navegar('planos')}>
-              Planos
+              Preços
             </button>
             <button type="button" onClick={() => navegar('encontre')}>
               Encontre sua paróquia
@@ -226,67 +150,185 @@ const LandingPage: React.FC = () => {
           <div className="lp-container lp-hero-inner">
             <div className="lp-hero-texto">
               <p className="lp-hero-tag">Comunidade, fé e serviço.</p>
-              <h1 id="lp-hero-titulo">A paróquia organizada, e no celular de cada fiel.</h1>
+              <h1 id="lp-hero-titulo">Toda paróquia tem o Parish de graça.</h1>
               <p className="lp-hero-sub">
-                Secretaria, catequese, escalas, dízimo com Pix e os horários de missa de 53 mil comunidades, num só
-                lugar. Feito para a rotina da paróquia, simples para quem não é da informática.
+                Sua paróquia já está no mapa. Assuma o cadastro e cuide você mesmo dos horários de missa e de
+                confissão, do cadastro de membros e da localização de cada igreja. O fiel abre o app e vê a confissão
+                acontecendo agora.
               </p>
               <div className="lp-hero-ctas">
-                <button type="button" className="lp-btn lp-btn-gold" onClick={pedirDemo}>
-                  Pedir demonstração
+                <button type="button" className="lp-btn lp-btn-gold" onClick={encontrar}>
+                  Encontrar minha paróquia
                 </button>
-                <button type="button" className="lp-btn lp-btn-ghost" onClick={() => navegar('planos')}>
-                  Ver planos e preços
+                <button type="button" className="lp-btn lp-btn-ghost" onClick={() => navegar('recursos')}>
+                  Conhecer o plano completo
                 </button>
               </div>
-              <p className="lp-hero-nota">30 dias de teste grátis · sem cartão · o fiel nunca paga</p>
+              <p className="lp-hero-nota">Grátis para a paróquia, sem prazo e sem cartão · o fiel nunca paga</p>
             </div>
-            <div className="lp-hero-arte" aria-hidden="true">
-              <img src="/brand/parish-simbolo-cor.svg" alt="" />
+            <div className="lp-hero-painel">
+              <p className="lp-hero-painel-selo">Grátis para toda paróquia</p>
+              <ul className="lp-hero-lista">
+                <li>Sua paróquia no mapa do app</li>
+                <li>Horários de missa cuidados pela equipe</li>
+                <li>Confissão "acontecendo agora" para o fiel</li>
+                <li>Cadastro de membros sem limite</li>
+                <li>Localização de cada igreja ajustada por você</li>
+              </ul>
+              <p className="lp-hero-painel-rodape">
+                Catequese, escalas, dízimo e sacramentos fazem parte do <strong>plano completo</strong>.
+              </p>
             </div>
           </div>
         </section>
 
-        <section className="lp-section" id="recursos" aria-labelledby="lp-recursos-titulo">
+        <section className="lp-section" id="gratis" aria-labelledby="lp-gratis-titulo">
           <div className="lp-container">
-            <p className="lp-kicker">O que é</p>
+            <p className="lp-kicker">Grátis para toda paróquia</p>
+            <h2 id="lp-gratis-titulo" className="lp-h2">
+              O essencial da paróquia, sem pagar nada
+            </h2>
+            <p className="lp-lead">
+              O mapa do Parish reúne os horários de missa de 53 mil comunidades do Brasil. Quem conhece os horários da
+              sua igreja é a sua equipe: por isso cada paróquia cuida do próprio cadastro, de graça.
+            </p>
+            <ul className="lp-gratis-grid">
+              {GRATIS_PAROQUIA.map((g) => (
+                <li key={g.titulo} className="lp-card lp-gratis-item">
+                  <span className="lp-icone-bolha" aria-hidden="true">
+                    <img src={`/icons-color/${g.icon}.svg`} alt="" width={28} height={28} />
+                  </span>
+                  <div>
+                    <h3 className="lp-h3">{g.titulo}</h3>
+                    <p>{g.texto}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="lp-faixa-cta">
+              <p>
+                <strong>Comece hoje.</strong> Encontre a paróquia, peça o acesso e use o grátis assim que o pedido for
+                conferido.
+              </p>
+              <button type="button" className="lp-btn lp-btn-primary" onClick={encontrar}>
+                Encontrar minha paróquia
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="lp-section lp-section-alt" id="recursos" aria-labelledby="lp-recursos-titulo">
+          <div className="lp-container">
+            <p className="lp-kicker">Plano completo</p>
             <h2 id="lp-recursos-titulo" className="lp-h2">
               Tudo o que a paróquia faz, em um só sistema
             </h2>
-            <ul className="lp-grid-3">
-              {RECURSOS.map((r) => (
-                <li key={r.titulo} className="lp-card lp-recurso">
-                  <img src={`/icons-color/${r.icon}.svg`} alt="" className="lp-recurso-icone" width={40} height={40} />
-                  <h3 className="lp-h3">{r.titulo}</h3>
-                  <p>{r.texto}</p>
-                </li>
+            <p className="lp-lead">
+              Contratado por comunidade, o plano completo abre todos os recursos abaixo para a equipe no painel e para
+              o fiel no app. Dá para testar por 30 dias, quando quiser, pelo painel.
+            </p>
+            <nav className="lp-grupos-nav" aria-label="Grupos de recursos do plano completo">
+              {PLANO_COMPLETO.map((g) => (
+                <a
+                  key={g.id}
+                  href={`#grupo-${g.id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    irPara(`grupo-${g.id}`);
+                  }}
+                >
+                  {g.titulo}
+                </a>
               ))}
-            </ul>
+            </nav>
+            <div className="lp-grupos">
+              {PLANO_COMPLETO.map((g) => (
+                <article key={g.id} id={`grupo-${g.id}`} className="lp-grupo" aria-labelledby={`grupo-${g.id}-titulo`}>
+                  <header className="lp-grupo-topo">
+                    <span className="lp-icone-bolha lp-icone-bolha-g" aria-hidden="true">
+                      <img src={`/icons-color/${g.icon}.svg`} alt="" width={34} height={34} />
+                    </span>
+                    <div>
+                      <h3 id={`grupo-${g.id}-titulo`} className="lp-grupo-titulo">
+                        {g.titulo}
+                      </h3>
+                      <p className="lp-grupo-resumo">{g.resumo}</p>
+                    </div>
+                  </header>
+                  <ul className="lp-grupo-recursos">
+                    {g.recursos.map((r) => (
+                      <li key={r.titulo} className="lp-recurso">
+                        <h4 className="lp-h4">{r.titulo}</h4>
+                        <ul className="lp-pontos">
+                          {r.pontos.map((pt) => (
+                            <li key={pt}>{pt}</li>
+                          ))}
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              ))}
+            </div>
           </div>
         </section>
 
-        <section className="lp-section lp-section-alt" id="para-quem" aria-labelledby="lp-publico-titulo">
-          <div className="lp-container">
-            <p className="lp-kicker">Para quem</p>
-            <h2 id="lp-publico-titulo" className="lp-h2">
-              Cada pessoa vê o que precisa
+        <section className="lp-section" id="comparativo" aria-labelledby="lp-comparativo-titulo">
+          <div className="lp-container lp-estreito">
+            <p className="lp-kicker">Grátis ou completo</p>
+            <h2 id="lp-comparativo-titulo" className="lp-h2">
+              O que cada plano tem
             </h2>
-            <ul className="lp-grid-4">
-              {PUBLICO.map((p) => (
-                <li key={p.titulo} className="lp-card lp-publico">
-                  <h3 className="lp-h3">{p.titulo}</h3>
-                  <p>{p.texto}</p>
-                </li>
-              ))}
-            </ul>
+            <div className="lp-tabela-wrap">
+              <table className="lp-tabela">
+                <caption className="lp-sr">Comparação entre o plano grátis e o plano completo</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Recurso</th>
+                    <th scope="col">Grátis</th>
+                    <th scope="col">Completo</th>
+                  </tr>
+                </thead>
+                {COMPARATIVO.map((bloco) => (
+                  <tbody key={bloco.grupo}>
+                    <tr className="lp-tabela-grupo">
+                      <th scope="rowgroup" colSpan={3}>
+                        {bloco.grupo}
+                      </th>
+                    </tr>
+                    {bloco.itens.map((it) => (
+                      <tr key={it.nome}>
+                        <th scope="row">{it.nome}</th>
+                        <td>
+                          {it.gratis ? (
+                            <span className="lp-sim" role="img" aria-label="Incluído" />
+                          ) : (
+                            <span className="lp-nao" role="img" aria-label="Não incluído" />
+                          )}
+                        </td>
+                        <td>
+                          <span className="lp-sim" role="img" aria-label="Incluído" />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                ))}
+              </table>
+            </div>
+            <p className="lp-muted">
+              O plano completo vale por comunidade: a paróquia escolhe quais comunidades contratam, e as outras
+              continuam no grátis.
+            </p>
           </div>
         </section>
+
+        <PricingSection onRequestDemo={pedirDemo} onFindParish={encontrar} />
 
         <section className="lp-section" id="como-comecar" aria-labelledby="lp-passos-titulo">
           <div className="lp-container">
             <p className="lp-kicker">Como começar</p>
             <h2 id="lp-passos-titulo" className="lp-h2">
-              Da primeira conversa ao uso em poucos dias
+              Do mapa ao painel em quatro passos
             </h2>
             <ol className="lp-passos">
               {PASSOS.map((p, i) => (
@@ -304,32 +346,30 @@ const LandingPage: React.FC = () => {
           </div>
         </section>
 
-        <PricingSection onRequestDemo={pedirDemo} />
-
-        <section className="lp-section" id="encontre" aria-labelledby="lp-encontre-titulo">
+        <section className="lp-section lp-section-alt" id="encontre" aria-labelledby="lp-encontre-titulo">
           <div className="lp-container lp-estreito">
             <p className="lp-kicker">Encontre sua paróquia</p>
             <h2 id="lp-encontre-titulo" className="lp-h2">
               Sua paróquia provavelmente já está no Parish
             </h2>
             <p className="lp-lead">
-              O mapa do Parish tem as paróquias e comunidades do Brasil. Procure pela cidade e diga que a paróquia é sua:
-              conferimos o pedido e liberamos o teste.
+              Procure pela cidade e toque em "Esta paróquia é minha". Conferimos quem pediu e liberamos a gestão: a
+              partir daí a sua equipe já usa o plano grátis.
             </p>
             <LandingFindParish onPick={escolherParoquia} appLinks={appLinks} />
           </div>
         </section>
 
-        <section className="lp-section lp-section-alt" id="demonstracao" aria-labelledby="lp-demo-titulo">
+        <section className="lp-section" id="demonstracao" aria-labelledby="lp-demo-titulo">
           <div className="lp-container lp-demo">
             <div className="lp-demo-texto">
               <p className="lp-kicker">Pedir demonstração</p>
               <h2 id="lp-demo-titulo" className="lp-h2">
-                Vamos mostrar o Parish com a sua paróquia
+                Quer ver o plano completo funcionando?
               </h2>
               <p className="lp-lead">
                 Uma conversa de 30 minutos, por vídeo ou telefone. Mostramos o painel, o app do fiel e como trazer os
-                dados que vocês já têm.
+                cadastros que vocês já têm.
               </p>
               {prefill?.parishName && (
                 <p className="lp-demo-paroquia">
@@ -341,7 +381,7 @@ const LandingPage: React.FC = () => {
           </div>
         </section>
 
-        <section className="lp-section" id="perguntas" aria-labelledby="lp-faq-titulo">
+        <section className="lp-section lp-section-alt" id="perguntas" aria-labelledby="lp-faq-titulo">
           <div className="lp-container lp-estreito">
             <p className="lp-kicker">Dúvidas</p>
             <h2 id="lp-faq-titulo" className="lp-h2">
@@ -355,6 +395,10 @@ const LandingPage: React.FC = () => {
                 </details>
               ))}
             </div>
+            <p className="lp-muted">
+              Os detalhes sobre dados pessoais estão na <Link to="/privacidade">Política de Privacidade</Link> e nos{' '}
+              <Link to="/termos">Termos de uso</Link>.
+            </p>
           </div>
         </section>
       </main>

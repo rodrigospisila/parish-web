@@ -3,7 +3,16 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { useAuth } from '../contexts/AuthContext';
 import UserPhotoAvatar from './UserPhotoAvatar';
 import api from '../services/api';
-import { installPlanErrorHandler, managesPlan, MY_PLAN_PATH, PLAN_REQUIRED_EVENT, type PlanRequiredDetail } from '../services/planErrors';
+import {
+  installPlanErrorHandler,
+  managesPlan,
+  MY_PLAN_PATH,
+  PLAN_FEATURES_PATH,
+  PLAN_REQUIRED_EVENT,
+  planFeaturePath,
+  type PlanRequiredDetail,
+} from '../services/planErrors';
+import { FEATURE_CATALOG } from '../pages/plan/featureCatalog';
 import { trackOnce } from '../services/analytics';
 import { usePlanEntitlements } from '../hooks/usePlanEntitlements';
 import { useModuleAccess } from '../hooks/useModuleAccess';
@@ -47,12 +56,24 @@ installPlanErrorHandler();
 /** Banner "teste até dd/mm": datas em pt-BR, sem hora. */
 const dataCurta = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 
-/** Selo no item de menu de recurso pago fora do plano (só no modo "on"). */
+/** Selo dos itens da seção "Recursos do plano" (recurso pago bloqueado — só no modo "on"). */
 const PlanLock: React.FC = () => (
-  <span className="nav-plan-lock" title="Disponível no plano da comunidade">
+  <span className="nav-plan-lock" title="Faz parte do plano completo">
     plano
+    <span className="nav-sr"> completo — não ativo nesta comunidade</span>
   </span>
 );
+
+/** Item do menu. `feature` = recurso do plano (contrato 1): bloqueado, vai para "Recursos do plano". */
+interface NavItem {
+  to: string;
+  icon: string;
+  label: string;
+  show: boolean;
+  feature?: string;
+  highlight?: boolean;
+  end?: boolean;
+}
 
 const ROLE_LABELS: Record<string, string> = {
   SYSTEM_ADMIN: 'Administrador do Sistema',
@@ -109,10 +130,10 @@ const AdminLayout: React.FC = () => {
 
   const displayName = user?.name || displayEmail(user?.email) || 'Usuário';
 
-  // Plano da comunidade (/me/entitlements): recurso pago fora do plano ganha o
-  // selo "plano" no menu (só no modo "on" — fora dele nada é bloqueado)
+  // Plano da comunidade (/me/entitlements): recurso pago bloqueado sai da sua
+  // seção e vai para "Recursos do plano", no fim do menu, abrindo a vitrine
+  // (só no modo "on" — fora dele, e para quem tem acesso, nada muda)
   const { entitlements, isLocked } = usePlanEntitlements();
-  const lock = (feature: string) => (isLocked(feature) ? <PlanLock /> : null);
 
   // Aviso de recurso fora do plano (o interceptor dispara; some ao trocar de tela)
   const location = useLocation();
@@ -178,13 +199,131 @@ const AdminLayout: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
+  // Celular: menu recolhido; fecha ao trocar de tela
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => setMenuOpen(false), [location.pathname]);
+
+  // "Recursos do plano" abre recolhida no celular (o menu fica acima do conteúdo)
+  const [planOpen, setPlanOpen] = useState(
+    () => typeof window === 'undefined' || !window.matchMedia || !window.matchMedia('(max-width: 768px)').matches,
+  );
+
+  // ── Menu: mesma ordem de sempre; cada item pago leva a chave do recurso ──
+  const role = user?.role ?? '';
+  const managesCommunity = ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(role);
+  const allSections: { label: string; items: NavItem[] }[] = [
+    {
+      label: 'Estrutura',
+      items: [
+        { to: '/admin/dioceses', icon: 'diocese', label: 'Dioceses', show: can('dioceses') },
+        { to: '/admin/parishes', icon: 'paroquia', label: 'Paróquias', show: can('parishes') },
+        { to: '/admin/communities', icon: 'comunidade', label: 'Comunidades', show: can('communities') },
+      ],
+    },
+    {
+      label: 'Comunidade',
+      items: [
+        { to: '/admin/members', icon: 'membros', label: 'Membros', show: can('members') },
+        { to: '/admin/importar', icon: 'documento', label: 'Importar planilha', show: can('members') && managesCommunity },
+        { to: '/admin/events', icon: 'calendario-liturgico', label: 'Eventos', show: can('events'), feature: 'events' },
+        { to: '/admin/fixed-schedule', icon: 'missa-proxima', label: 'Agenda Fixa', show: can('fixed-schedule') },
+        // Plano grátis: pino e endereço das PRÓPRIAS comunidades
+        { to: '/admin/minha-localizacao', icon: 'comunidade', label: 'Minha localização', show: can('minha-localizacao') },
+        { to: '/admin/schedules', icon: 'escala', label: 'Escalas', show: can('schedules'), feature: 'schedules' },
+        // Coordenador também é escalado: "Minha Escala" vale para todos
+        { to: '/admin/my-schedule', icon: 'escala', label: 'Minha Escala', show: true, feature: 'schedules' },
+        { to: '/admin/swaps', icon: 'trocas-escala', label: 'Trocas de Escala', show: can('swaps'), feature: 'swaps' },
+      ],
+    },
+    {
+      label: 'Pastoral',
+      items: [
+        { to: '/admin/clergy-messages', icon: 'sacerdote', label: 'Palavra Pastoral', show: can('clergy-messages'), feature: 'clergy-messages' },
+        { to: '/admin/saints', icon: 'santo', label: 'Santos', show: can('saints') },
+        { to: '/admin/pastorals/community', icon: 'pastoral', label: 'Pastorais', show: can('pastorals/community'), feature: 'pastorals' },
+        { to: '/admin/pastorals/my', icon: 'pastoral', label: 'Minhas Pastorais', show: can('pastorals/my'), feature: 'pastorals', highlight: true },
+        { to: '/admin/pastorals/global', icon: 'igreja', label: 'Pastorais Globais', show: can('pastorals/global') },
+        // Fiel/voluntário CATEQUISTA entra pela turma dele; a coordenação, pela Catequese
+        {
+          to: '/admin/catechesis',
+          icon: 'catequese',
+          label: isCoordination ? 'Catequese' : 'Catequese (minha turma)',
+          show: can('catechesis') && (isCoordination || isCatechist),
+          feature: 'catechesis',
+          highlight: !isCoordination,
+        },
+        { to: '/admin/planning', icon: 'planejamento', label: 'Planejamento', show: isCoordination && can('planning'), feature: 'planning' },
+        { to: '/admin/documents', icon: 'documento', label: 'Documentos', show: isCoordination && can('documents'), feature: 'documents' },
+        { to: '/admin/formation', icon: 'biblia', label: 'Formação', show: isCoordination && can('formation'), feature: 'formation' },
+        { to: '/admin/rooms', icon: 'espacos', label: 'Espaços', show: isCoordination && can('rooms'), feature: 'rooms' },
+        { to: '/admin/visitation', icon: 'visitacao', label: 'Visitação', show: isCoordination && can('visitation'), feature: 'visitation' },
+      ],
+    },
+    {
+      label: 'Gestão',
+      items: [
+        { to: '/admin/finance', icon: 'dizimo', label: 'Financeiro', show: can('finance'), feature: 'finance' },
+        { to: '/admin/sacrament-processes', icon: 'cruz', label: 'Sacramentos', show: can('sacrament-processes'), feature: 'sacrament-processes' },
+        { to: '/admin/users', icon: 'usuarios', label: 'Usuários', show: can('users') },
+        { to: '/admin/audit', icon: 'documento', label: 'Auditoria', show: can('audit') },
+        { to: MY_PLAN_PATH, icon: 'dizimo', label: 'Meu plano', show: canSeeMyPlan && !isSystemAdmin },
+        { to: '/admin/minha-paroquia', icon: 'paroquia', label: 'Minha paróquia', show: role === 'PARISH_ADMIN' },
+        { to: '/admin/settings', icon: 'planejamento', label: 'Configurações', show: can('settings') },
+      ],
+    },
+    {
+      label: 'Plataforma',
+      items: [
+        { to: '/admin/platform', icon: 'planejamento', label: 'Visão geral', show: can('platform'), end: true },
+        { to: '/admin/platform/claims', icon: 'paroquia', label: 'Reivindicações', show: can('platform') },
+        { to: '/admin/platform/leads', icon: 'usuarios', label: 'Leads', show: can('platform') },
+        { to: '/admin/map', icon: 'comunidade', label: 'Mapa do território', show: can('platform') },
+        { to: '/admin/platform/suggestions', icon: 'sino', label: 'Sugestões dos fiéis', show: can('platform') },
+        { to: '/admin/platform/growth', icon: 'membros', label: 'Crescimento', show: can('platform') },
+        { to: '/admin/platform/plans', icon: 'dizimo', label: 'Planos', show: can('platform') },
+        { to: '/admin/platform/usage', icon: 'planejamento', label: 'Uso do produto', show: can('platform') },
+        { to: '/admin/platform/announcements', icon: 'sino', label: 'Avisos aos clientes', show: can('platform') },
+      ],
+    },
+    {
+      label: 'Conta',
+      items: [
+        { to: '/admin/account', icon: 'membros', label: 'Minha conta', show: true },
+        { to: '/admin/security', icon: 'sino', label: 'Segurança', show: true },
+        // Direitos do titular (LGPD): consentimentos, exportação e exclusão — todos os papéis
+        { to: '/admin/my-data', icon: 'documento', label: 'Privacidade', show: true },
+      ],
+    },
+  ];
+  const isItemLocked = (item: NavItem) => !!item.feature && isLocked(item.feature);
+  // Seções só com o que abre de verdade (no plano grátis, o painel fica enxuto)
+  const sections = allSections.map((section) => ({
+    label: section.label,
+    items: section.items.filter((item) => item.show && !isItemLocked(item)),
+  }));
+  // Recursos bloqueados que a pessoa teria no menu: um item por recurso, na ordem do catálogo
+  const lockedKeys = new Set(
+    allSections.flatMap((section) => section.items.filter((item) => item.show && isItemLocked(item)).map((item) => item.feature as string)),
+  );
+  const lockedFeatures = FEATURE_CATALOG.filter((feature) => lockedKeys.has(feature.key));
+
   return (
     <div className="admin-layout">
-      <aside className="sidebar">
+      <aside className={`sidebar${menuOpen ? ' is-open' : ''}`}>
         <div className="sidebar-header">
           <div className="sidebar-brand">
             <img src="/brand/parish-simbolo-cor.svg" alt="" className="sidebar-logo-mark" />
             <span className="sidebar-logo-word">Parish</span>
+            {/* Celular: o menu fica recolhido acima do conteúdo e abre por este botão */}
+            <button
+              type="button"
+              className="sidebar-menu-toggle"
+              aria-expanded={menuOpen}
+              aria-controls="sidebar-menu"
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              <span aria-hidden="true">{menuOpen ? '✕' : '☰'}</span> Menu
+            </button>
           </div>
           <div
             className="sidebar-user"
@@ -203,215 +342,64 @@ const AdminLayout: React.FC = () => {
           </div>
         </div>
 
-        <nav className="sidebar-nav">
+        <nav className="sidebar-nav" id="sidebar-menu" aria-label="Menu do painel">
           {canSeeDashboard && (
             <NavLink to="/admin/dashboard" className="nav-link highlight">
               <NavIcon name="planejamento" /> Início
             </NavLink>
           )}
-          {(can('dioceses') || can('parishes') || can('communities')) && <span className="nav-section-label">Estrutura</span>}
-          {can('dioceses') && (
-            <NavLink to="/admin/dioceses" className="nav-link">
-              <NavIcon name="diocese" /> Dioceses
-            </NavLink>
-          )}
-          {can('parishes') && (
-            <NavLink to="/admin/parishes" className="nav-link">
-              <NavIcon name="paroquia" /> Paróquias
-            </NavLink>
-          )}
-          {can('communities') && (
-            <NavLink to="/admin/communities" className="nav-link">
-              <NavIcon name="comunidade" /> Comunidades
-            </NavLink>
+          {sections.map((section) =>
+            section.items.length === 0 || section.label === 'Conta' ? null : (
+              <React.Fragment key={section.label}>
+                <span className="nav-section-label">{section.label}</span>
+                {section.items.map((item) => (
+                  <NavLink key={item.to} to={item.to} end={item.end} className={`nav-link${item.highlight ? ' highlight' : ''}`}>
+                    <NavIcon name={item.icon} /> {item.label}
+                  </NavLink>
+                ))}
+              </React.Fragment>
+            ),
           )}
 
-          {/* Sempre há ao menos "Minha Escala" nesta seção */}
-          <span className="nav-section-label">Comunidade</span>
-          {can('members') && (
-            <NavLink to="/admin/members" className="nav-link">
-              <NavIcon name="membros" /> Membros
-            </NavLink>
-          )}
-          {can('members') && ['SYSTEM_ADMIN', 'DIOCESAN_ADMIN', 'PARISH_ADMIN', 'COMMUNITY_COORDINATOR'].includes(user?.role ?? '') && (
-            <NavLink to="/admin/importar" className="nav-link">
-              <NavIcon name="documento" /> Importar planilha
-            </NavLink>
-          )}
-          {can('events') && (
-            <NavLink to="/admin/events" className="nav-link">
-              <NavIcon name="calendario-liturgico" /> Eventos
-            </NavLink>
-          )}
-          {can('fixed-schedule') && (
-            <NavLink to="/admin/fixed-schedule" className="nav-link">
-              <NavIcon name="missa-proxima" /> Agenda Fixa
-            </NavLink>
-          )}
-          {can('schedules') && (
-            <NavLink to="/admin/schedules" className="nav-link">
-              <NavIcon name="escala" /> Escalas{lock('schedules')}
-            </NavLink>
-          )}
-          {/* Coordenador também é escalado: "Minha Escala" vale para todos */}
-          <NavLink to="/admin/my-schedule" className="nav-link">
-            <NavIcon name="escala" /> Minha Escala{lock('schedules')}
-          </NavLink>
-          {can('swaps') && (
-            <NavLink to="/admin/swaps" className="nav-link">
-              <NavIcon name="trocas-escala" /> Trocas de Escala{lock('swaps')}
-            </NavLink>
+          {/* Plano grátis: os recursos do plano completo não somem — ficam aqui,
+              com o selo, e abrem a vitrine do recurso (não a tela que daria erro) */}
+          {lockedFeatures.length > 0 && (
+            <details
+              className="nav-plan-group"
+              open={planOpen}
+              onToggle={(event) => setPlanOpen((event.currentTarget as HTMLDetailsElement).open)}
+            >
+              <summary className="nav-section-label nav-section-label--plan">
+                Recursos do plano <span className="nav-plan-count">{lockedFeatures.length}</span>
+              </summary>
+              {lockedFeatures.map((feature) => (
+                <NavLink key={feature.key} to={planFeaturePath(feature.key)} className="nav-link nav-link--plan">
+                  <NavIcon name={feature.icon} /> {feature.name}
+                  <PlanLock />
+                </NavLink>
+              ))}
+              {can('recursos') && (
+                <NavLink to={PLAN_FEATURES_PATH} end className="nav-link nav-link--plan-all">
+                  <NavIcon name="igreja" /> Conheça o plano completo
+                </NavLink>
+              )}
+            </details>
           )}
 
-          {(can('clergy-messages') || can('saints') || isCoordination) && <span className="nav-section-label">Pastoral</span>}
-          {can('clergy-messages') && (
-            <NavLink to="/admin/clergy-messages" className="nav-link">
-              <NavIcon name="sacerdote" /> Palavra Pastoral
-            </NavLink>
-          )}
-          {can('saints') && (
-            <NavLink to="/admin/saints" className="nav-link">
-              <NavIcon name="santo" /> Santos
-            </NavLink>
-          )}
-          {can('pastorals/community') && (
-            <NavLink to="/admin/pastorals/community" className="nav-link">
-              <NavIcon name="pastoral" /> Pastorais{lock('pastorals')}
-            </NavLink>
-          )}
-          {can('pastorals/my') && (
-            <NavLink to="/admin/pastorals/my" className="nav-link highlight">
-              <NavIcon name="pastoral" /> Minhas Pastorais{lock('pastorals')}
-            </NavLink>
-          )}
-          {can('pastorals/global') && (
-            <NavLink to="/admin/pastorals/global" className="nav-link">
-              <NavIcon name="igreja" /> Pastorais Globais
-            </NavLink>
-          )}
-          {isCatechist && !isCoordination && can('catechesis') && (
-            <NavLink to="/admin/catechesis" className="nav-link highlight">
-              <NavIcon name="catequese" /> Catequese (minha turma){lock('catechesis')}
-            </NavLink>
-          )}
-          {isCoordination && (
-            <>
-              {can('catechesis') && (
-                <NavLink to="/admin/catechesis" className="nav-link">
-                  <NavIcon name="catequese" /> Catequese{lock('catechesis')}
-                </NavLink>
-              )}
-              {can('planning') && (
-                <NavLink to="/admin/planning" className="nav-link">
-                  <NavIcon name="planejamento" /> Planejamento
-                </NavLink>
-              )}
-              {can('documents') && (
-                <NavLink to="/admin/documents" className="nav-link">
-                  <NavIcon name="documento" /> Documentos{lock('documents')}
-                </NavLink>
-              )}
-              {can('formation') && (
-                <NavLink to="/admin/formation" className="nav-link">
-                  <NavIcon name="biblia" /> Formação{lock('formation')}
-                </NavLink>
-              )}
-              {can('rooms') && (
-                <NavLink to="/admin/rooms" className="nav-link">
-                  <NavIcon name="espacos" /> Espaços{lock('rooms')}
-                </NavLink>
-              )}
-              {can('visitation') && (
-                <NavLink to="/admin/visitation" className="nav-link">
-                  <NavIcon name="visitacao" /> Visitação{lock('visitation')}
-                </NavLink>
-              )}
-            </>
+          {/* Conta fica por último: a vitrine do plano vem antes, à vista */}
+          {sections.map((section) =>
+            section.items.length === 0 || section.label !== 'Conta' ? null : (
+              <React.Fragment key={section.label}>
+                <span className="nav-section-label">{section.label}</span>
+                {section.items.map((item) => (
+                  <NavLink key={item.to} to={item.to} end={item.end} className={`nav-link${item.highlight ? ' highlight' : ''}`}>
+                    <NavIcon name={item.icon} /> {item.label}
+                  </NavLink>
+                ))}
+              </React.Fragment>
+            ),
           )}
 
-          {(can('finance') || can('sacrament-processes') || can('users') || can('audit') || isSystemAdmin || canSeeMyPlan) && (
-            <span className="nav-section-label">Gestão</span>
-          )}
-          {can('finance') && (
-            <NavLink to="/admin/finance" className="nav-link">
-              <NavIcon name="dizimo" /> Financeiro
-            </NavLink>
-          )}
-          {can('sacrament-processes') && (
-            <NavLink to="/admin/sacrament-processes" className="nav-link">
-              <NavIcon name="cruz" /> Sacramentos
-            </NavLink>
-          )}
-          {can('users') && (
-            <NavLink to="/admin/users" className="nav-link">
-              <NavIcon name="usuarios" /> Usuários
-            </NavLink>
-          )}
-          {can('audit') && (
-            <NavLink to="/admin/audit" className="nav-link">
-              <NavIcon name="documento" /> Auditoria
-            </NavLink>
-          )}
-          {canSeeMyPlan && !isSystemAdmin && (
-            <NavLink to={MY_PLAN_PATH} className="nav-link">
-              <NavIcon name="dizimo" /> Meu plano
-            </NavLink>
-          )}
-          {user?.role === 'PARISH_ADMIN' && (
-            <NavLink to="/admin/minha-paroquia" className="nav-link">
-              <NavIcon name="paroquia" /> Minha paróquia
-            </NavLink>
-          )}
-          {can('settings') && (
-            <NavLink to="/admin/settings" className="nav-link">
-              <NavIcon name="planejamento" /> Configurações
-            </NavLink>
-          )}
-
-          {can('platform') && (
-            <>
-              <span className="nav-section-label">Plataforma</span>
-              <NavLink to="/admin/platform" end className="nav-link">
-                <NavIcon name="planejamento" /> Visão geral
-              </NavLink>
-              <NavLink to="/admin/platform/claims" className="nav-link">
-                <NavIcon name="paroquia" /> Reivindicações
-              </NavLink>
-              <NavLink to="/admin/platform/leads" className="nav-link">
-                <NavIcon name="usuarios" /> Leads
-              </NavLink>
-              <NavLink to="/admin/map" className="nav-link">
-                <NavIcon name="comunidade" /> Mapa do território
-              </NavLink>
-              <NavLink to="/admin/platform/suggestions" className="nav-link">
-                <NavIcon name="sino" /> Sugestões dos fiéis
-              </NavLink>
-              <NavLink to="/admin/platform/growth" className="nav-link">
-                <NavIcon name="membros" /> Crescimento
-              </NavLink>
-              <NavLink to="/admin/platform/plans" className="nav-link">
-                <NavIcon name="dizimo" /> Planos
-              </NavLink>
-              <NavLink to="/admin/platform/usage" className="nav-link">
-                <NavIcon name="planejamento" /> Uso do produto
-              </NavLink>
-              <NavLink to="/admin/platform/announcements" className="nav-link">
-                <NavIcon name="sino" /> Avisos aos clientes
-              </NavLink>
-            </>
-          )}
-
-          <span className="nav-section-label">Conta</span>
-          <NavLink to="/admin/account" className="nav-link">
-            <NavIcon name="membros" /> Minha conta
-          </NavLink>
-          <NavLink to="/admin/security" className="nav-link">
-            <NavIcon name="sino" /> Segurança
-          </NavLink>
-          {/* Direitos do titular (LGPD): consentimentos, exportação e exclusão — todos os papéis */}
-          <NavLink to="/admin/my-data" className="nav-link">
-            <NavIcon name="documento" /> Privacidade
-          </NavLink>
         </nav>
 
         <div className="sidebar-footer">
@@ -448,8 +436,8 @@ const AdminLayout: React.FC = () => {
             {trials.length === 1
               ? `O teste do plano de ${trials[0].communityName} vai até ${dataCurta(trials[0].trialEndsAt)}. `
               : `Testes do plano terminando: ${trials.map((t) => `${t.communityName} (${dataCurta(t.trialEndsAt)})`).join(', ')}. `}
-            Depois disso, pastorais, escalas, catequese, formação, espaços, visitas e documentos dependem do plano da
-            comunidade; calendário, mapa e liturgia continuam liberados.
+            Depois disso a comunidade volta ao plano grátis: o cadastro de membros, os horários de missa e confissão e a
+            localização continuam; os demais recursos dependem do plano. Nenhum dado é apagado.
             {canSeeMyPlan && (
               <>
                 {' '}

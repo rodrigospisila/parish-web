@@ -29,6 +29,11 @@
   margin-bottom: 1rem;
 }
 
+/* Botão "Menu": só no celular (ver @media no fim) */
+.sidebar-menu-toggle {
+  display: none;
+}
+
 .sidebar-logo-mark {
   width: 42px;
   height: 42px;
@@ -222,6 +227,79 @@
   border-color: rgba(138, 100, 24, 0.5);
 }
 
+/* Texto só para leitor de tela (complementa o selo "plano") */
+.nav-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Seção "Recursos do plano" (plano grátis): no fim do menu, mais discreta que
+   os itens que abrem de verdade; cada item leva à vitrine do recurso */
+.nav-plan-group {
+  margin-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.nav-plan-group > summary.nav-section-label--plan {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding-top: 1rem;
+  padding-bottom: 0.5rem;
+  color: rgba(216, 168, 62, 0.9);
+  cursor: pointer;
+  list-style: none;
+  border-radius: 6px;
+}
+
+.nav-plan-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.nav-plan-group > summary::after {
+  content: '▸';
+  margin-left: auto;
+  font-size: 0.8rem;
+  transition: transform 0.15s;
+}
+
+.nav-plan-group[open] > summary::after {
+  transform: rotate(90deg);
+}
+
+.nav-plan-group > summary:focus-visible {
+  outline: 2px solid #8ec5ff;
+  outline-offset: 2px;
+}
+
+.nav-plan-count {
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: rgba(216, 168, 62, 0.18);
+  font-size: 0.66rem;
+  letter-spacing: 0;
+}
+
+.nav-link--plan {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.nav-link--plan-all {
+  margin-top: 0.35rem;
+  border: 1px solid rgba(216, 168, 62, 0.45);
+  color: #e6bd5c;
+  font-weight: 600;
+}
+
+.nav-link:focus-visible {
+  outline: 2px solid #8ec5ff;
+  outline-offset: 2px;
+}
+
 /* Avisos do plano no topo do conteúdo */
 .plan-banner {
   display: flex;
@@ -322,13 +400,82 @@
 }
 
 @media (max-width: 768px) {
+  /* Celular: o menu vira uma faixa no topo, recolhida, e o conteúdo ocupa a
+     largura toda (antes ficavam lado a lado, com rolagem horizontal) */
+  .admin-layout {
+    flex-direction: column;
+  }
+
   .sidebar {
     width: 100%;
     position: relative;
     height: auto;
   }
 
+  .sidebar-header {
+    padding: 0.7rem 1rem;
+  }
+
+  .sidebar-brand {
+    margin-bottom: 0;
+  }
+
+  .sidebar-logo-mark {
+    width: 32px;
+    height: 32px;
+  }
+
+  .sidebar-logo-word {
+    font-size: 1.25rem;
+  }
+
+  .sidebar-menu-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-left: auto;
+    min-height: 44px;
+    padding: 0.4rem 0.9rem;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .sidebar-menu-toggle:focus-visible {
+    outline: 2px solid #8ec5ff;
+    outline-offset: 2px;
+  }
+
+  .sidebar:not(.is-open) .sidebar-user,
+  .sidebar:not(.is-open) .sidebar-nav,
+  .sidebar:not(.is-open) .sidebar-footer {
+    display: none;
+  }
+
+  .sidebar.is-open .sidebar-user {
+    margin-top: 0.7rem;
+  }
+
+  .sidebar.is-open .sidebar-nav {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .nav-link {
+    min-height: 44px;
+  }
+
   .main-content {
     margin-left: 0;
+    width: 100%;
+  }
+
+  .plan-banner,
+  .platform-announcement {
+    margin: 0.75rem 1rem 0;
   }
 }

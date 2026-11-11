@@ -39,6 +39,10 @@ export interface FixedOccurrence {
   isFixed?: boolean;
   cancelled?: boolean;
   cancelReason?: string | null;
+  /** Fim informado no horário fixo (HH:MM); nulo = duração padrão do tipo */
+  endTime?: string | null;
+  /** Em andamento agora no fuso da comunidade (o backend já desconta a suspensão) */
+  happeningNow?: boolean;
 }
 
 export interface ScheduleCancellation {
@@ -54,6 +58,8 @@ export interface SuspendScheduleRef {
   id: string;
   type: ScheduleType;
   time: string;
+  /** Fim informado (HH:MM), se houver */
+  endTime?: string | null;
   description: string;
   community: { id: string; name: string };
 }
@@ -103,6 +109,54 @@ const occurrenceRange = (from: string, to: string) => ({
   from: `${from}T00:00:00.000Z`,
   to: `${to}T23:59:59.000Z`,
 });
+
+/**
+ * Duração padrão (min) quando o horário não tem fim informado — espelha
+ * MASS_SCHEDULE_TYPE_DURATION_MIN do backend.
+ */
+export const DEFAULT_DURATION_MIN: Record<ScheduleType, number> = {
+  MASS: 60,
+  WORD_CELEBRATION: 60,
+  CONFESSION: 45,
+  ADORATION: 60,
+  ROSARY: 30,
+};
+
+/** Confissão é "atendimento" (o padre atende), não celebração */
+export const isConfession = (type: string) => type === 'CONFESSION';
+
+/** "atendimento de confissão" / "Missa" / "Terço" — para frases como "Não haverá …" */
+export const occurrenceNoun = (type: string, fallback = 'horário') =>
+  isConfession(type) ? 'atendimento de confissão' : (TYPE_META[type as ScheduleType]?.label ?? fallback);
+
+/** "HH:MM" → minutos desde a meia-noite (null se inválido) */
+export const hhmmToMinutes = (time: string | null | undefined): number | null => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(time ?? '').trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  return h > 23 || min > 59 ? null : h * 60 + min;
+};
+
+/** "19:00–20:00" quando há fim; senão só o início */
+export const timeRange = (start: string, end?: string | null) => (end ? `${start}–${end}` : start);
+
+/** Agora no relógio local, 'YYYY-MM-DDTHH:MM' (mesmo formato de parede das ocorrências) */
+export const nowWallClock = () => {
+  const d = new Date();
+  return `${todayISO()}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+/**
+ * "Acontecendo agora" de uma ocorrência: vale o que o backend mandar
+ * (happeningNow, no fuso da comunidade); sem o campo, cai no relógio local —
+ * só para o selo. Ocorrência suspensa nunca está acontecendo.
+ */
+export const occHappeningNow = (occ: FixedOccurrence, now = nowWallClock()) => {
+  if (occ.cancelled) return false;
+  if (typeof occ.happeningNow === 'boolean') return occ.happeningNow;
+  return occ.start.slice(0, 16) <= now && now < occ.end.slice(0, 16);
+};
 
 const typeLabel = (type: string, fallback: string) =>
   TYPE_META[type as ScheduleType]?.label ?? fallback;
@@ -331,6 +385,13 @@ export const UpcomingWeekPanel: React.FC<UpcomingWeekPanelProps> = ({
   const requestRef = useRef(0);
   const today = todayISO();
 
+  // Relógio do selo "Acontecendo agora" (atualiza a cada minuto)
+  const [now, setNow] = useState(nowWallClock);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(nowWallClock()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const load = useCallback(async () => {
     const request = ++requestRef.current;
     const from = todayISO();
@@ -383,7 +444,7 @@ export const UpcomingWeekPanel: React.FC<UpcomingWeekPanelProps> = ({
   }, [occurrences]);
 
   const describe = (occ: FixedOccurrence) =>
-    `${typeLabel(occ.type, occ.title)} das ${occTime(occ)} de ${longDate(occDate(occ))}`;
+    `${occurrenceNoun(occ.type, occ.title)} das ${occTime(occ)} de ${longDate(occDate(occ))}`;
 
   const openSuspend = (occ: FixedOccurrence) => {
     setTarget(occ);
@@ -435,7 +496,7 @@ export const UpcomingWeekPanel: React.FC<UpcomingWeekPanelProps> = ({
         <h2 id="susp-week-title">Próximos 7 dias</h2>
         <p>
           {canManage
-            ? 'Algum horário não vai acontecer? Desligue o botão e o app mostra “Não haverá” para os fiéis.'
+            ? 'Alguma missa ou atendimento de confissão não vai acontecer? Desligue o botão e o app mostra “Não haverá” para os fiéis.'
             : 'Horários fixos da semana e os que não vão acontecer.'}
         </p>
       </div>
@@ -474,15 +535,21 @@ export const UpcomingWeekPanel: React.FC<UpcomingWeekPanelProps> = ({
                     const cancelled = !!occ.cancelled;
                     const author = authors[`${occ.massScheduleId}|${date}`];
                     const reasonText = occ.cancelReason ?? author?.reason ?? null;
+                    const live = date === today && occHappeningNow(occ, now);
                     return (
                       <li key={occ.id} className={`susp-occ${cancelled ? ' is-cancelled' : ''}`}>
                         <div className="susp-occ-info">
                           <div className="susp-occ-main">
-                            <span className="susp-occ-time">{occTime(occ)}</span>
+                            <span className="susp-occ-time">{timeRange(occTime(occ), occ.endTime)}</span>
                             <span className="susp-occ-type">
                               <span aria-hidden="true">{typeIcon(occ.type)}</span>{' '}
                               {typeLabel(occ.type, occ.title)}
                             </span>
+                            {live && (
+                              <span className="status-badge green susp-live" title="Em andamento neste momento">
+                                Acontecendo agora
+                              </span>
+                            )}
                           </div>
                           {showCommunity && occ.community?.name && (
                             <div className="susp-occ-comm">{occ.community.name}</div>
@@ -528,12 +595,15 @@ export const UpcomingWeekPanel: React.FC<UpcomingWeekPanelProps> = ({
           }}
         >
           <h2 id="susp-one-title" className="susp-title">
-            Não haverá {typeLabel(target.type, target.title)} neste dia?
+            Não haverá {occurrenceNoun(target.type, target.title)} neste dia?
           </h2>
           <p id="susp-one-desc" className="susp-sub">
             <strong>{longDate(occDate(target))}</strong> às <strong>{occTime(target)}</strong>
-            {target.community?.name ? ` · ${target.community.name}` : ''}. Os fiéis verão no app que este
-            horário não acontece nesse dia. Os outros dias continuam normais.
+            {target.community?.name ? ` · ${target.community.name}` : ''}.{' '}
+            {isConfession(target.type)
+              ? 'Os fiéis verão no app que não há atendimento de confissão nesse dia, e o aviso “acontecendo agora” não aparece.'
+              : 'Os fiéis verão no app que este horário não acontece nesse dia.'}{' '}
+            Os outros dias continuam normais.
           </p>
           <ReasonPicker idPrefix="susp-one" value={reason} onChange={setReason} autoFocus />
           {dialogError && (
@@ -705,6 +775,7 @@ export const SuspendDatesModal: React.FC<SuspendDatesModalProps> = ({ schedule, 
   };
 
   const meta = TYPE_META[schedule.type];
+  const confession = isConfession(schedule.type);
 
   return (
     <Dialog
@@ -717,13 +788,22 @@ export const SuspendDatesModal: React.FC<SuspendDatesModalProps> = ({ schedule, 
       }}
     >
       <h2 id="susp-many-title" className="susp-title">
-        Suspender datas
+        {confession ? 'Dias sem atendimento de confissão' : 'Dias em que não haverá'}
       </h2>
       <p id="susp-many-desc" className="susp-sub">
         <span aria-hidden="true">{meta?.icon}</span> {meta?.label ?? 'Horário'} · {schedule.description} às{' '}
-        <strong>{schedule.time}</strong> · {schedule.community.name}
+        <strong>{timeRange(schedule.time, schedule.endTime)}</strong> · {schedule.community.name}
         <br />
-        Marque os dias em que <strong>não haverá</strong> este horário. Os fiéis verão no app.
+        {confession ? (
+          <>
+            Marque os dias em que <strong>não haverá atendimento</strong>. Os fiéis verão “Não haverá” no app e o
+            aviso “acontecendo agora” não aparece nesses dias.
+          </>
+        ) : (
+          <>
+            Marque os dias em que <strong>não haverá</strong> este horário. Os fiéis verão no app.
+          </>
+        )}
       </p>
 
       {loadError && (
@@ -832,14 +912,18 @@ export const SuspendDatesModal: React.FC<SuspendDatesModalProps> = ({ schedule, 
             ? 'Salvando…'
             : selected.size === 0
               ? 'Marque as datas acima'
-              : `Suspender ${plural(selected.size, 'data', 'datas')}`}
+              : `Marcar “não haverá” em ${plural(selected.size, 'data', 'datas')}`}
         </button>
       </div>
 
       <section className="susp-block susp-list" aria-labelledby="susp-list-title">
         <h3 id="susp-list-title">Datas suspensas</h3>
         {loading ? null : cancellations.length === 0 ? (
-          <div className="susp-muted">Nenhuma data suspensa. Este horário acontece normalmente.</div>
+          <div className="susp-muted">
+            {confession
+              ? 'Nenhuma data suspensa. O atendimento acontece normalmente.'
+              : 'Nenhuma data suspensa. Este horário acontece normalmente.'}
+          </div>
         ) : (
           <ul>
             {cancellations.map((c) => {

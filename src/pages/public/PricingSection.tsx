@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
 
 /**
- * Planos do site (saas-implantacao-14): faixas lidas de GET /public/plans
- * (PlanTier ativos). Preço por comunidade; anual = 10 mensalidades. Sem a
+ * Preços do plano completo no site: faixas lidas de GET /public/plans
+ * (PlanTier ativos). Preço por comunidade; anual = 10 mensalidades. O plano
+ * grátis não tem faixa nem prazo, e o teste de 30 dias do completo é pedido
+ * pelo painel (não começa sozinho). Sem a
  * rota (servidor antigo/fora do ar), a seção mostra "sob consulta" e leva ao
  * pedido de demonstração — nunca inventa preço.
  */
@@ -50,29 +52,15 @@ export function parsePublicPlans(data: unknown): PublicPlans | null {
   return { trialDays: typeof raw.trialDays === 'number' && raw.trialDays > 0 ? raw.trialDays : 30, tiers };
 }
 
-/** Recursos que o plano libera e o que é grátis para sempre (decisão de produto). */
-export const RECURSOS_DO_PLANO = [
-  'Pastorais e escalas, com confirmação e trocas pelo app',
-  'Catequese: inscrição pela família, turmas e chamada',
-  'Formação, salas e espaços',
-  'Visitas pastorais',
-  'Documentos e certidões',
-];
-
-export const RECURSOS_GRATIS = [
-  'Calendário e eventos da comunidade',
-  'Mapa e horários de missa',
-  'Liturgia do dia',
-  'App do fiel: o fiel nunca paga',
-];
-
 type Ciclo = 'MONTHLY' | 'YEARLY';
 
 interface Props {
   onRequestDemo: () => void;
+  /** Leva à busca da paróquia (a entrada é sempre pela reivindicação) */
+  onFindParish?: () => void;
 }
 
-const PricingSection: React.FC<Props> = ({ onRequestDemo }) => {
+const PricingSection: React.FC<Props> = ({ onRequestDemo, onFindParish }) => {
   const [plans, setPlans] = useState<PublicPlans | null>(null);
   const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading');
   const [ciclo, setCiclo] = useState<Ciclo>('MONTHLY');
@@ -101,14 +89,33 @@ const PricingSection: React.FC<Props> = ({ onRequestDemo }) => {
   return (
     <section className="lp-section lp-pricing" id="planos" aria-labelledby="lp-planos-titulo">
       <div className="lp-container">
-        <p className="lp-kicker">Planos</p>
+        <p className="lp-kicker">Planos e preços</p>
         <h2 id="lp-planos-titulo" className="lp-h2">
-          Preço por comunidade, com {trialDays} dias de teste
+          Grátis para começar. Completo por comunidade.
         </h2>
         <p className="lp-lead">
-          Cada comunidade escolhe a faixa pelo número de membros ativos. No plano anual, você paga 10 meses e usa 12.
-          O fiel não paga nada.
+          O plano grátis não tem mensalidade nem prazo. No plano completo, cada comunidade escolhe a faixa pelo número
+          de membros ativos; no anual, você paga 10 meses e usa 12. O fiel não paga nada.
         </p>
+
+        <div className="lp-card lp-plano-gratis">
+          <div>
+            <h3 className="lp-tier-nome">Plano grátis</h3>
+            <p className="lp-tier-preco">
+              <strong>R$ 0</strong>
+              <span>para toda paróquia, sem prazo</span>
+            </p>
+            <p className="lp-tier-desc">
+              Horários de missa e de confissão, "não haverá" por data, cadastro de membros sem limite e localização
+              das igrejas.
+            </p>
+          </div>
+          <button type="button" className="lp-btn lp-btn-primary" onClick={onFindParish ?? onRequestDemo}>
+            Encontrar minha paróquia
+          </button>
+        </div>
+
+        <h3 className="lp-h3 lp-planos-sub">Plano completo</h3>
 
         <div className="lp-ciclo" role="group" aria-label="Ciclo de pagamento">
           <button type="button" className={ciclo === 'MONTHLY' ? 'on' : ''} aria-pressed={ciclo === 'MONTHLY'} onClick={() => setCiclo('MONTHLY')}>
@@ -163,7 +170,7 @@ const PricingSection: React.FC<Props> = ({ onRequestDemo }) => {
                   )}
                   {t.description && <p className="lp-tier-desc">{t.description}</p>}
                   <button type="button" className={`lp-btn ${destaque ? 'lp-btn-primary' : 'lp-btn-outline'}`} onClick={onRequestDemo}>
-                    Começar o teste grátis
+                    Pedir demonstração
                   </button>
                 </li>
               );
@@ -171,27 +178,16 @@ const PricingSection: React.FC<Props> = ({ onRequestDemo }) => {
           </ul>
         )}
 
-        <div className="lp-incluso">
-          <div className="lp-card">
-            <h3 className="lp-h3">O plano libera</h3>
-            <ul className="lp-check">
-              {RECURSOS_DO_PLANO.map((r) => (
-                <li key={r}>{r}</li>
-              ))}
-            </ul>
-          </div>
-          <div className="lp-card lp-card-gratis">
-            <h3 className="lp-h3">Grátis para sempre</h3>
-            <ul className="lp-check">
-              {RECURSOS_GRATIS.map((r) => (
-                <li key={r}>{r}</li>
-              ))}
-            </ul>
-          </div>
+        <div className="lp-teste" role="note">
+          <h3 className="lp-h3">Teste o plano completo por {trialDays} dias, quando quiser</h3>
+          <p>
+            O teste não começa sozinho: o administrador da paróquia pede pelo painel, no momento em que a equipe
+            estiver pronta para experimentar. Vale uma vez por paróquia, para todas as comunidades, sem cartão.
+          </p>
         </div>
         <p className="lp-muted lp-centro">
-          Teste de {trialDays} dias sem cartão. Pagamento por Pix, boleto ou cartão. Se o pagamento
-          parar, os recursos do plano ficam suspensos, mas nenhum dado é apagado.
+          Pagamento por Pix, boleto ou cartão. Se o teste acabar ou o pagamento parar, a comunidade volta para o plano
+          grátis e nenhum dado é apagado.
         </p>
       </div>
     </section>

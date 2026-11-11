@@ -3,6 +3,8 @@
  * validação de CNPJ/CPF e CEP, rótulos de status.
  */
 
+import { parsePlanTrial, type PlanTrialInfo } from '../hooks/usePlanTrial';
+
 export type CommunityPlanStatus = 'FREE' | 'TRIAL' | 'ACTIVE' | 'PAST_DUE' | 'SUSPENDED' | 'CANCELED';
 export type BillingCycle = 'MONTHLY' | 'YEARLY';
 export type BillingAccountStatus = 'NONE' | 'PENDING' | 'ACTIVE' | 'PAST_DUE' | 'CANCELED';
@@ -78,6 +80,8 @@ export interface BillingMe {
   communities: BillingCommunity[];
   tiers: BillingTier[];
   payments: PlatformPayment[];
+  /** Teste por pedido (contrato 5): disponível / já usado. Servidor antigo = null (sem botão) */
+  trial: PlanTrialInfo | null;
 }
 
 /** Saneia a resposta (campos ausentes não quebram a tela). */
@@ -93,7 +97,38 @@ export function parseBillingMe(data: unknown): BillingMe | null {
     communities: Array.isArray(d.communities) ? d.communities.filter((c: any) => c && typeof c.id === 'string') : [],
     tiers: Array.isArray(d.tiers) ? d.tiers.filter((t: any) => t && typeof t.key === 'string') : [],
     payments: Array.isArray(d.payments) ? d.payments.filter((p: any) => p && typeof p.id === 'string') : [],
+    trial: parsePlanTrial(d.trial),
   };
+}
+
+/** Situação das comunidades da paróquia para o cartão "Seu plano hoje". */
+export interface PlanSummary {
+  total: number;
+  /** No plano grátis (sem acesso ao plano completo) */
+  free: number;
+  /** Em teste do plano completo */
+  trial: number;
+  /** Com plano contratado (em dia ou com pagamento em atraso) */
+  paid: number;
+  /** Piloto: acesso total sem cobrança */
+  pilot: number;
+  /** Fim do teste mais próximo */
+  trialEndsAt: string | null;
+}
+
+export function summarizePlans(communities: BillingCommunity[]): PlanSummary {
+  const out: PlanSummary = { total: communities.length, free: 0, trial: 0, paid: 0, pilot: 0, trialEndsAt: null };
+  for (const c of communities) {
+    const status = c.plan?.status ?? 'FREE';
+    if (isPilot(c)) out.pilot += 1;
+    else if (status === 'TRIAL') {
+      out.trial += 1;
+      const end = c.plan?.trialEndsAt ?? null;
+      if (end && (!out.trialEndsAt || end < out.trialEndsAt)) out.trialEndsAt = end;
+    } else if (status === 'ACTIVE' || status === 'PAST_DUE') out.paid += 1;
+    else out.free += 1;
+  }
+  return out;
 }
 
 /** Piloto (ACTIVE sem prazo): acesso total, não entra em cobrança (o backend manda `pilot`). */

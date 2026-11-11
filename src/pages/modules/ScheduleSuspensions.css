@@ -604,3 +604,57 @@
   flex-direction: column;
   align-items: stretch;
 }
+
+/* Selo "Acontecendo agora" (painel da semana e lista de horários) */
+.status-badge.susp-live {
+  background: #198754;
+  color: #fff;
+  font-size: 0.72rem;
+}
+
+.status-badge.susp-live::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  margin-right: 5px;
+  vertical-align: middle;
+  animation: susp-live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes susp-live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-badge.susp-live::before {
+    animation: none;
+  }
+}
+
+/* Plano grátis: sem escalas, some o que é de escala/pastoral na Agenda Fixa */
+.fixed-sem-escalas .col-escala {
+  display: none !important;
+}
+
+/* Ações da linha lado a lado (a coluna empilhada deixava cada linha com 180px) */
+.fixed-table .fixed-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.fixed-table .fixed-actions-main {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}

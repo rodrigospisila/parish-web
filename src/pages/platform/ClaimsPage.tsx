@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TitleIcon from '../../components/TitleIcon';
 import api from '../../services/api';
 import { notify } from '../../services/notification.service';
@@ -12,6 +12,11 @@ import './PlatformPages.css';
  * aprovadas aqui pelo SYSTEM_ADMIN — o código no contato oficial da paróquia
  * é só evidência (VERIFIED). Na aprovação sem conta, o backend devolve o link
  * de convite para mandar por WhatsApp ou copiar.
+ *
+ * Aprovar NÃO inicia mais teste: a paróquia entra no plano grátis e pede o
+ * teste de 30 dias pelo painel. Para volumes grandes (uma cidade inteira) há
+ * a aprovação em lote: os pedidos marcados vão um a um, em sequência, pela
+ * mesma rota da aprovação individual (PATCH /platform/claims/:id).
  */
 
 type ClaimStatus = 'PENDING' | 'VERIFIED' | 'APPROVED' | 'REJECTED' | 'CANCELED';
@@ -95,6 +100,28 @@ const asList = (data: any): Claim[] => {
 const dioceseNome = (d: unknown): string =>
   typeof d === 'string' ? d : d && typeof d === 'object' && typeof (d as { name?: unknown }).name === 'string' ? (d as { name: string }).name : '';
 
+interface Lote {
+  total: number;
+  feitos: number;
+  aprovados: number;
+  comConvite: number;
+  falhas: Array<{ id: string; paroquia: string; erro: string }>;
+  rodando: boolean;
+  interrompido: boolean;
+}
+
+const estaAberta = (c: Claim) => c.status === 'PENDING' || c.status === 'VERIFIED';
+const jaGerida = (c: Claim) => c.managed ?? !!c.parish?.managedAt;
+const nomeParoquia = (c: Claim) => c.parish?.name ?? c.parishName ?? c.parishId;
+/** Verificadas (contato oficial confirmado) antes das demais abertas */
+const pesoStatus = (c: Claim) => (c.status === 'VERIFIED' ? 0 : c.status === 'PENDING' ? 1 : 2);
+
+const lerConvite = (data: any): ApproveResult => ({
+  inviteUrl: typeof data?.inviteUrl === 'string' ? data.inviteUrl : undefined,
+  whatsappText: typeof data?.whatsappText === 'string' ? data.whatsappText : undefined,
+  inviteEmailSent: data?.inviteEmailSent === true,
+});
+
 /** URL externa só se for http(s) — evita javascript: vindo do formulário público. */
 const urlSegura = (u?: string | null) => (u && /^https?:\/\//i.test(u) ? u : null);
 
@@ -107,10 +134,18 @@ const ClaimsPage: React.FC = () => {
   const [confirmando, setConfirmando] = useState<{ id: string; action: 'APPROVE' | 'REJECT' } | null>(null);
   const [enviando, setEnviando] = useState<string | null>(null);
   const [convites, setConvites] = useState<Record<string, ApproveResult>>({});
+  const [uf, setUf] = useState('');
+  const [cidade, setCidade] = useState('');
+  const [selecionados, setSelecionados] = useState<Set<string>>(() => new Set());
+  const [confirmandoLote, setConfirmandoLote] = useState(false);
+  const [lote, setLote] = useState<Lote | null>(null);
+  const pararLote = useRef(false);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
     setErro('');
+    setSelecionados(new Set());
+    setConfirmandoLote(false);
     try {
       if (filtro === 'OPEN') {
         const [a, b] = await Promise.all([
@@ -125,7 +160,10 @@ const ClaimsPage: React.FC = () => {
         );
       } else {
         const { data } = await api.get('/platform/claims', { params: filtro ? { status: filtro } : {} });
-        setLista(asList(data).sort((x, y) => y.createdAt.localeCompare(x.createdAt)));
+        // Em "Todas", o que ainda espera decisão vem antes (verificadas primeiro)
+        setLista(
+          asList(data).sort((x, y) => pesoStatus(x) - pesoStatus(y) || y.createdAt.localeCompare(x.createdAt)),
+        );
       }
     } catch (e) {
       setLista([]);
@@ -150,11 +188,7 @@ const ClaimsPage: React.FC = () => {
       const { data } = await api.patch(`/platform/claims/${encodeURIComponent(claim.id)}`, { action, ...(note ? { note } : {}) });
       setConfirmando(null);
       if (action === 'APPROVE') {
-        const invite: ApproveResult = {
-          inviteUrl: typeof data?.inviteUrl === 'string' ? data.inviteUrl : undefined,
-          whatsappText: typeof data?.whatsappText === 'string' ? data.whatsappText : undefined,
-          inviteEmailSent: data?.inviteEmailSent === true,
-        };
+        const invite = lerConvite(data);
         if (invite.inviteUrl) {
           setConvites((prev) => ({ ...prev, [claim.id]: invite }));
           notify.success('Reivindicação aprovada. Envie o link de acesso para quem pediu.');
@@ -180,6 +214,100 @@ const ClaimsPage: React.FC = () => {
     }
   };
 
+  // ── Filtro por UF/cidade (os dados vêm da paróquia de cada pedido) ──
+  const ufs = useMemo(
+    () => [...new Set(lista.map((c) => c.parish?.state ?? '').filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [lista],
+  );
+  const cidades = useMemo(
+    () =>
+      [...new Set(lista.filter((c) => !uf || c.parish?.state === uf).map((c) => c.parish?.city ?? '').filter(Boolean))].sort((a, b) =>
+        a.localeCompare(b, 'pt-BR'),
+      ),
+    [lista, uf],
+  );
+  // Filtro que deixou de existir na lista (recarga, troca de situação) é ignorado
+  const ufAtiva = ufs.includes(uf) ? uf : '';
+  const cidadeAtiva = cidades.includes(cidade) ? cidade : '';
+  const visiveis = useMemo(
+    () => lista.filter((c) => (!ufAtiva || c.parish?.state === ufAtiva) && (!cidadeAtiva || c.parish?.city === cidadeAtiva)),
+    [lista, ufAtiva, cidadeAtiva],
+  );
+
+  // ── Aprovação em lote ──
+  // Paróquia que já tem gestão fica fora do lote: pede conferência com a equipe atual, uma a uma.
+  const selecionaveis = useMemo(() => visiveis.filter((c) => estaAberta(c) && !jaGerida(c)), [visiveis]);
+  const marcados = useMemo(() => selecionaveis.filter((c) => selecionados.has(c.id)), [selecionaveis, selecionados]);
+  const paroquiasRepetidas = useMemo(() => {
+    const vistos = new Set<string>();
+    const repetidas = new Set<string>();
+    for (const c of marcados) {
+      if (vistos.has(c.parishId)) repetidas.add(c.parishId);
+      vistos.add(c.parishId);
+    }
+    return repetidas.size;
+  }, [marcados]);
+  const loteRodando = lote?.rodando === true;
+
+  const alternar = (id: string) =>
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const marcarTodos = (apenasVerificados: boolean) => {
+    setConfirmandoLote(false);
+    setSelecionados(new Set(selecionaveis.filter((c) => !apenasVerificados || c.status === 'VERIFIED').map((c) => c.id)));
+  };
+
+  const aprovarLote = async () => {
+    const fila = marcados;
+    if (fila.length === 0 || loteRodando) return;
+    setConfirmandoLote(false);
+    setConfirmando(null);
+    pararLote.current = false;
+    const andamento: Lote = { total: fila.length, feitos: 0, aprovados: 0, comConvite: 0, falhas: [], rodando: true, interrompido: false };
+    setLote({ ...andamento });
+    // Um a um, em sequência: a mesma rota e a mesma regra da aprovação individual
+    for (const claim of fila) {
+      if (pararLote.current) {
+        andamento.interrompido = true;
+        break;
+      }
+      try {
+        const { data } = await api.patch(`/platform/claims/${encodeURIComponent(claim.id)}`, { action: 'APPROVE' });
+        const invite = lerConvite(data);
+        andamento.aprovados += 1;
+        if (invite.inviteUrl) {
+          andamento.comConvite += 1;
+          setConvites((prev) => ({ ...prev, [claim.id]: invite }));
+        }
+        setLista((prev) => prev.map((c) => (c.id === claim.id ? { ...c, status: 'APPROVED' } : c)));
+        setSelecionados((prev) => {
+          const next = new Set(prev);
+          next.delete(claim.id);
+          return next;
+        });
+      } catch (e) {
+        andamento.falhas = [
+          ...andamento.falhas,
+          { id: claim.id, paroquia: nomeParoquia(claim), erro: mensagemDeErro(e, 'Não foi possível aprovar.') },
+        ];
+      }
+      andamento.feitos += 1;
+      setLote({ ...andamento });
+    }
+    andamento.rodando = false;
+    setLote({ ...andamento });
+    if (andamento.falhas.length === 0 && !andamento.interrompido) {
+      notify.success(`${andamento.aprovados} ${andamento.aprovados === 1 ? 'reivindicação aprovada' : 'reivindicações aprovadas'}.`);
+    } else {
+      notify.warning('A aprovação em lote terminou com pendências. Veja o resumo no topo da lista.');
+    }
+  };
+
   const copiar = async (texto: string) => {
     try {
       await navigator.clipboard.writeText(texto);
@@ -196,25 +324,178 @@ const ClaimsPage: React.FC = () => {
           <TitleIcon name="paroquia" /> Reivindicações
         </h1>
         <div className="header-actions">
-          <button type="button" className="pf-btn" onClick={() => void carregar()} disabled={carregando}>
+          <button type="button" className="pf-btn" onClick={() => void carregar()} disabled={carregando || loteRodando}>
             {carregando ? 'Atualizando…' : 'Atualizar'}
           </button>
         </div>
       </div>
       <p className="pf-nota">
         Pedidos de gestão de paróquia. A aprovação é sempre daqui; o código no contato oficial é só evidência. Aprovar
-        dá 30 dias de teste às comunidades sem plano.
+        dá a gestão da paróquia no plano grátis; o teste de 30 dias do plano completo é pedido depois, pelo painel da
+        paróquia.
       </p>
 
       <div className="pf-filtros">
         <div className="pf-chips" role="group" aria-label="Situação">
           {FILTROS.map((f) => (
-            <button key={f.key || 'todas'} type="button" className={`pf-chip${filtro === f.key ? ' on' : ''}`} aria-pressed={filtro === f.key} onClick={() => setFiltro(f.key)}>
+            <button
+              key={f.key || 'todas'}
+              type="button"
+              className={`pf-chip${filtro === f.key ? ' on' : ''}`}
+              aria-pressed={filtro === f.key}
+              onClick={() => setFiltro(f.key)}
+              disabled={loteRodando}
+            >
               {f.label}
             </button>
           ))}
         </div>
+        {ufs.length > 0 && (
+          <>
+            <span className="pf-sep" aria-hidden="true" />
+            <select
+              aria-label="Filtrar por UF"
+              value={ufAtiva}
+              disabled={loteRodando}
+              onChange={(e) => {
+                setUf(e.target.value);
+                setCidade('');
+                setConfirmandoLote(false);
+              }}
+            >
+              <option value="">Todas as UFs</option>
+              {ufs.map((u) => (
+                <option key={u} value={u}>
+                  {u}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Filtrar por cidade"
+              className="pf-select-largo"
+              value={cidadeAtiva}
+              disabled={loteRodando}
+              onChange={(e) => {
+                setCidade(e.target.value);
+                setConfirmandoLote(false);
+              }}
+            >
+              <option value="">Todas as cidades</option>
+              {cidades.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
       </div>
+
+      {(selecionaveis.length > 0 || lote) && (
+        <div className="pf-caixa pf-lote">
+          {selecionaveis.length > 0 && !loteRodando && (
+            <>
+              <div className="pf-acoes pf-lote-barra">
+                <strong className="pf-lote-conta" aria-live="polite">
+                  {marcados.length} de {selecionaveis.length} {selecionaveis.length === 1 ? 'pedido marcado' : 'pedidos marcados'}
+                </strong>
+                <button type="button" className="pf-btn pf-btn-mini" onClick={() => marcarTodos(false)}>
+                  Marcar todos
+                </button>
+                {selecionaveis.some((c) => c.status === 'VERIFIED') && (
+                  <button type="button" className="pf-btn pf-btn-mini" onClick={() => marcarTodos(true)}>
+                    Só os verificados
+                  </button>
+                )}
+                {marcados.length > 0 && (
+                  <button
+                    type="button"
+                    className="pf-btn pf-btn-mini"
+                    onClick={() => {
+                      setSelecionados(new Set());
+                      setConfirmandoLote(false);
+                    }}
+                  >
+                    Limpar
+                  </button>
+                )}
+                {!confirmandoLote && (
+                  <button type="button" className="pf-btn pf-btn-mini pf-btn-ok" disabled={marcados.length === 0} onClick={() => setConfirmandoLote(true)}>
+                    Aprovar selecionados
+                  </button>
+                )}
+              </div>
+              {confirmandoLote && marcados.length > 0 && (
+                <div className="pf-acoes pf-confirma pf-lote-confirma">
+                  <span className="pf-meta">
+                    Aprovar {marcados.length} {marcados.length === 1 ? 'pedido' : 'pedidos'}? Cada pessoa recebe a gestão da
+                    paróquia que pediu, no plano grátis. A aprovação em lote não leva nota.
+                    {paroquiasRepetidas > 0 &&
+                      ` Atenção: ${paroquiasRepetidas} ${paroquiasRepetidas === 1 ? 'paróquia tem' : 'paróquias têm'} mais de um pedido marcado; todos serão aprovados.`}
+                  </span>
+                  <button type="button" className="pf-btn pf-btn-mini" onClick={() => setConfirmandoLote(false)}>
+                    Voltar
+                  </button>
+                  <button type="button" className="pf-btn pf-btn-mini pf-btn-ok" onClick={() => void aprovarLote()}>
+                    Sim, aprovar {marcados.length}
+                  </button>
+                </div>
+              )}
+              <p className="pf-meta">
+                Pedidos de paróquia que já tem gestão ficam fora do lote: aprove um a um, depois de conferir com a equipe
+                atual.
+              </p>
+            </>
+          )}
+          {lote && (
+            <div className="pf-lote-andamento" role="status" aria-live="polite">
+              <div className="pf-acoes pf-lote-barra">
+                <strong className="pf-lote-conta">
+                  {lote.rodando
+                    ? `Aprovando ${Math.min(lote.feitos + 1, lote.total)} de ${lote.total}…`
+                    : `${lote.interrompido ? 'Lote interrompido' : 'Lote concluído'}: ${lote.aprovados} de ${lote.total} ${lote.aprovados === 1 ? 'aprovado' : 'aprovados'}`}
+                </strong>
+                {lote.rodando ? (
+                  <button
+                    type="button"
+                    className="pf-btn pf-btn-mini pf-btn-perigo"
+                    onClick={() => {
+                      pararLote.current = true;
+                    }}
+                  >
+                    Parar depois deste
+                  </button>
+                ) : (
+                  <button type="button" className="pf-btn pf-btn-mini" onClick={() => setLote(null)}>
+                    Fechar resumo
+                  </button>
+                )}
+              </div>
+              <progress className="pf-lote-progresso" max={lote.total} value={lote.feitos} aria-label="Andamento da aprovação em lote" />
+              {!lote.rodando && lote.comConvite > 0 && (
+                <p className="pf-meta">
+                  {lote.comConvite} {lote.comConvite === 1 ? 'aprovação gerou' : 'aprovações geraram'} link de acesso. Os links
+                  estão nos cartões abaixo: envie agora, porque eles somem da tela ao atualizar a lista.
+                </p>
+              )}
+              {lote.falhas.length > 0 && (
+                <>
+                  <p className="pf-erro">
+                    {lote.falhas.length} {lote.falhas.length === 1 ? 'pedido não foi aprovado e continua marcado' : 'pedidos não foram aprovados e continuam marcados'}:
+                  </p>
+                  <ul className="pf-lote-falhas">
+                    {lote.falhas.map((f) => (
+                      <li key={f.id}>
+                        <strong>{f.paroquia}</strong>: {f.erro}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {erro && (
         <p className="pf-erro">
@@ -226,15 +507,19 @@ const ClaimsPage: React.FC = () => {
       )}
       {carregando && lista.length === 0 && <p className="pf-vazio">Carregando…</p>}
       {!carregando && !erro && lista.length === 0 && <p className="pf-vazio">Nenhuma reivindicação nesta situação.</p>}
+      {!carregando && !erro && lista.length > 0 && visiveis.length === 0 && (
+        <p className="pf-vazio">Nenhuma reivindicação nesta cidade/UF.</p>
+      )}
 
       <ul className="pf-cards">
-        {lista.map((c) => {
-          const paroquia = c.parish?.name ?? c.parishName ?? c.parishId;
+        {visiveis.map((c) => {
+          const paroquia = nomeParoquia(c);
           const local = [c.parish?.city && c.parish?.state ? `${c.parish.city}/${c.parish.state}` : c.parish?.city, dioceseNome(c.parish?.diocese)]
             .filter(Boolean)
             .join(' · ');
-          const gerida = c.managed ?? !!c.parish?.managedAt;
-          const aberta = c.status === 'PENDING' || c.status === 'VERIFIED';
+          const gerida = jaGerida(c);
+          const aberta = estaAberta(c);
+          const marcavel = aberta && !gerida;
           const conv = convites[c.id];
           const wa = whatsappNumber(c.phone);
           const evid = urlSegura(c.evidenceUrl);
@@ -242,9 +527,24 @@ const ClaimsPage: React.FC = () => {
           return (
             <li key={c.id} className="pf-caixa pf-claim">
               <div className="pf-claim-topo">
-                <div>
-                  <strong className="pf-nome">{paroquia}</strong>
-                  {local && <span className="pf-sub">{local}</span>}
+                <div className="pf-claim-titulo">
+                  {marcavel && (
+                    <input
+                      type="checkbox"
+                      className="pf-claim-check"
+                      checked={selecionados.has(c.id)}
+                      disabled={loteRodando}
+                      onChange={() => {
+                        setConfirmandoLote(false);
+                        alternar(c.id);
+                      }}
+                      aria-label={`Marcar o pedido de ${c.name} para ${paroquia}`}
+                    />
+                  )}
+                  <div>
+                    <strong className="pf-nome">{paroquia}</strong>
+                    {local && <span className="pf-sub">{local}</span>}
+                  </div>
                 </div>
                 <span className={`status-badge ${STATUS_TONE[c.status] ?? 'gray'}`}>{STATUS_LABEL[c.status] ?? c.status}</span>
               </div>
@@ -374,7 +674,7 @@ const ClaimsPage: React.FC = () => {
                     <div className="pf-acoes pf-confirma">
                       <span className="pf-meta">
                         {conf === 'APPROVE'
-                          ? `Aprovar dá a gestão de ${paroquia} a ${c.name} e 30 dias de teste. Confirma?`
+                          ? `Aprovar dá a gestão de ${paroquia} a ${c.name}, no plano grátis. Confirma?`
                           : `Recusar o pedido de ${c.name}?`}
                       </span>
                       <button type="button" className="pf-btn pf-btn-mini" onClick={() => setConfirmando(null)} disabled={enviando === c.id}>
@@ -393,10 +693,10 @@ const ClaimsPage: React.FC = () => {
                     <div className="pf-acoes">
                       {aberta ? (
                         <>
-                          <button type="button" className="pf-btn pf-btn-mini pf-btn-ok" onClick={() => setConfirmando({ id: c.id, action: 'APPROVE' })}>
+                          <button type="button" className="pf-btn pf-btn-mini pf-btn-ok" disabled={loteRodando} onClick={() => setConfirmando({ id: c.id, action: 'APPROVE' })}>
                             Aprovar
                           </button>
-                          <button type="button" className="pf-btn pf-btn-mini pf-btn-perigo" onClick={() => setConfirmando({ id: c.id, action: 'REJECT' })}>
+                          <button type="button" className="pf-btn pf-btn-mini pf-btn-perigo" disabled={loteRodando} onClick={() => setConfirmando({ id: c.id, action: 'REJECT' })}>
                             Recusar
                           </button>
                         </>

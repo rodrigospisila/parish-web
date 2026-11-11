@@ -13,13 +13,18 @@ import {
   type MassRecurrence,
 } from '../../utils/recorrencia';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePlanEntitlements } from '../../hooks/usePlanEntitlements';
 import {
+  DEFAULT_DURATION_MIN,
   SuspendDatesModal,
   TYPE_META,
   UpcomingWeekPanel,
   addDaysISO,
+  hhmmToMinutes,
+  isConfession,
   longDate,
   occDate,
+  timeRange,
   todayISO,
   type FixedOccurrence,
 } from './ScheduleSuspensions';
@@ -62,6 +67,10 @@ interface MassSchedule {
   weeksOfMonth?: number[];
   dayOfMonth?: number | null;
   time: string;
+  /** Fim (HH:MM), opcional — sem ele vale a duração padrão do tipo */
+  endTime?: string | null;
+  /** Em andamento agora (ocorrência de hoje, no fuso da comunidade), quando o backend informa */
+  happeningNow?: boolean;
   type: 'MASS' | 'WORD_CELEBRATION' | 'CONFESSION' | 'ADORATION' | 'ROSARY';
   notes?: string | null;
   isSpecial: boolean;
@@ -94,6 +103,10 @@ const normalizarHora = (time: string | null | undefined) => {
 
 const FixedSchedulePage: React.FC = () => {
   const { user } = useAuth();
+  // Plano grátis: a agenda fixa é livre, mas escala/pastorais são do plano completo —
+  // sem o plano, some tudo que é de escala (e não se chama a rota paga de pendências)
+  const { isLocked, ready: planoPronto } = usePlanEntitlements();
+  const escalasBloqueadas = isLocked('schedules');
   const canManage = MANAGE_ROLES.includes(user?.role ?? '');
   // Coordenador de pastoral: vincula/desvincula a PRÓPRIA pastoral aos
   // horários (o backend valida que ele coordena a pastoral em questão)
@@ -116,6 +129,7 @@ const FixedSchedulePage: React.FC = () => {
     weeksOfMonth: [] as number[],
     dayOfMonth: 13,
     time: '',
+    endTime: '',
     notes: '',
     isSpecial: false,
     specialDate: '',
@@ -145,6 +159,13 @@ const FixedSchedulePage: React.FC = () => {
   const [weekRefresh, setWeekRefresh] = useState(0);
   // Contagem de datas suspensas quando a listagem não traz upcomingCancellations
   const [fallbackCancelled, setFallbackCancelled] = useState<Record<string, { date: string; reason: string | null }[]>>({});
+
+  // Relógio do selo "Acontecendo agora" (atualiza a cada minuto)
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!isPastoralCoord) return;
@@ -194,7 +215,8 @@ const FixedSchedulePage: React.FC = () => {
 
       const from = new Date().toISOString().slice(0, 10);
       const to = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      api
+      if (!planoPronto || escalasBloqueadas) setPendingByMass({});
+      else api
         .get('/mass-schedules/pending', {
           params: { from, to, communityId: communityFilter || undefined },
         })
@@ -211,7 +233,7 @@ const FixedSchedulePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [communityFilter]);
+  }, [communityFilter, planoPronto, escalasBloqueadas]);
 
   useEffect(() => {
     fetchData();
@@ -251,6 +273,7 @@ const FixedSchedulePage: React.FC = () => {
       weeksOfMonth: [],
       dayOfMonth: 13,
       time: '',
+      endTime: '',
       notes: '',
       isSpecial: false,
       specialDate: '',
@@ -271,6 +294,7 @@ const FixedSchedulePage: React.FC = () => {
       // Horário legado "7:30" (carga antiga) vira "07:30": o campo de hora e a
       // validação HH:MM do servidor não aceitam sem o zero (R3#49)
       time: normalizarHora(schedule.time),
+      endTime: normalizarHora(schedule.endTime),
       notes: schedule.notes ?? '',
       isSpecial: schedule.isSpecial,
       specialDate: schedule.specialDate ? schedule.specialDate.slice(0, 10) : '',
@@ -309,6 +333,20 @@ const FixedSchedulePage: React.FC = () => {
       notify.warning('Informe o horário no formato HH:MM.');
       return;
     }
+    if (form.endTime) {
+      const inicio = hhmmToMinutes(form.time);
+      const fim = hhmmToMinutes(form.endTime);
+      if (fim === null) {
+        notify.warning('Informe o horário de término no formato HH:MM ou deixe o campo vazio.');
+        return;
+      }
+      if (inicio !== null && fim <= inicio) {
+        notify.warning('O horário de término precisa ser depois do início (no mesmo dia).');
+        return;
+      }
+    }
+    // Fim: só vai quando preenchido; na edição, esvaziar o campo limpa (null)
+    const endTime = form.endTime ? normalizarHora(form.endTime) : editing?.endTime ? null : undefined;
     const payload = {
       communityId: form.communityId,
       type: form.type,
@@ -317,6 +355,7 @@ const FixedSchedulePage: React.FC = () => {
       weeksOfMonth: form.recurrence === 'MONTHLY_NTH' ? form.weeksOfMonth : [],
       dayOfMonth: form.recurrence === 'MONTHLY_DAY' ? Number(form.dayOfMonth) : undefined,
       time: normalizarHora(form.time),
+      ...(endTime !== undefined ? { endTime } : {}),
       notes: form.notes || undefined,
       isSpecial: form.isSpecial,
       specialDate: form.isSpecial && form.specialDate ? new Date(form.specialDate).toISOString() : undefined,
@@ -352,7 +391,11 @@ const FixedSchedulePage: React.FC = () => {
   };
 
   const handleDelete = async (schedule: MassSchedule) => {
-    const confirmed = await confirm.delete(`o horário fixo de ${TYPE_META[schedule.type].label}`);
+    const confirmed = await confirm.delete(
+      isConfession(schedule.type)
+        ? `o horário de atendimento de confissão das ${schedule.time}`
+        : `o horário fixo de ${TYPE_META[schedule.type].label}`,
+    );
     if (!confirmed) return;
     try {
       await api.delete(`/mass-schedules/${schedule.id}`);
@@ -438,6 +481,32 @@ const FixedSchedulePage: React.FC = () => {
   const cancellationsOf = (schedule: MassSchedule) =>
     schedule.upcomingCancellations ?? fallbackCancelled[schedule.id] ?? [];
 
+  /**
+   * Selo "Acontecendo agora". Vale o `happeningNow` do backend (fuso da
+   * comunidade); se a listagem não trouxer o campo, calcula pelo relógio
+   * local — APENAS para o selo. Suspenso hoje ("não haverá") nunca acende.
+   */
+  const isLiveNow = (schedule: MassSchedule) => {
+    const hoje = todayISO();
+    if (cancellationsOf(schedule).some((c) => c.date.slice(0, 10) === hoje)) return false;
+    if (typeof schedule.happeningNow === 'boolean') return schedule.happeningNow;
+    const agora = new Date(clock);
+    let aconteceHoje: boolean;
+    if (schedule.isSpecial && schedule.specialDate) {
+      aconteceHoje = schedule.specialDate.slice(0, 10) === hoje;
+    } else if (schedule.recurrence === 'MONTHLY_DAY') {
+      aconteceHoje = schedule.dayOfMonth === agora.getDate();
+    } else {
+      aconteceHoje = typeof schedule.dayOfWeek === 'number' && proximaOcorrencia(schedule, agora) === hoje;
+    }
+    if (!aconteceHoje) return false;
+    const inicio = hhmmToMinutes(schedule.time);
+    if (inicio === null) return false;
+    const fim = hhmmToMinutes(schedule.endTime) ?? inicio + (DEFAULT_DURATION_MIN[schedule.type] ?? 45);
+    const minutos = agora.getHours() * 60 + agora.getMinutes();
+    return inicio <= minutos && minutos < fim;
+  };
+
   // Painel "Próximos 7 dias": uma comunidade filtrada ou poucas no escopo
   const scopeCommunities = new Set(schedules.map((s) => s.community.id)).size;
   const weekPanelEnabled = !!communityFilter || scopeCommunities <= WEEK_PANEL_MAX_COMMUNITIES;
@@ -448,10 +517,17 @@ const FixedSchedulePage: React.FC = () => {
     return acc;
   }, {});
 
-  if (loading) return <div className="module-page"><div className="loading">Carregando...</div></div>;
+  // Término preenchido e não posterior ao início (aviso no formulário)
+  const endTimeInvalid = (() => {
+    const inicio = hhmmToMinutes(form.time);
+    const fim = hhmmToMinutes(form.endTime);
+    return !!form.endTime && inicio !== null && fim !== null && fim <= inicio;
+  })();
+
+  if (loading) return <div className={`module-page${escalasBloqueadas ? ' fixed-sem-escalas' : ''}`}><div className="loading">Carregando...</div></div>;
 
   return (
-    <div className="module-page">
+    <div className={`module-page${escalasBloqueadas ? ' fixed-sem-escalas' : ''}`}>
       <div className="page-header">
         <h1 style={{ display: 'flex', alignItems: 'center' }}><TitleIcon name="missa-proxima" /> Agenda Fixa</h1>
         <div className="header-actions">
@@ -461,10 +537,20 @@ const FixedSchedulePage: React.FC = () => {
 
       <div className="privacy-note" style={{ background: '#eef6ff', borderColor: '#b6d4fe', color: '#084298' }}>
         Horários fixos (Missa, Celebração da Palavra, Confissão, Adoração, Terço) da comunidade — toda semana ou uma vez
-        por mês, como <em>1º e 3º sábado</em> ou <em>todo dia 13</em>. Aparecem no
+        por mês, como <em>1º e 3º sábado</em> ou <em>todo dia 13</em>. {escalasBloqueadas ? (
+          <>É o que o fiel vê no mapa e no app.</>
+        ) : (
+          <>
+        Aparecem no
         <strong> calendário de Eventos</strong> nas datas certas. Vincule as <strong>pastorais</strong> que
         servem em cada horário e use <strong>Gerar escala</strong> para criar a escala de uma data — as
         atribuições são feitas na página <strong>Escalas</strong>.
+          </>
+        )}
+        <br />
+        <strong>Confissão:</strong> informe início e <strong>término</strong> do atendimento — o app mostra
+        “acontecendo agora” sozinho nesse intervalo. Num dia em que o padre não puder atender, use{' '}
+        <strong>Não haverá neste dia</strong> no horário (vale também para missa e os demais).
       </div>
 
       <div className="filters">
@@ -507,8 +593,8 @@ const FixedSchedulePage: React.FC = () => {
                     <th>Tipo</th>
                     <th>Dia</th>
                     <th>Horário</th>
-                    <th>Pastorais</th>
-                    <th>Pendências</th>
+                    <th className="col-escala">Pastorais</th>
+                    <th className="col-escala">Pendências</th>
                     <th>Ações</th>
                   </tr>
                 </thead>
@@ -557,8 +643,23 @@ const FixedSchedulePage: React.FC = () => {
                             );
                           })()}
                         </td>
-                        <td><strong>{schedule.time}</strong></td>
                         <td>
+                          <strong style={{ whiteSpace: 'nowrap' }}>{timeRange(schedule.time, schedule.endTime)}</strong>
+                          {isLiveNow(schedule) && (
+                            <span
+                              className="status-badge green susp-live"
+                              style={{ marginLeft: 6 }}
+                              title={
+                                isConfession(schedule.type)
+                                  ? 'Atendimento em andamento — é assim que o fiel vê no app'
+                                  : 'Em andamento neste momento'
+                              }
+                            >
+                              Acontecendo agora
+                            </span>
+                          )}
+                        </td>
+                        <td className="col-escala">
                           {pastorals.length === 0 ? (
                             <span style={{ color: '#999' }}>—</span>
                           ) : (
@@ -609,7 +710,7 @@ const FixedSchedulePage: React.FC = () => {
                             </div>
                           )}
                         </td>
-                        <td>
+                        <td className="col-escala">
                           {(() => {
                             const pendingDates = pendingByMass[schedule.id] ?? [];
                             if (pastorals.length === 0) {
@@ -638,7 +739,7 @@ const FixedSchedulePage: React.FC = () => {
                           <div className="fixed-actions">
                           <div className="fixed-actions-main">
                           <button
-                            className="btn-secondary"
+                            className="btn-secondary col-escala"
                             style={{ padding: '4px 10px', fontSize: '0.8rem' }}
                             onClick={() => openGenerate(schedule)}
                             title="Gerar escala para uma data"
@@ -651,9 +752,13 @@ const FixedSchedulePage: React.FC = () => {
                               className="btn-secondary"
                               style={{ padding: '4px 10px', fontSize: '0.8rem' }}
                               onClick={() => setSuspendTarget(schedule)}
-                              title="Marcar dias em que este horário não vai acontecer"
+                              title={
+                                isConfession(schedule.type)
+                                  ? 'Marcar os dias em que não haverá atendimento de confissão'
+                                  : 'Marcar os dias em que este horário não vai acontecer'
+                              }
                             >
-                              ⏸ Suspender datas
+                              ⏸ Não haverá neste dia
                             </button>
                           )}
                           {isPastoralCoord && myPastorals.length > 0 && (
@@ -710,9 +815,57 @@ const FixedSchedulePage: React.FC = () => {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Horário (HH:MM) *</label>
-                  <TimeInput required value={form.time} onChange={(value) => setForm({ ...form, time: value })} />
+                  <label htmlFor="fixed-time">
+                    {isConfession(form.type) ? 'Início do atendimento (HH:MM) *' : 'Horário (HH:MM) *'}
+                  </label>
+                  <TimeInput
+                    id="fixed-time"
+                    required
+                    value={form.time}
+                    onChange={(value) => setForm({ ...form, time: value })}
+                  />
                 </div>
+              </div>
+
+              <div className="form-group">
+                <label htmlFor="fixed-end-time">
+                  Termina às <span style={{ fontWeight: 400, color: '#8a97a6' }}>(opcional)</span>
+                </label>
+                <TimeInput
+                  id="fixed-end-time"
+                  value={form.endTime}
+                  onChange={(value) => setForm({ ...form, endTime: value })}
+                  aria-label="Termina às (opcional)"
+                />
+                {endTimeInvalid ? (
+                  <small role="alert" style={{ color: '#842029', fontWeight: 600 }}>
+                    O término precisa ser depois do início ({form.time}).
+                  </small>
+                ) : !form.endTime ? (
+                  <small style={{ color: '#6b7785' }}>
+                    Sem horário de fim, consideramos {DEFAULT_DURATION_MIN[form.type]} min.
+                  </small>
+                ) : null}
+                {isConfession(form.type) && (
+                  <div
+                    className="privacy-note"
+                    style={{ background: '#fff8e6', borderColor: '#ffe1a1', color: '#7a5b00', margin: '6px 0 0' }}
+                  >
+                    {form.endTime && !endTimeInvalid ? (
+                      <>
+                        O app mostra <strong>“acontecendo agora”</strong> das {form.time || 'início'} às{' '}
+                        {form.endTime}, sozinho. Se num dia não houver atendimento, marque{' '}
+                        <strong>Não haverá neste dia</strong>.
+                      </>
+                    ) : (
+                      <>
+                        <strong>Preencha o término do atendimento:</strong> durante esse intervalo o app mostra
+                        “acontecendo agora” para o fiel que procura confissão. Sem o término, o aviso some depois de{' '}
+                        {DEFAULT_DURATION_MIN.CONFESSION} min.
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               <label className="form-check">
@@ -829,7 +982,7 @@ const FixedSchedulePage: React.FC = () => {
               </div>
 
               {/* Pastorais vinculadas */}
-              <div className="form-group">
+              <div className="form-group col-escala">
                 <label>
                   Pastorais que servem neste horário
                   {selectedPastorals.length > 0 && (
@@ -948,7 +1101,7 @@ const FixedSchedulePage: React.FC = () => {
               {linkTarget.isSpecial && linkTarget.specialDate
                 ? `Especial ${formatCivilDate(linkTarget.specialDate)}`
                 : descreverRecorrencia(linkTarget)}{' '}
-              às <strong>{linkTarget.time}</strong> · {linkTarget.community.name}
+              às <strong>{timeRange(linkTarget.time, linkTarget.endTime)}</strong> · {linkTarget.community.name}
             </p>
             <div className="form-group">
               <label>Pastoral *</label>
@@ -991,6 +1144,7 @@ const FixedSchedulePage: React.FC = () => {
             id: suspendTarget.id,
             type: suspendTarget.type,
             time: suspendTarget.time,
+            endTime: suspendTarget.endTime ?? null,
             community: { id: suspendTarget.community.id, name: suspendTarget.community.name },
             description:
               suspendTarget.isSpecial && suspendTarget.specialDate

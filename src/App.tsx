@@ -62,6 +62,12 @@ import ClaimParishPage from './pages/public/ClaimParishPage';
 import InviteAcceptPage from './pages/public/InviteAcceptPage';
 import ImportPage from './pages/ImportPage';
 import MyParishPage from './pages/MyParishPage';
+// Lançamento (plano grátis enxuto): localização das próprias comunidades e vitrine do plano
+import MyLocationPage from './pages/MyLocationPage';
+import PlanFeaturesPage from './pages/plan/PlanFeaturesPage';
+import { FeatureShowcasePage } from './pages/plan/FeatureShowcase';
+import PlanGate from './components/PlanGate';
+import { usePlanEntitlements } from './hooks/usePlanEntitlements';
 
 /** Importação de planilha: mesmos papéis do POST /members/import (Onda 1). */
 const IMPORT_ACCESS: AccessRule = {
@@ -76,6 +82,17 @@ const RouteLoading: React.FC = () => (
   <div className="loading" role="status" style={{ padding: '2rem', textAlign: 'center', color: '#52606d' }}>
     Carregando…
   </div>
+);
+
+/**
+ * Rota de recurso do plano completo: bloqueado (modo "on" + comunidade sem
+ * acesso) → a vitrine do recurso no lugar da tela, também para URL direta.
+ * Enquanto os entitlements carregam, o carregando de rota (a vitrine não pisca).
+ */
+const Gated: React.FC<{ feature: string; children: React.ReactNode }> = ({ feature, children }) => (
+  <PlanGate feature={feature} fallback={<RouteLoading />}>
+    {children}
+  </PlanGate>
 );
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -146,6 +163,9 @@ const CoordinationOnlyRoute: React.FC<{ children: React.ReactNode; rule: AccessR
 // papel na matriz do SYSTEM_ADMIN. Qualquer falha cai em "Minha Escala".
 const BaseRoleLanding: React.FC<{ role: string }> = ({ role }) => {
   const [target, setTarget] = useState<string | null>(null);
+  // Plano grátis: escalas e catequese não estão ativas na comunidade — o fiel
+  // entra pela própria conta em vez de cair numa vitrine
+  const { isLocked, ready: planReady } = usePlanEntitlements();
 
   useEffect(() => {
     let active = true;
@@ -163,8 +183,13 @@ const BaseRoleLanding: React.FC<{ role: string }> = ({ role }) => {
     };
   }, [role]);
 
-  if (!target) {
+  if (!target || !planReady) {
     return <RouteLoading />;
+  }
+
+  const feature = target === '/admin/catechesis' ? 'catechesis' : 'schedules';
+  if (isLocked(feature)) {
+    return <Navigate to={feature === 'catechesis' && !isLocked('schedules') ? '/admin/my-schedule' : '/admin/account'} replace />;
   }
 
   return <Navigate to={target} replace />;
@@ -319,9 +344,22 @@ const App: React.FC = () => {
             } />
             <Route path="events" element={
               <RequireAccess rule={ROUTE_ACCESS.events}>
-                <EventsPage />
+                <Gated feature="events"><EventsPage /></Gated>
               </RequireAccess>
             } />
+            {/* Minha localização (plano grátis): pino e endereço das próprias comunidades */}
+            <Route path="minha-localizacao" element={
+              <RequireAccess rule={ROUTE_ACCESS['minha-localizacao']}>
+                <MyLocationPage />
+              </RequireAccess>
+            } />
+            {/* Vitrine do plano completo: índice (equipe) e página de cada recurso (todos os logados) */}
+            <Route path="recursos" element={
+              <RequireAccess rule={ROUTE_ACCESS.recursos}>
+                <PlanFeaturesPage />
+              </RequireAccess>
+            } />
+            <Route path="recursos/:feature" element={<FeatureShowcasePage />} />
             {/* Agenda Fixa: coordenador de pastoral acessa para GERAR ESCALA (CRUD segue restrito no componente/back) */}
             <Route path="fixed-schedule" element={
               <RequireAccess rule={ROUTE_ACCESS['fixed-schedule']}>
@@ -330,7 +368,7 @@ const App: React.FC = () => {
             } />
             <Route path="schedules" element={
               <CoordinationOnlyRoute rule={ROUTE_ACCESS.schedules}>
-                <SchedulesPage />
+                <Gated feature="schedules"><SchedulesPage /></Gated>
               </CoordinationOnlyRoute>
             } />
             <Route path="users" element={
@@ -358,7 +396,7 @@ const App: React.FC = () => {
             } />
             <Route path="pastorals/my" element={
               <RequireAccess rule={ROUTE_ACCESS['pastorals/my']}>
-                <MyPastoralsPage />
+                <Gated feature="pastorals"><MyPastoralsPage /></Gated>
               </RequireAccess>
             } />
             <Route path="pastorals/global" element={
@@ -368,12 +406,12 @@ const App: React.FC = () => {
             } />
             <Route path="pastorals/community" element={
               <RequireAccess rule={ROUTE_ACCESS['pastorals/community']}>
-                <CommunityPastoralsPage />
+                <Gated feature="pastorals"><CommunityPastoralsPage /></Gated>
               </RequireAccess>
             } />
             <Route path="pastorals/community/:id" element={
               <RequireAccess rule={ROUTE_ACCESS['pastorals/community']}>
-                <CommunityPastoralDetailsPage />
+                <Gated feature="pastorals"><CommunityPastoralDetailsPage /></Gated>
               </RequireAccess>
             } />
 
@@ -385,52 +423,52 @@ const App: React.FC = () => {
             } />
 
             {/* Módulos das Fases 3–4 */}
-            <Route path="my-schedule" element={<MySchedulePage />} />
+            <Route path="my-schedule" element={<Gated feature="schedules"><MySchedulePage /></Gated>} />
             <Route path="catechesis" element={
               // Fiel/voluntário CATEQUISTA também entra: a página se limita às
               // turmas dele (backend restringe a lista e valida cada ação)
               <RequireAccess rule={ROUTE_ACCESS.catechesis}>
-                <CatechesisPage />
+                <Gated feature="catechesis"><CatechesisPage /></Gated>
               </RequireAccess>
             } />
             <Route path="planning" element={
               <RequireAccess rule={ROUTE_ACCESS.planning}>
-                <PlanningPage />
+                <Gated feature="planning"><PlanningPage /></Gated>
               </RequireAccess>
             } />
             <Route path="documents" element={
               <RequireAccess rule={ROUTE_ACCESS.documents}>
-                <DocumentsPage />
+                <Gated feature="documents"><DocumentsPage /></Gated>
               </RequireAccess>
             } />
             <Route path="formation" element={
               <RequireAccess rule={ROUTE_ACCESS.formation}>
-                <FormationPage />
+                <Gated feature="formation"><FormationPage /></Gated>
               </RequireAccess>
             } />
             <Route path="rooms" element={
               <RequireAccess rule={ROUTE_ACCESS.rooms}>
-                <RoomsPage />
+                <Gated feature="rooms"><RoomsPage /></Gated>
               </RequireAccess>
             } />
             <Route path="finance" element={
               <RequireAccess rule={ROUTE_ACCESS.finance}>
-                <FinancePage />
+                <Gated feature="finance"><FinancePage /></Gated>
               </RequireAccess>
             } />
             <Route path="sacrament-processes" element={
               <RequireAccess rule={ROUTE_ACCESS['sacrament-processes']}>
-                <SacramentProcessesPage />
+                <Gated feature="sacrament-processes"><SacramentProcessesPage /></Gated>
               </RequireAccess>
             } />
             <Route path="visitation" element={
               <RequireAccess rule={ROUTE_ACCESS.visitation}>
-                <VisitationPage />
+                <Gated feature="visitation"><VisitationPage /></Gated>
               </RequireAccess>
             } />
             <Route path="swaps" element={
               <RequireAccess rule={ROUTE_ACCESS.swaps}>
-                <SwapsPage />
+                <Gated feature="swaps"><SwapsPage /></Gated>
               </RequireAccess>
             } />
             {/* Santos e Palavra Pastoral: leitura aberta a todos os logados (salvo módulo desligado) */}
@@ -441,7 +479,7 @@ const App: React.FC = () => {
             } />
             <Route path="clergy-messages" element={
               <RequireAccess rule={ROUTE_ACCESS['clergy-messages']}>
-                <ClergyMessagesPage />
+                <Gated feature="clergy-messages"><ClergyMessagesPage /></Gated>
               </RequireAccess>
             } />
           </Route>

@@ -263,8 +263,24 @@ const ClaimParishPage: React.FC = () => {
           <section className="donate-card">
             <h2 className="donate-section-title">Quero usar o Parish nesta paróquia</h2>
             <p className="donate-muted" style={{ marginTop: 0 }}>
-              Envie o pedido de gestão. A equipe do Parish confere quem é você e libera o acesso de administrador. Depois
-              da aprovação, as comunidades ganham <strong>30 dias de teste</strong> com todos os recursos.
+              Envie o pedido de gestão. Todo pedido passa por conferência: a equipe do Parish confirma quem é você antes
+              de liberar o acesso de administrador. Aprovado, a paróquia usa o <strong>plano grátis</strong>, sem prazo
+              e sem cartão.
+            </p>
+            <p className="donate-label" style={{ marginBottom: 4 }}>
+              O que a paróquia recebe de graça
+            </p>
+            <ul className="donate-muted" style={{ margin: 0, paddingLeft: '1.2rem', lineHeight: 1.6 }}>
+              <li>Horários fixos de missa e de confissão, cuidados pela própria equipe.</li>
+              <li>Confissão "acontecendo agora" no app do fiel, durante o horário cadastrado.</li>
+              <li>Aviso de "não haverá" por data, quando a missa ou a confissão não acontecer.</li>
+              <li>Cadastro de membros, sem limite de pessoas.</li>
+              <li>Ajuste da localização e do endereço das igrejas no mapa.</li>
+            </ul>
+            <p className="donate-hint" style={{ marginTop: 10 }}>
+              Catequese, escalas, dízimo, sacramentos e os demais recursos fazem parte do plano completo. O
+              administrador pode pedir 30 dias de teste pelo painel, quando quiser.{' '}
+              <Link to="/#recursos">Ver o plano completo</Link>
             </p>
             {info.managed && (
               <div className="donate-alert is-warning" role="status">
@@ -539,7 +555,11 @@ const ClaimParishPage: React.FC = () => {
           <ol className="donate-muted" style={{ paddingLeft: '1.2rem', lineHeight: 1.6 }}>
             <li>Conferimos o pedido (e, se preciso, falamos com você por {email.trim() ? 'e-mail' : 'telefone'}).</li>
             <li>Aprovado, você recebe um link para criar o seu acesso de administrador da paróquia.</li>
-            <li>As comunidades da paróquia ganham 30 dias de teste, sem cartão e sem compromisso.</li>
+            <li>
+              A paróquia já usa o plano grátis: horários de missa e de confissão, cadastro de membros e localização das
+              igrejas.
+            </li>
+            <li>Quando quiser, o administrador pede pelo painel o teste de 30 dias do plano completo.</li>
           </ol>
           <p className="donate-hint">
             Dúvidas? Escreva para <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>.

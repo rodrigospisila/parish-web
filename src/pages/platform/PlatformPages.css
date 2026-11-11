@@ -485,3 +485,15 @@
   .platform-page .pf-claim .pf-dl { grid-template-columns: 1fr; }
   .platform-page .pf-claim .pf-dl dd { margin-bottom: 4px; }
 }
+
+/* Reivindicações: aprovação em lote (aditivo) */
+.platform-page .pf-lote { margin-bottom: 12px; }
+.platform-page .pf-lote-barra { align-items: center; }
+.platform-page .pf-lote-conta { font-size: 13.5px; color: #17324d; margin-right: 6px; }
+.platform-page .pf-lote-confirma { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e3e8ef; }
+.platform-page .pf-lote > .pf-lote-andamento:not(:first-child) { margin-top: 12px; padding-top: 12px; border-top: 1px solid #e3e8ef; }
+.platform-page .pf-lote-progresso { display: block; width: 100%; height: 10px; margin: 8px 0 4px; accent-color: #2e9d62; }
+.platform-page .pf-lote-falhas { margin: 4px 0 0; padding-left: 18px; font-size: 13px; color: #3e4c59; }
+.platform-page .pf-lote-falhas li { margin-bottom: 2px; }
+.platform-page .pf-claim-titulo { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.platform-page .pf-claim-check { width: 20px; height: 20px; margin: 2px 0 0; flex: 0 0 auto; cursor: pointer; accent-color: #075aa9; }

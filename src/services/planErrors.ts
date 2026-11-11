@@ -4,7 +4,7 @@ import api from './api';
 /**
  * Erros do plano da comunidade (backend: PlanFeatureGuard / MemberLimitGuard).
  *
- * - PLAN_REQUIRED: recurso pago e a comunidade não tem plano ativo;
+ * - PLAN_REQUIRED: recurso do plano completo e a comunidade está no plano grátis;
  * - PLAN_SCOPE: id de comunidade/paróquia fora do escopo do usuário;
  * - PLAN_MEMBER_LIMIT: a comunidade atingiu o limite de membros da faixa.
  *
@@ -20,13 +20,17 @@ export type PlanErrorCode = 'PLAN_REQUIRED' | 'PLAN_SCOPE' | 'PLAN_MEMBER_LIMIT'
 /** Tela "Meu plano" (planos, faturas e contratação da paróquia). */
 export const MY_PLAN_PATH = '/admin/meu-plano';
 
+/** Vitrine dos recursos do plano: índice e página de cada recurso. */
+export const PLAN_FEATURES_PATH = '/admin/recursos';
+export const planFeaturePath = (feature: string) => `${PLAN_FEATURES_PATH}/${encodeURIComponent(feature)}`;
+
 /** Quem abre o "Meu plano" e, por isso, recebe o atalho no aviso (saas-implantacao-07 / eng-acessos-24). */
 const PLAN_MANAGER_ROLES = ['PARISH_ADMIN', 'DIOCESAN_ADMIN', 'SYSTEM_ADMIN'];
 
 /** Mensagens para quem NÃO administra o plano (coordenação, voluntários...). */
 export const PLAN_MESSAGES: Record<PlanErrorCode, string> = {
   PLAN_REQUIRED:
-    'Este recurso faz parte do plano da comunidade, que ainda não está ativo. Calendário, mapa e liturgia continuam liberados; para ativar, fale com a coordenação da sua paróquia.',
+    'Este recurso faz parte do plano completo e não está ativo nesta comunidade. O cadastro de membros, os horários de missa e confissão e a localização continuam liberados. Para ativar, peça ao responsável pela paróquia.',
   PLAN_SCOPE: 'Esta comunidade está fora do seu acesso.',
   PLAN_MEMBER_LIMIT:
     'A comunidade atingiu o limite de membros ativos da faixa do plano (conta também quem entrou pelo app). Para mudar de faixa, fale com a coordenação da sua paróquia.',
@@ -35,7 +39,7 @@ export const PLAN_MESSAGES: Record<PlanErrorCode, string> = {
 /** Mensagens para a administração da paróquia: o caminho é o "Meu plano". */
 export const PLAN_MESSAGES_FOR_MANAGERS: Record<PlanErrorCode, string> = {
   PLAN_REQUIRED:
-    'Este recurso faz parte do plano da comunidade, que ainda não está ativo. Calendário, mapa e liturgia continuam liberados. Veja as opções de teste e contratação em "Meu plano".',
+    'Este recurso faz parte do plano completo e não está ativo nesta comunidade. O cadastro de membros, os horários de missa e confissão e a localização continuam liberados. Você pode pedir o teste de 30 dias ou contratar em "Meu plano".',
   PLAN_SCOPE: PLAN_MESSAGES.PLAN_SCOPE,
   PLAN_MEMBER_LIMIT:
     'A comunidade atingiu o limite de membros ativos da faixa do plano (conta também quem entrou pelo app). Você pode mudar de faixa em "Meu plano".',
@@ -73,7 +77,7 @@ export interface PlanRequiredDetail {
   code: PlanErrorCode;
   feature: string | null;
   message: string;
-  /** Atalho para o "Meu plano" (só para quem administra o plano) */
+  /** Atalho do aviso: a vitrine do recurso (PLAN_REQUIRED) ou o "Meu plano" (quem administra o plano) */
   action?: { label: string; href: string } | null;
 }
 
@@ -92,10 +96,18 @@ function onPlanError(error: any) {
     data.message = message;
     data.friendly = true;
   }
-  const action = code !== 'PLAN_SCOPE' && managesPlan(role) ? { label: 'Ver meu plano', href: MY_PLAN_PATH } : null;
+  const feature = typeof data.feature === 'string' && data.feature ? data.feature : null;
+  // Recurso fora do plano: o aviso leva à vitrine daquele recurso (o que ele faz,
+  // teste e planos); sem a chave do recurso, ao índice. Limite de membros: "Meu plano".
+  const action =
+    code === 'PLAN_REQUIRED'
+      ? { label: 'Conhecer este recurso', href: feature ? planFeaturePath(feature) : PLAN_FEATURES_PATH }
+      : code === 'PLAN_MEMBER_LIMIT' && managesPlan(role)
+        ? { label: 'Ver meu plano', href: MY_PLAN_PATH }
+        : null;
   window.dispatchEvent(
     new CustomEvent<PlanRequiredDetail>(PLAN_REQUIRED_EVENT, {
-      detail: { code, feature: typeof data.feature === 'string' ? data.feature : null, message, action },
+      detail: { code, feature, message, action },
     }),
   );
 }
