@@ -45,7 +45,7 @@ import ClergyMessagesPage from './pages/modules/ClergyMessagesPage';
 import FixedSchedulePage from './pages/modules/FixedSchedulePage';
 import { PrivacyPage, TermsPage, SupportPage } from './pages/LegalPages';
 import AccessDenied from './components/AccessDenied';
-import { ROUTE_ACCESS, coordinatesAnyPastoral, roleAllows, type AccessRule } from './components/accessRules';
+import { BASE_ROLES, ROUTE_ACCESS, coordinatesAnyPastoral, roleAllows, type AccessRule } from './components/accessRules';
 import { loadDisabledModules, useModuleAccess } from './hooks/useModuleAccess';
 import DonatePage from './pages/public/DonatePage';
 import GiftStatusPage from './pages/public/GiftStatusPage';
@@ -89,11 +89,27 @@ const RouteLoading: React.FC = () => (
  * acesso) → a vitrine do recurso no lugar da tela, também para URL direta.
  * Enquanto os entitlements carregam, o carregando de rota (a vitrine não pisca).
  */
-const Gated: React.FC<{ feature: string; children: React.ReactNode }> = ({ feature, children }) => (
-  <PlanGate feature={feature} fallback={<RouteLoading />}>
+const Gated: React.FC<{ feature: string; soft?: boolean; children: React.ReactNode }> = ({ feature, soft, children }) => (
+  <PlanGate feature={feature} soft={soft} fallback={<RouteLoading />}>
     {children}
   </PlanGate>
 );
+
+/**
+ * Catequese: a coordenação segue o plano da comunidade (guarda dura); o
+ * catequista de papel de base entra pela turma dele, que pode ser de uma
+ * comunidade COM plano mesmo que a comunidade principal dele não tenha —
+ * guarda suave (a vitrine só entra se o backend devolver PLAN_REQUIRED).
+ */
+const CatechesisGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  const baseRole = (BASE_ROLES as readonly string[]).includes(user?.role ?? '');
+  return (
+    <Gated feature="catechesis" soft={baseRole}>
+      {children}
+    </Gated>
+  );
+};
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { token, user, loading } = useAuth();
@@ -163,8 +179,10 @@ const CoordinationOnlyRoute: React.FC<{ children: React.ReactNode; rule: AccessR
 // papel na matriz do SYSTEM_ADMIN. Qualquer falha cai em "Minha Escala".
 const BaseRoleLanding: React.FC<{ role: string }> = ({ role }) => {
   const [target, setTarget] = useState<string | null>(null);
-  // Plano grátis: escalas e catequese não estão ativas na comunidade — o fiel
-  // entra pela própria conta em vez de cair numa vitrine
+  // Plano grátis: sem escala ativa na comunidade, o fiel entra pela própria
+  // conta em vez de cair numa vitrine. O CATEQUISTA nunca é desviado: se o
+  // /catechesis/my-classes devolveu turmas, o backend já liberou a turma dele
+  // (rota "minha": vale a comunidade da turma, não a comunidade principal)
   const { isLocked, ready: planReady } = usePlanEntitlements();
 
   useEffect(() => {
@@ -187,9 +205,8 @@ const BaseRoleLanding: React.FC<{ role: string }> = ({ role }) => {
     return <RouteLoading />;
   }
 
-  const feature = target === '/admin/catechesis' ? 'catechesis' : 'schedules';
-  if (isLocked(feature)) {
-    return <Navigate to={feature === 'catechesis' && !isLocked('schedules') ? '/admin/my-schedule' : '/admin/account'} replace />;
+  if (target === '/admin/my-schedule' && isLocked('schedules')) {
+    return <Navigate to="/admin/account" replace />;
   }
 
   return <Navigate to={target} replace />;
@@ -396,7 +413,8 @@ const App: React.FC = () => {
             } />
             <Route path="pastorals/my" element={
               <RequireAccess rule={ROUTE_ACCESS['pastorals/my']}>
-                <Gated feature="pastorals"><MyPastoralsPage /></Gated>
+                {/* Rota "minha": vale a comunidade das pastorais do usuário (guarda suave) */}
+                <Gated feature="pastorals" soft><MyPastoralsPage /></Gated>
               </RequireAccess>
             } />
             <Route path="pastorals/global" element={
@@ -423,12 +441,13 @@ const App: React.FC = () => {
             } />
 
             {/* Módulos das Fases 3–4 */}
-            <Route path="my-schedule" element={<Gated feature="schedules"><MySchedulePage /></Gated>} />
+            {/* Rota "minha": vale a comunidade das escalas do usuário (guarda suave) */}
+            <Route path="my-schedule" element={<Gated feature="schedules" soft><MySchedulePage /></Gated>} />
             <Route path="catechesis" element={
               // Fiel/voluntário CATEQUISTA também entra: a página se limita às
               // turmas dele (backend restringe a lista e valida cada ação)
               <RequireAccess rule={ROUTE_ACCESS.catechesis}>
-                <Gated feature="catechesis"><CatechesisPage /></Gated>
+                <CatechesisGate><CatechesisPage /></CatechesisGate>
               </RequireAccess>
             } />
             <Route path="planning" element={

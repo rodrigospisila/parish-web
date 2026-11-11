@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import TitleIcon from '../../components/TitleIcon';
 import api, { getErrorMessage } from '../../services/api';
@@ -162,6 +162,8 @@ const FixedSchedulePage: React.FC = () => {
 
   // Relógio do selo "Acontecendo agora" (atualiza a cada minuto)
   const [clock, setClock] = useState(() => Date.now());
+  // Instante em que a lista chegou: o `happeningNow` do servidor só vale até o próximo tique do relógio
+  const [liveLoadedAt, setLiveLoadedAt] = useState(0);
   useEffect(() => {
     const timer = window.setInterval(() => setClock(Date.now()), 60_000);
     return () => window.clearInterval(timer);
@@ -175,6 +177,32 @@ const FixedSchedulePage: React.FC = () => {
       .catch(() => setMyPastorals([]));
   }, [isPastoralCoord]);
 
+  // Pendências de escala (rota do plano completo): fora da carga da lista, para a
+  // lista NÃO ser refeita só porque os entitlements chegaram depois
+  const planoRef = useRef({ pronto: planoPronto, bloqueadas: escalasBloqueadas });
+  planoRef.current = { pronto: planoPronto, bloqueadas: escalasBloqueadas };
+  const listaCarregada = useRef(false);
+  const loadPending = useCallback(() => {
+    if (!planoRef.current.pronto || planoRef.current.bloqueadas) {
+      setPendingByMass({});
+      return;
+    }
+    const from = new Date().toISOString().slice(0, 10);
+    const to = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    api
+      .get('/mass-schedules/pending', {
+        params: { from, to, communityId: communityFilter || undefined },
+      })
+      .then((res) => {
+        const map: Record<string, string[]> = {};
+        for (const item of res.data || []) {
+          (map[item.massScheduleId] ??= []).push(item.date);
+        }
+        setPendingByMass(map);
+      })
+      .catch(() => setPendingByMass({}));
+  }, [communityFilter]);
+
   const fetchData = useCallback(async () => {
     try {
       const [schedulesRes, communitiesRes] = await Promise.all([
@@ -182,6 +210,7 @@ const FixedSchedulePage: React.FC = () => {
         api.get('/communities'),
       ]);
       setSchedules(schedulesRes.data);
+      setLiveLoadedAt(Date.now());
       setCommunities(communitiesRes.data);
 
       // Selo "N datas suspensas": usa upcomingCancellations; se a listagem não
@@ -213,31 +242,24 @@ const FixedSchedulePage: React.FC = () => {
         setFallbackCancelled({});
       }
 
-      const from = new Date().toISOString().slice(0, 10);
-      const to = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      if (!planoPronto || escalasBloqueadas) setPendingByMass({});
-      else api
-        .get('/mass-schedules/pending', {
-          params: { from, to, communityId: communityFilter || undefined },
-        })
-        .then((res) => {
-          const map: Record<string, string[]> = {};
-          for (const item of res.data || []) {
-            (map[item.massScheduleId] ??= []).push(item.date);
-          }
-          setPendingByMass(map);
-        })
-        .catch(() => setPendingByMass({}));
+      listaCarregada.current = true;
+      loadPending();
     } catch (error) {
       notify.error(getErrorMessage(error, 'Erro ao carregar a agenda fixa'));
     } finally {
       setLoading(false);
     }
-  }, [communityFilter, planoPronto, escalasBloqueadas]);
+  }, [communityFilter, loadPending]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Entitlements chegaram (ou mudaram) depois da lista: só as pendências são refeitas
+  useEffect(() => {
+    if (listaCarregada.current) loadPending();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planoPronto, escalasBloqueadas]);
 
   // Carrega as pastorais da comunidade selecionada no modal
   useEffect(() => {
@@ -482,14 +504,20 @@ const FixedSchedulePage: React.FC = () => {
     schedule.upcomingCancellations ?? fallbackCancelled[schedule.id] ?? [];
 
   /**
-   * Selo "Acontecendo agora". Vale o `happeningNow` do backend (fuso da
-   * comunidade); se a listagem não trouxer o campo, calcula pelo relógio
-   * local — APENAS para o selo. Suspenso hoje ("não haverá") nunca acende.
+   * Selo "Acontecendo agora". No carregamento vale o `happeningNow` do backend
+   * (fuso da comunidade); a partir do tique seguinte do relógio (1 min) o selo é
+   * recalculado pelo relógio local — início, término (ou duração padrão do tipo)
+   * e a suspensão de hoje — para não ficar congelado com a tela aberta.
+   * APENAS para o selo. Suspenso hoje ("não haverá") nunca acende.
    */
   const isLiveNow = (schedule: MassSchedule) => {
     const hoje = todayISO();
     if (cancellationsOf(schedule).some((c) => c.date.slice(0, 10) === hoje)) return false;
-    if (typeof schedule.happeningNow === 'boolean') return schedule.happeningNow;
+    const doServidor = typeof schedule.happeningNow === 'boolean' ? schedule.happeningNow : null;
+    // Lista recém-carregada (nenhum tique depois dela): o servidor é quem sabe
+    if (doServidor !== null && clock <= liveLoadedAt) return doServidor;
+    // Sem horário legível não há como recalcular: fica o que o servidor disse
+    if (hhmmToMinutes(schedule.time) === null) return doServidor ?? false;
     const agora = new Date(clock);
     let aconteceHoje: boolean;
     if (schedule.isSpecial && schedule.specialDate) {
@@ -763,7 +791,7 @@ const FixedSchedulePage: React.FC = () => {
                           )}
                           {isPastoralCoord && myPastorals.length > 0 && (
                             <button
-                              className="btn-secondary"
+                              className="btn-secondary col-escala"
                               style={{ padding: '4px 10px', fontSize: '0.8rem' }}
                               onClick={() => openLink(schedule)}
                               title="Vincular uma pastoral que você coordena a este horário"

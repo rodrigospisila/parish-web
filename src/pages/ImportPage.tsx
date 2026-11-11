@@ -26,6 +26,9 @@ import {
 } from '../components/import/importSchema';
 import './modules/ModulePages.css';
 import './ImportPage.css';
+import './plan/plan.css';
+import { usePlanEntitlements } from '../hooks/usePlanEntitlements';
+import { planFeaturePath } from '../services/planErrors';
 
 /**
  * Assistente "Importar planilha" (Onda 1 — C5; saas-implantacao-09, ux-web-03).
@@ -111,6 +114,12 @@ const ImportPage: React.FC = () => {
 
   const [step, setStep] = useState<Step>(1);
   const [kind, setKind] = useState<ImportKind>('MEMBERS');
+  // Dízimo é do plano completo: com o recurso bloqueado, "Dizimistas" fica desabilitado (com o caminho da vitrine)
+  const { isLocked } = usePlanEntitlements();
+  const tithersLocked = isLocked('tithe');
+  useEffect(() => {
+    if (tithersLocked) setKind((current) => (current === 'TITHERS' ? 'MEMBERS' : current));
+  }, [tithersLocked]);
   const [communityId, setCommunityId] = useState(fixedCommunityId ?? '');
   const [communities, setCommunities] = useState<CommunityOption[]>([]);
   const [communitySearch, setCommunitySearch] = useState('');
@@ -448,20 +457,37 @@ const ImportPage: React.FC = () => {
             </h2>
             <fieldset className="import-kinds">
               <legend className="sr-only">Tipo de importação</legend>
-              {(Object.keys(KIND_INFO) as ImportKind[]).map((key) => (
-                <label key={key} className={`import-kind${kind === key ? ' is-active' : ''}`}>
-                  <input type="radio" name="import-kind" value={key} checked={kind === key} onChange={() => {
+              {(Object.keys(KIND_INFO) as ImportKind[]).map((key) => {
+                const kindLocked = key === 'TITHERS' && tithersLocked;
+                return (
+                <label key={key} className={`import-kind${kind === key ? ' is-active' : ''}`} style={kindLocked ? { background: '#f7f9fb' } : undefined}>
+                  <input type="radio" name="import-kind" value={key} checked={kind === key} disabled={kindLocked} onChange={() => {
                       setKind(key);
                       if (sheet) setMapping(suggestMapping(headers, key));
                     }}
                   />
                   <span>
                     <strong>{KIND_INFO[key].title}</strong>
+                    {kindLocked && (
+                      <>
+                        {' '}
+                        <span className="planv-badge planv-badge--plan">Plano completo</span>
+                      </>
+                    )}
                     <br />
                     <span className="import-muted">{KIND_INFO[key].description}</span>
+                    {kindLocked && (
+                      <>
+                        <br />
+                        <span className="import-muted">
+                          O dízimo não está ativo nesta comunidade. <Link to={planFeaturePath('tithe')}>Conhecer o recurso</Link>
+                        </span>
+                      </>
+                    )}
                   </span>
                 </label>
-              ))}
+                );
+              })}
             </fieldset>
 
             <div className="import-field">

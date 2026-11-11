@@ -68,6 +68,15 @@ export function isForceFreeDev(): boolean {
   }
 }
 
+/**
+ * Recursos de nível PARÓQUIA no backend (`@RequiresFeature(..., { level: 'parish' })`):
+ * passam se QUALQUER comunidade da paróquia tiver plano — não só a do usuário.
+ */
+export const PARISH_LEVEL_FEATURES: readonly string[] = ['planning', 'tithe', 'formation'];
+
+/** Papéis cujo escopo é a paróquia/diocese inteira (`paidCommunityIds` responde por eles). */
+const SCOPE_ADMIN_ROLES: readonly string[] = ['PARISH_ADMIN', 'DIOCESAN_ADMIN'];
+
 /** Recarrega no máximo uma vez a cada 30 s quando chega um PLAN_REQUIRED. */
 const REFRESH_ON_ERROR_MS = 30_000;
 
@@ -102,26 +111,58 @@ function subscribe(listener: () => void) {
 
 const getSnapshot = () => snapshot;
 
-/** Busca os entitlements da chave; recarga da mesma chave mantém o dado atual até a resposta. */
-function fetchEntitlements(key: string | null) {
+/** Limite da chamada: passou disso, o painel abre sem bloqueio (não fica em "Carregando…"). */
+const ENTITLEMENTS_TIMEOUT_MS = 8_000;
+/** Novas tentativas em segundo plano depois de falha/estouro (espera crescente). */
+const RETRY_DELAYS_MS = [10_000, 30_000, 60_000];
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearRetry() {
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = null;
+}
+
+/**
+ * Busca os entitlements da chave; recarga da mesma chave mantém o dado atual até a resposta.
+ * A chamada tem limite de 8 s: se falhar ou pendurar, publica `ready` SEM bloqueio (quem
+ * decide é o backend, tela a tela) e tenta de novo em segundo plano.
+ */
+function fetchEntitlements(key: string | null, attempt = 0) {
   const seq = ++requestSeq;
+  clearRetry();
   if (!key) {
     publish({ key: null, data: null, ready: false });
     return;
   }
   if (snapshot.key !== key) publish({ key, data: null, ready: false });
+
+  const giveUp = () => {
+    if (seq !== requestSeq) return;
+    // Falhou/demorou: nada aparece bloqueado; o dado anterior da mesma sessão continua valendo
+    publish({ key, data: snapshot.key === key ? snapshot.data : null, ready: true });
+    const delay = RETRY_DELAYS_MS[attempt];
+    if (delay !== undefined) {
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        if (seq === requestSeq && snapshot.key === key) fetchEntitlements(key, attempt + 1);
+      }, delay);
+    }
+  };
+  // Guarda própria além do timeout do axios (a chamada pode pendurar antes de sair, p. ex. na renovação do token)
+  const guard = setTimeout(giveUp, ENTITLEMENTS_TIMEOUT_MS + 500);
+
   api
-    .get<PlanEntitlements>('/me/entitlements')
+    .get<PlanEntitlements>('/me/entitlements', { timeout: ENTITLEMENTS_TIMEOUT_MS })
     .then((res) => {
+      clearTimeout(guard);
       if (seq !== requestSeq) return;
       const body = res.data;
       const valid = !!body && Array.isArray(body.features) && Array.isArray(body.paidFeatures);
-      publish({ key, data: valid ? body : null, ready: true });
+      publish({ key, data: valid ? body : snapshot.key === key ? snapshot.data : null, ready: true });
     })
     .catch(() => {
-      if (seq !== requestSeq) return;
-      // Falhou: nada aparece bloqueado (quem decide é o backend, tela a tela)
-      publish({ key, data: snapshot.key === key ? snapshot.data : null, ready: true });
+      clearTimeout(guard);
+      giveUp();
     });
 }
 
@@ -164,8 +205,10 @@ export function usePlanEntitlements() {
   // Override de desenvolvimento: nunca para a plataforma (SYSTEM_ADMIN não muda em nada)
   const forceFree = isForceFreeDev() && !!user && user.role !== 'SYSTEM_ADMIN';
 
-  /** Recurso pago fora do plano agora (só no modo "on" — ou no override de desenvolvimento). */
-  const isLocked = useCallback(
+  const role = user?.role ?? '';
+
+  /** Bloqueio pela comunidade principal (o "tudo ou nada" do /me/entitlements). */
+  const baseLocked = useCallback(
     (feature: string) => {
       if (forceFree) return (data?.paidFeatures ?? (PAID_FEATURE_KEYS as readonly string[])).includes(feature);
       return !!data && data.paidFeatures.includes(feature) && !data.features.includes(feature);
@@ -173,8 +216,36 @@ export function usePlanEntitlements() {
     [data, forceFree],
   );
 
+  /**
+   * Recurso de nível paróquia que o backend PODE liberar mesmo com a comunidade
+   * do usuário no plano grátis (outra comunidade da paróquia tem plano). Para
+   * coordenação/base o painel não tem como saber antes: a tela abre e, se a
+   * chamada devolver 403 PLAN_REQUIRED, a vitrine entra (`PlanGate` suave).
+   */
+  const isSoftLocked = useCallback(
+    (feature: string) =>
+      !forceFree && baseLocked(feature) && PARISH_LEVEL_FEATURES.includes(feature) && !SCOPE_ADMIN_ROLES.includes(role),
+    [baseLocked, forceFree, role],
+  );
+
+  /**
+   * Recurso pago fora do plano agora (só no modo "on" — ou no override de
+   * desenvolvimento). Recurso de nível paróquia: para PARISH_ADMIN/DIOCESAN
+   * basta alguma comunidade do escopo com plano (`paidCommunityIds`); para os
+   * demais papéis não é bloqueio certo (ver `isSoftLocked`).
+   */
+  const isLocked = useCallback(
+    (feature: string) => {
+      if (!baseLocked(feature)) return false;
+      if (forceFree || !PARISH_LEVEL_FEATURES.includes(feature)) return true;
+      if (SCOPE_ADMIN_ROLES.includes(role)) return !(data?.paidCommunityIds && data.paidCommunityIds.length > 0);
+      return false;
+    },
+    [baseLocked, data, forceFree, role],
+  );
+
   /** Há algum recurso pago bloqueado (o painel está no "plano grátis")? */
   const anyLocked = forceFree || (!!data && data.paidFeatures.some((feature) => !data.features.includes(feature)));
 
-  return { entitlements: data, isLocked, anyLocked, ready, reload: reloadPlanEntitlements };
+  return { entitlements: data, isLocked, isSoftLocked, baseLocked, anyLocked, ready, reload: reloadPlanEntitlements };
 }

@@ -85,6 +85,13 @@ const PricingSection: React.FC<Props> = ({ onRequestDemo, onFindParish }) => {
 
   const trialDays = plans?.trialDays ?? 30;
   const tiers = plans?.tiers ?? [];
+  // Limite de cada faixa, como veio de /public/plans (nunca número inventado)
+  const limites =
+    status === 'ok' && tiers.length
+      ? tiers
+          .map((t) => `${t.name} ${typeof t.maxMembers === 'number' && t.maxMembers > 0 ? `até ${inteiro.format(t.maxMembers)}` : 'sem limite'}`)
+          .join(', ')
+      : '';
 
   return (
     <section className="lp-section lp-pricing" id="planos" aria-labelledby="lp-planos-titulo">
@@ -142,6 +149,12 @@ const PricingSection: React.FC<Props> = ({ onRequestDemo, onFindParish }) => {
             </button>
           </div>
         )}
+
+        <p className="lp-muted lp-centro">
+          {limites
+            ? `O cadastro sem limite de membros vale para o plano grátis. No plano completo, cada faixa tem o seu limite de membros ativos por comunidade: ${limites}.`
+            : 'O cadastro sem limite de membros vale para o plano grátis. No plano completo, cada faixa tem o seu limite de membros ativos por comunidade.'}
+        </p>
 
         {status === 'ok' && (
           <ul className="lp-tiers" aria-label="Faixas do plano">

@@ -3,6 +3,7 @@ import TitleIcon from '../../components/TitleIcon';
 import api from '../../services/api';
 import { notify } from '../../services/notification.service';
 import { formatPhoneDisplay, whatsappNumber } from '../../utils/phone';
+import { downloadCsv } from '../../utils/csvExport';
 import { dataHoraBR, haQuanto, mensagemDeErro } from './platformShared';
 import '../modules/ModulePages.css';
 import './PlatformPages.css';
@@ -17,6 +18,12 @@ import './PlatformPages.css';
  * teste de 30 dias pelo painel. Para volumes grandes (uma cidade inteira) há
  * a aprovação em lote: os pedidos marcados vão um a um, em sequência, pela
  * mesma rota da aprovação individual (PATCH /platform/claims/:id).
+ *
+ * Regras do lote: no máximo UM pedido por paróquia (o verificado; empatando, o
+ * mais antigo) — os demais são pulados, porque a paróquia já recebeu titular
+ * neste lote. O lote para se a pessoa sai da tela (com aviso antes de sair) e,
+ * ao fim, os links de convite gerados podem ser copiados de uma vez ou
+ * baixados em CSV.
  */
 
 type ClaimStatus = 'PENDING' | 'VERIFIED' | 'APPROVED' | 'REJECTED' | 'CANCELED';
@@ -106,15 +113,40 @@ interface Lote {
   aprovados: number;
   comConvite: number;
   falhas: Array<{ id: string; paroquia: string; erro: string }>;
+  /** Pedidos marcados que não foram enviados: a paróquia já recebeu titular neste lote */
+  pulados: Array<{ id: string; paroquia: string; solicitante: string }>;
+  /** Convites gerados neste lote (para copiar todos / baixar CSV) */
+  convites: Array<{ id: string; paroquia: string; solicitante: string; email: string; link: string }>;
   rodando: boolean;
   interrompido: boolean;
 }
+
+const MOTIVO_PULADO = 'pulado: paróquia já recebeu titular neste lote';
 
 const estaAberta = (c: Claim) => c.status === 'PENDING' || c.status === 'VERIFIED';
 const jaGerida = (c: Claim) => c.managed ?? !!c.parish?.managedAt;
 const nomeParoquia = (c: Claim) => c.parish?.name ?? c.parishName ?? c.parishId;
 /** Verificadas (contato oficial confirmado) antes das demais abertas */
 const pesoStatus = (c: Claim) => (c.status === 'VERIFIED' ? 0 : c.status === 'PENDING' ? 1 : 2);
+
+/**
+ * No lote, um titular por paróquia: fica o pedido VERIFICADO (contato oficial
+ * confirmado); empatando, o mais antigo. Devolve a fila e os pulados.
+ */
+function umPorParoquia(marcados: Claim[]): { fila: Claim[]; pulados: Claim[] } {
+  const ordenados = [...marcados].sort((x, y) => pesoStatus(x) - pesoStatus(y) || x.createdAt.localeCompare(y.createdAt));
+  const vistas = new Set<string>();
+  const fila: Claim[] = [];
+  const pulados: Claim[] = [];
+  for (const c of ordenados) {
+    if (vistas.has(c.parishId)) pulados.push(c);
+    else {
+      vistas.add(c.parishId);
+      fila.push(c);
+    }
+  }
+  return { fila, pulados };
+}
 
 const lerConvite = (data: any): ApproveResult => ({
   inviteUrl: typeof data?.inviteUrl === 'string' ? data.inviteUrl : undefined,
@@ -140,6 +172,15 @@ const ClaimsPage: React.FC = () => {
   const [confirmandoLote, setConfirmandoLote] = useState(false);
   const [lote, setLote] = useState<Lote | null>(null);
   const pararLote = useRef(false);
+  const loteAtivo = useRef(false);
+
+  // Saiu da tela: o lote para depois do pedido em andamento (não segue aprovando "às cegas")
+  useEffect(
+    () => () => {
+      pararLote.current = true;
+    },
+    [],
+  );
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -202,9 +243,14 @@ const ClaimsPage: React.FC = () => {
         notify.success(claim.status === 'APPROVED' ? 'Aprovação desfeita. O convite pendente foi revogado.' : 'Reivindicação recusada.');
       }
       // Atualiza a linha sem perder o link do convite da tela
+      // (aprovou: os outros pedidos da mesma paróquia passam a ser de paróquia que já tem gestão)
       setLista((prev) =>
         prev.map((c) =>
-          c.id === claim.id ? { ...c, status: action === 'APPROVE' ? 'APPROVED' : 'REJECTED', reviewNote: note || c.reviewNote } : c,
+          c.id === claim.id
+            ? { ...c, status: action === 'APPROVE' ? 'APPROVED' : 'REJECTED', reviewNote: note || c.reviewNote }
+            : action === 'APPROVE' && c.parishId === claim.parishId
+              ? { ...c, managed: true }
+              : c,
         ),
       );
     } catch (e) {
@@ -238,16 +284,38 @@ const ClaimsPage: React.FC = () => {
   // Paróquia que já tem gestão fica fora do lote: pede conferência com a equipe atual, uma a uma.
   const selecionaveis = useMemo(() => visiveis.filter((c) => estaAberta(c) && !jaGerida(c)), [visiveis]);
   const marcados = useMemo(() => selecionaveis.filter((c) => selecionados.has(c.id)), [selecionaveis, selecionados]);
-  const paroquiasRepetidas = useMemo(() => {
-    const vistos = new Set<string>();
-    const repetidas = new Set<string>();
-    for (const c of marcados) {
-      if (vistos.has(c.parishId)) repetidas.add(c.parishId);
-      vistos.add(c.parishId);
-    }
-    return repetidas.size;
-  }, [marcados]);
+  // Um titular por paróquia no lote: os demais pedidos marcados da mesma paróquia são pulados
+  const { fila: filaLote, pulados: puladosLote } = useMemo(() => umPorParoquia(marcados), [marcados]);
   const loteRodando = lote?.rodando === true;
+
+  // Lote rodando: avisa antes de fechar/recarregar a aba e antes de sair pelo menu
+  // (os links de convite gerados só existem nesta tela)
+  useEffect(() => {
+    if (!loteRodando) return;
+    const aoFechar = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    const aoClicarLink = (event: MouseEvent) => {
+      const link = (event.target as HTMLElement | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+      if (!link || link.target === '_blank' || link.hasAttribute('download')) return;
+      const href = link.getAttribute('href') ?? '';
+      if (/^(mailto:|tel:|#)/i.test(href)) return;
+      const sair = window.confirm(
+        'A aprovação em lote está em andamento. Sair desta tela interrompe o lote e os links de convite já gerados se perdem.\n\nSair mesmo assim?',
+      );
+      if (!sair) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener('beforeunload', aoFechar);
+    document.addEventListener('click', aoClicarLink, true);
+    return () => {
+      window.removeEventListener('beforeunload', aoFechar);
+      document.removeEventListener('click', aoClicarLink, true);
+    };
+  }, [loteRodando]);
 
   const alternar = (id: string) =>
     setSelecionados((prev) => {
@@ -263,28 +331,58 @@ const ClaimsPage: React.FC = () => {
   };
 
   const aprovarLote = async () => {
-    const fila = marcados;
-    if (fila.length === 0 || loteRodando) return;
+    const fila = filaLote;
+    if (fila.length === 0 || loteRodando || loteAtivo.current) return;
+    loteAtivo.current = true;
     setConfirmandoLote(false);
     setConfirmando(null);
     pararLote.current = false;
-    const andamento: Lote = { total: fila.length, feitos: 0, aprovados: 0, comConvite: 0, falhas: [], rodando: true, interrompido: false };
+    const andamento: Lote = {
+      total: fila.length,
+      feitos: 0,
+      aprovados: 0,
+      comConvite: 0,
+      falhas: [],
+      pulados: [],
+      convites: [],
+      rodando: true,
+      interrompido: false,
+    };
     setLote({ ...andamento });
+    const candidatosAPular = puladosLote;
+    // Defesa: paróquia que já recebeu titular neste lote não recebe outro
+    const comTitular = new Set<string>();
     // Um a um, em sequência: a mesma rota e a mesma regra da aprovação individual
     for (const claim of fila) {
       if (pararLote.current) {
         andamento.interrompido = true;
         break;
       }
+      if (comTitular.has(claim.parishId)) {
+        andamento.pulados = [...andamento.pulados, { id: claim.id, paroquia: nomeParoquia(claim), solicitante: claim.name }];
+        andamento.feitos += 1;
+        setLote({ ...andamento });
+        continue;
+      }
       try {
         const { data } = await api.patch(`/platform/claims/${encodeURIComponent(claim.id)}`, { action: 'APPROVE' });
         const invite = lerConvite(data);
         andamento.aprovados += 1;
+        comTitular.add(claim.parishId);
         if (invite.inviteUrl) {
           andamento.comConvite += 1;
+          andamento.convites = [
+            ...andamento.convites,
+            { id: claim.id, paroquia: nomeParoquia(claim), solicitante: claim.name, email: claim.email, link: invite.inviteUrl },
+          ];
           setConvites((prev) => ({ ...prev, [claim.id]: invite }));
         }
-        setLista((prev) => prev.map((c) => (c.id === claim.id ? { ...c, status: 'APPROVED' } : c)));
+        // A paróquia passou a ter gestão: os outros pedidos dela saem do lote (e da seleção)
+        setLista((prev) =>
+          prev.map((c) =>
+            c.id === claim.id ? { ...c, status: 'APPROVED' } : c.parishId === claim.parishId ? { ...c, managed: true } : c,
+          ),
+        );
         setSelecionados((prev) => {
           const next = new Set(prev);
           next.delete(claim.id);
@@ -299,13 +397,53 @@ const ClaimsPage: React.FC = () => {
       andamento.feitos += 1;
       setLote({ ...andamento });
     }
+    // Pulados de verdade: só os de paróquia que RECEBEU titular neste lote (se a aprovação
+    // do escolhido falhou ou o lote parou antes, o outro pedido segue marcado para nova tentativa)
+    const pulados = candidatosAPular.filter((c) => comTitular.has(c.parishId));
+    if (pulados.length > 0) {
+      andamento.pulados = [...andamento.pulados, ...pulados.map((c) => ({ id: c.id, paroquia: nomeParoquia(c), solicitante: c.name }))];
+      const ids = new Set(pulados.map((c) => c.id));
+      setSelecionados((prev) => new Set([...prev].filter((id) => !ids.has(id))));
+    }
     andamento.rodando = false;
+    loteAtivo.current = false;
     setLote({ ...andamento });
     if (andamento.falhas.length === 0 && !andamento.interrompido) {
       notify.success(`${andamento.aprovados} ${andamento.aprovados === 1 ? 'reivindicação aprovada' : 'reivindicações aprovadas'}.`);
     } else {
       notify.warning('A aprovação em lote terminou com pendências. Veja o resumo no topo da lista.');
     }
+  };
+
+  const copiarLinksDoLote = async () => {
+    if (!lote || lote.convites.length === 0) return;
+    const texto = lote.convites.map((c) => `${c.paroquia} — ${c.solicitante}: ${c.link}`).join('\n');
+    try {
+      await navigator.clipboard.writeText(texto);
+      notify.success(`${lote.convites.length} ${lote.convites.length === 1 ? 'link copiado' : 'links copiados'}.`);
+    } catch {
+      notify.info('Não deu para copiar automaticamente: baixe o CSV ou copie os links dos cartões.');
+    }
+  };
+
+  const baixarLinksDoLote = () => {
+    if (!lote || lote.convites.length === 0) return;
+    downloadCsv(
+      'parish_convites_lote',
+      ['Paróquia', 'Solicitante', 'E-mail', 'Link do convite'],
+      lote.convites.map((c) => [c.paroquia, c.solicitante, c.email, c.link]),
+    );
+  };
+
+  const fecharResumo = () => {
+    if (
+      lote &&
+      lote.convites.length > 0 &&
+      !window.confirm('Os links de convite deste lote deixam de aparecer no resumo. Já copiou ou baixou o CSV?')
+    ) {
+      return;
+    }
+    setLote(null);
   };
 
   const copiar = async (texto: string) => {
@@ -428,16 +566,16 @@ const ClaimsPage: React.FC = () => {
               {confirmandoLote && marcados.length > 0 && (
                 <div className="pf-acoes pf-confirma pf-lote-confirma">
                   <span className="pf-meta">
-                    Aprovar {marcados.length} {marcados.length === 1 ? 'pedido' : 'pedidos'}? Cada pessoa recebe a gestão da
+                    Aprovar {filaLote.length} {filaLote.length === 1 ? 'pedido' : 'pedidos'}? Cada pessoa recebe a gestão da
                     paróquia que pediu, no plano grátis. A aprovação em lote não leva nota.
-                    {paroquiasRepetidas > 0 &&
-                      ` Atenção: ${paroquiasRepetidas} ${paroquiasRepetidas === 1 ? 'paróquia tem' : 'paróquias têm'} mais de um pedido marcado; todos serão aprovados.`}
+                    {puladosLote.length > 0 &&
+                      ` Atenção: ${puladosLote.length} ${puladosLote.length === 1 ? 'pedido marcado é de paróquia que já tem outro pedido no lote e será pulado' : 'pedidos marcados são de paróquias que já têm outro pedido no lote e serão pulados'} — o lote dá um titular por paróquia (o verificado; empatando, o mais antigo).`}
                   </span>
                   <button type="button" className="pf-btn pf-btn-mini" onClick={() => setConfirmandoLote(false)}>
                     Voltar
                   </button>
                   <button type="button" className="pf-btn pf-btn-mini pf-btn-ok" onClick={() => void aprovarLote()}>
-                    Sim, aprovar {marcados.length}
+                    Sim, aprovar {filaLote.length}
                   </button>
                 </div>
               )}
@@ -466,17 +604,48 @@ const ClaimsPage: React.FC = () => {
                     Parar depois deste
                   </button>
                 ) : (
-                  <button type="button" className="pf-btn pf-btn-mini" onClick={() => setLote(null)}>
+                  <button type="button" className="pf-btn pf-btn-mini" onClick={fecharResumo}>
                     Fechar resumo
                   </button>
                 )}
               </div>
               <progress className="pf-lote-progresso" max={lote.total} value={lote.feitos} aria-label="Andamento da aprovação em lote" />
-              {!lote.rodando && lote.comConvite > 0 && (
+              {lote.rodando && (
                 <p className="pf-meta">
-                  {lote.comConvite} {lote.comConvite === 1 ? 'aprovação gerou' : 'aprovações geraram'} link de acesso. Os links
-                  estão nos cartões abaixo: envie agora, porque eles somem da tela ao atualizar a lista.
+                  Fique nesta tela até o fim: sair interrompe o lote e os links de convite gerados se perdem.
                 </p>
+              )}
+              {!lote.rodando && lote.convites.length > 0 && (
+                <>
+                  <p className="pf-meta">
+                    {lote.convites.length} {lote.convites.length === 1 ? 'aprovação gerou' : 'aprovações geraram'} link de
+                    acesso. Guarde agora: os links só existem nesta tela (também estão nos cartões abaixo, até a lista ser
+                    atualizada).
+                  </p>
+                  <div className="pf-acoes">
+                    <button type="button" className="pf-btn pf-btn-mini pf-btn-ok" onClick={() => void copiarLinksDoLote()}>
+                      Copiar todos os links
+                    </button>
+                    <button type="button" className="pf-btn pf-btn-mini" onClick={baixarLinksDoLote}>
+                      Baixar CSV
+                    </button>
+                  </div>
+                </>
+              )}
+              {lote.pulados.length > 0 && (
+                <>
+                  <p className="pf-meta">
+                    {lote.pulados.length} {lote.pulados.length === 1 ? 'pedido não foi enviado' : 'pedidos não foram enviados'} (
+                    {MOTIVO_PULADO}). Eles continuam na lista para revisão individual:
+                  </p>
+                  <ul className="pf-lote-falhas">
+                    {lote.pulados.map((p) => (
+                      <li key={p.id}>
+                        <strong>{p.paroquia}</strong>: pedido de {p.solicitante} — {MOTIVO_PULADO}
+                      </li>
+                    ))}
+                  </ul>
+                </>
               )}
               {lote.falhas.length > 0 && (
                 <>

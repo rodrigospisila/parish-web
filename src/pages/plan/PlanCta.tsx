@@ -1,7 +1,8 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { usePlanTrial } from '../../hooks/usePlanTrial';
+import { canOfferTrial, usePlanTrial } from '../../hooks/usePlanTrial';
+import { usePlanEntitlements } from '../../hooks/usePlanEntitlements';
 import { MY_PLAN_PATH } from '../../services/planErrors';
 import { COORDINATION_ROLES } from '../../components/accessRules';
 import { TRIAL_DAYS } from './featureCatalog';
@@ -65,6 +66,9 @@ const PlanCta: React.FC<{ align?: 'start' | 'center' }> = ({ align = 'start' }) 
   const isParishAdmin = role === 'PARISH_ADMIN' && !!user?.parishId;
   const seesPlans = isParishAdmin || role === 'DIOCESAN_ADMIN' || role === 'SYSTEM_ADMIN';
   const { trial, starting, start } = usePlanTrial(isParishAdmin ? user?.parishId : null);
+  const { entitlements } = usePlanEntitlements();
+  // Só com o bloqueio por plano ligado: fora dele o pedido gastaria o teste único sem liberar nada
+  const offerTrial = isParishAdmin && canOfferTrial(entitlements?.enforcement, trial);
   const [confirming, setConfirming] = useState(false);
 
   if (!seesPlans) {
@@ -89,16 +93,16 @@ const PlanCta: React.FC<{ align?: 'start' | 'center' }> = ({ align = 'start' }) 
   return (
     <div className={`planv-cta planv-cta--${align}`}>
       <div className="planv-cta__buttons">
-        {isParishAdmin && trial?.available && (
+        {offerTrial && (
           <button type="button" className="planv-btn planv-btn--primary" onClick={() => setConfirming(true)} disabled={starting}>
             Testar grátis por {TRIAL_DAYS} dias
           </button>
         )}
-        <Link to={MY_PLAN_PATH} className={`planv-btn ${isParishAdmin && trial?.available ? 'planv-btn--ghost' : 'planv-btn--primary'}`}>
+        <Link to={MY_PLAN_PATH} className={`planv-btn ${offerTrial ? 'planv-btn--ghost' : 'planv-btn--primary'}`}>
           Ver planos
         </Link>
       </div>
-      {isParishAdmin && trial?.available && (
+      {offerTrial && (
         <p className="planv-cta__hint">Sem cartão. Uma vez por paróquia; vale para todas as comunidades.</p>
       )}
       {isParishAdmin && trial && !trial.available && trial.usedAt && (
@@ -107,7 +111,7 @@ const PlanCta: React.FC<{ align?: 'start' | 'center' }> = ({ align = 'start' }) 
       {role === 'DIOCESAN_ADMIN' && (
         <p className="planv-cta__hint">O teste de {TRIAL_DAYS} dias é pedido pela administração de cada paróquia.</p>
       )}
-      {confirming && <TrialConfirmDialog busy={starting} onConfirm={() => void confirm()} onClose={() => setConfirming(false)} />}
+      {confirming && offerTrial && <TrialConfirmDialog busy={starting} onConfirm={() => void confirm()} onClose={() => setConfirming(false)} />}
     </div>
   );
 };

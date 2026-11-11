@@ -10,6 +10,7 @@ import PublicFrame, {
 import { httpStatus } from '../../components/team/teamApi';
 import { maskBrPhone, phoneForApi, whatsappNumber } from '../../utils/phone';
 import { SUPPORT_EMAIL } from './LandingSupport';
+import { useAuth } from '../../contexts/AuthContext';
 
 /**
  * "Esta paróquia é minha" (Onda 1 — contrato C1; ux-acesso-24).
@@ -64,6 +65,7 @@ const CLAIM_ROLES = [
 
 const ClaimParishPage: React.FC = () => {
   const { parishId = '' } = useParams<{ parishId: string }>();
+  const { token } = useAuth();
   const [info, setInfo] = useState<ClaimInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -280,7 +282,8 @@ const ClaimParishPage: React.FC = () => {
             <p className="donate-hint" style={{ marginTop: 10 }}>
               Catequese, escalas, dízimo, sacramentos e os demais recursos fazem parte do plano completo. O
               administrador pode pedir 30 dias de teste pelo painel, quando quiser.{' '}
-              <Link to="/#recursos">Ver o plano completo</Link>
+              {/* Quem está logado seria redirecionado pela landing: vai direto à vitrine do painel */}
+              <Link to={token ? '/admin/recursos' : '/#recursos'}>Ver o plano completo</Link>
             </p>
             {info.managed && (
               <div className="donate-alert is-warning" role="status">

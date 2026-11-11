@@ -14,16 +14,21 @@ import './plan.css';
  * Aparece no lugar da tela quando o recurso está bloqueado (guarda `PlanGate`
  * no App.tsx) e em /admin/recursos/:feature (menu "Recursos do plano").
  */
-const FeatureShowcase: React.FC<{ feature: string }> = ({ feature }) => {
+const FeatureShowcase: React.FC<{ feature: string; forceLocked?: boolean }> = ({ feature, forceLocked = false }) => {
   const { user } = useAuth();
   const { modOn } = useModuleAccess(user?.role);
-  const { isLocked, ready } = usePlanEntitlements();
+  const { entitlements, isLocked, isSoftLocked, ready } = usePlanEntitlements();
   const info = featureInfo(feature);
   const seesIndex = (COORDINATION_ROLES as readonly string[]).includes(user?.role ?? '') || coordinatesAnyPastoral(user);
 
   if (!info) return <Navigate to={PLAN_FEATURES_PATH} replace />;
 
-  const locked = isLocked(info.key);
+  // `forceLocked`: o backend acabou de recusar este recurso (guarda suave do PlanGate)
+  const locked = forceLocked || isLocked(info.key);
+  // Bloqueio incerto (recurso de nível paróquia): sem selo; o botão abre a tela e o backend decide
+  const uncertain = !locked && isSoftLocked(info.key);
+  // Fora do modo "on" nada é bloqueado: o recurso está liberado neste período, mas é do plano completo
+  const openPeriod = !locked && !!entitlements && entitlements.enforcement !== 'on' && entitlements.paidFeatures.includes(info.key);
   // Recurso ativo: o botão leva à tela (a primeira que o papel consegue abrir)
   const openKey = !locked ? info.routes.find((key) => canOpen(user, key, modOn)) : undefined;
   const titleId = `planv-title-${info.key}`;
@@ -42,9 +47,9 @@ const FeatureShowcase: React.FC<{ feature: string }> = ({ feature }) => {
         <header className="planv-show__head">
           <img className="planv-show__icon" src={`/title-icons/${info.icon}.svg`} alt="" aria-hidden="true" width={64} height={64} />
           <div className="planv-show__intro">
-            {ready && (
+            {ready && !uncertain && (
               <span className={`planv-badge ${locked ? 'planv-badge--plan' : 'planv-badge--on'}`}>
-                {locked ? 'Recurso do plano completo' : 'Ativo na sua comunidade'}
+                {locked ? 'Recurso do plano completo' : openPeriod ? 'Liberado neste período' : 'Ativo na sua comunidade'}
               </span>
             )}
             <h1 id={titleId} className="planv-show__title">
@@ -72,12 +77,22 @@ const FeatureShowcase: React.FC<{ feature: string }> = ({ feature }) => {
               </p>
               <PlanCta />
             </>
-          ) : openKey ? (
-            <Link to={`/admin/${openKey}`} className="planv-btn planv-btn--primary">
-              Abrir {info.name}
-            </Link>
           ) : (
-            <p className="planv-show__state">Este recurso já está ativo na sua comunidade.</p>
+            <>
+              {openPeriod && (
+                <p className="planv-show__state">
+                  Neste período, todos os recursos do Parish estão liberados. Este recurso faz parte do{' '}
+                  <strong>plano completo</strong>.
+                </p>
+              )}
+              {openKey ? (
+                <Link to={`/admin/${openKey}`} className="planv-btn planv-btn--primary">
+                  Abrir {info.name}
+                </Link>
+              ) : (
+                !openPeriod && !uncertain && <p className="planv-show__state">Este recurso já está ativo na sua comunidade.</p>
+              )}
+            </>
           )}
         </footer>
       </article>

@@ -1,4 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import TitleIcon from '../components/TitleIcon';
 import MapPicker from '../components/MapPicker';
 import api, { getErrorMessage } from '../services/api';
@@ -9,8 +11,11 @@ import './MyLocationPage.css';
 /**
  * "Minha localização" — a equipe ajusta o pino e o endereço SÓ das próprias
  * comunidades (plano grátis). Contrato do backend:
- * - GET   /communities/my-locations → comunidades que o usuário gerencia
- * - PATCH /communities/:id/location { latitude, longitude, geoSource?, address?, city?, state?, zipCode? }
+ * - GET   /communities/my-locations[?parishId=] → comunidades que o usuário gerencia (teto de 500;
+ *         a plataforma só recebe algo informando a paróquia)
+ * - PATCH /communities/:id/location { latitude, longitude, confirmPin?, geoSource?, address?, city?, state?, zipCode? }
+ *         A tela sempre reenvia o pino; ele só conta como CONFERIDO quando a coordenada muda ou com
+ *         `confirmPin: true` (a pessoa moveu/tocou o pino ou marcou "O pino está no lugar certo").
  * - GET   /geocoding/search?q= → endereço → coordenadas (mesmo da tela de Comunidades)
  */
 
@@ -27,7 +32,6 @@ interface MyCommunity {
   longitude: number | null;
   geoPrecision?: 'MANUAL' | 'STREET' | 'LOCALITY' | 'CITY' | null;
   geoVerifiedAt?: string | null;
-  isMain?: boolean;
 }
 
 interface Pin {
@@ -93,6 +97,8 @@ const FAR_MOVE_METERS = 2000;
 const GPS_WEAK_ACCURACY_METERS = 100;
 /** A partir desta quantidade a lista ganha busca */
 const SEARCH_FROM = 8;
+/** Teto da lista no servidor: chegou nele, a lista está cortada */
+const LIST_LIMIT = 500;
 
 const emptyForm = { address: '', city: '', state: '', zipCode: '' };
 
@@ -107,6 +113,8 @@ const MyLocationPage: React.FC = () => {
   // Origem do pino atual: 'gps' só enquanto ninguém mexer nele depois do GPS
   const [pinSource, setPinSource] = useState<'manual' | 'gps'>('manual');
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
+  // "O pino está no lugar certo": conferência explícita sem mover o pino
+  const [pinConfirmed, setPinConfirmed] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [locating, setLocating] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
@@ -121,12 +129,22 @@ const MyLocationPage: React.FC = () => {
     () => communities.find((c) => c.id === selectedId) ?? null,
     [communities, selectedId],
   );
+  // Comunidade aberta AGORA (a resposta de um salvamento não pode reabrir outra)
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
+
+  // Plataforma: a lista é por paróquia (?parishId=); sem ela, o servidor devolve vazio
+  const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const parishIdFromUrl = (searchParams.get('parishId') ?? '').trim();
+  const needsParish = user?.role === 'SYSTEM_ADMIN' && !parishIdFromUrl;
 
   const openCommunity = useCallback((c: MyCommunity) => {
     setSelectedId(c.id);
     setPin(hasPin(c) ? { lat: c.latitude as number, lng: c.longitude as number } : null);
     setPinSource('manual');
     setGpsAccuracy(null);
+    setPinConfirmed(false);
     setSaveError('');
     setForm({
       address: c.address ?? '',
@@ -137,10 +155,18 @@ const MyLocationPage: React.FC = () => {
   }, []);
 
   const load = useCallback(async () => {
-    setLoading(true);
     setLoadError('');
+    if (needsParish) {
+      // Sem paróquia escolhida não há o que listar (a tela mostra a orientação)
+      setCommunities([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     try {
-      const res = await api.get<MyCommunity[]>('/communities/my-locations');
+      const res = await api.get<MyCommunity[]>('/communities/my-locations', {
+        params: parishIdFromUrl ? { parishId: parishIdFromUrl } : undefined,
+      });
       const list = Array.isArray(res.data) ? res.data : [];
       setCommunities(list);
       // Com uma só comunidade, já abre nela
@@ -150,7 +176,7 @@ const MyLocationPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [openCommunity]);
+  }, [openCommunity, needsParish, parishIdFromUrl]);
 
   useEffect(() => {
     void load();
@@ -170,7 +196,6 @@ const MyLocationPage: React.FC = () => {
       .sort(
         (a, b) =>
           STATUS_META[statusOf(a)].order - STATUS_META[statusOf(b)].order ||
-          Number(!!b.isMain) - Number(!!a.isMain) ||
           a.name.localeCompare(b.name, 'pt-BR'),
       );
   }, [communities, search]);
@@ -183,6 +208,8 @@ const MyLocationPage: React.FC = () => {
       : null;
   const moved = pin && originalPin ? distanceMeters(originalPin, pin) : 0;
   const pinChanged = !!pin && (!originalPin || moved >= 1);
+  // GPS impreciso (> 100 m): não vale como conferência até a pessoa tocar/arrastar o pino
+  const gpsWeak = pinSource === 'gps' && gpsAccuracy != null && gpsAccuracy > GPS_WEAK_ACCURACY_METERS;
 
   const changedAddress = useMemo(() => {
     if (!selected) return {} as Partial<typeof emptyForm>;
@@ -197,6 +224,8 @@ const MyLocationPage: React.FC = () => {
   const addressChanged = Object.keys(changedAddress).length > 0;
 
   const movePin = (lat: number, lng: number) => {
+    // Durante o salvamento o mapa fica travado
+    if (saving) return;
     setPin({ lat, lng });
     setPinSource('manual');
     setGpsAccuracy(null);
@@ -216,10 +245,11 @@ const MyLocationPage: React.FC = () => {
         setPin({ lat: position.coords.latitude, lng: position.coords.longitude });
         setPinSource('gps');
         setGpsAccuracy(accuracy);
+        setPinConfirmed(false);
         setSaveError('');
         if (accuracy > GPS_WEAK_ACCURACY_METERS) {
           notify.warning(
-            `Posição com pouca precisão (cerca de ${formatDistance(accuracy)}). Confira no mapa e arraste o pino até a igreja.`,
+            `Posição com pouca precisão (cerca de ${formatDistance(accuracy)}). Toque no mapa ou arraste o pino até a igreja antes de salvar.`,
           );
         } else {
           notify.success('Pino colocado onde você está. Confira no mapa e salve.');
@@ -274,7 +304,19 @@ const MyLocationPage: React.FC = () => {
       setSaveError('Coloque o pino no mapa antes de salvar: toque no ponto onde fica a igreja.');
       return;
     }
-    if (originalPin && moved > FAR_MOVE_METERS) {
+    if (gpsWeak) {
+      setSaveError(
+        'A posição do GPS veio com pouca precisão. Toque no mapa ou arraste o pino até a igreja antes de salvar.',
+      );
+      return;
+    }
+    // O pino só vai como conferido se a pessoa o mudou (mapa, GPS, endereço) ou
+    // marcou "O pino está no lugar certo". Só endereço → o pino antigo vai igual
+    // (o servidor não mexe na conferência nem na fila de revisão).
+    const confirmPin = pinChanged || pinConfirmed;
+    const sentPin = pinChanged || !originalPin ? pin : originalPin;
+    const savingId = selected.id;
+    if (originalPin && pinChanged && moved > FAR_MOVE_METERS) {
       const ok = await confirm.action(
         'Mover o pino para longe?',
         `O novo ponto fica a ${formatDistance(moved)} do pino atual de ${selected.name}. É isso mesmo?`,
@@ -287,18 +329,21 @@ const MyLocationPage: React.FC = () => {
     setSaveError('');
     try {
       const { data } = await api.patch<Partial<MyCommunity>>(`/communities/${selected.id}/location`, {
-        latitude: pin.lat,
-        longitude: pin.lng,
-        geoSource: pinSource,
+        latitude: sentPin.lat,
+        longitude: sentPin.lng,
+        ...(confirmPin ? { confirmPin: true, geoSource: pinSource } : {}),
         ...changedAddress,
       });
+      // Sem conferência, o estado do pino fica como estava
+      const fallbackPrecision = confirmPin ? 'MANUAL' : (selected.geoPrecision ?? null);
+      const fallbackVerifiedAt = confirmPin ? new Date().toISOString() : (selected.geoVerifiedAt ?? null);
       const updated: MyCommunity = {
         ...selected,
         ...changedAddress,
-        latitude: pin.lat,
-        longitude: pin.lng,
-        geoPrecision: 'MANUAL',
-        geoVerifiedAt: new Date().toISOString(),
+        latitude: sentPin.lat,
+        longitude: sentPin.lng,
+        geoPrecision: fallbackPrecision,
+        geoVerifiedAt: fallbackVerifiedAt,
         // A resposta do servidor (comunidade atualizada) prevalece no que trouxer
         ...(data && typeof data === 'object'
           ? {
@@ -306,16 +351,21 @@ const MyLocationPage: React.FC = () => {
               city: data.city ?? changedAddress.city ?? selected.city,
               state: data.state ?? changedAddress.state ?? selected.state,
               zipCode: data.zipCode ?? changedAddress.zipCode ?? selected.zipCode,
-              latitude: typeof data.latitude === 'number' ? data.latitude : pin.lat,
-              longitude: typeof data.longitude === 'number' ? data.longitude : pin.lng,
-              geoPrecision: data.geoPrecision ?? 'MANUAL',
-              geoVerifiedAt: data.geoVerifiedAt ?? new Date().toISOString(),
+              latitude: typeof data.latitude === 'number' ? data.latitude : sentPin.lat,
+              longitude: typeof data.longitude === 'number' ? data.longitude : sentPin.lng,
+              geoPrecision: 'geoPrecision' in data ? (data.geoPrecision ?? null) : fallbackPrecision,
+              geoVerifiedAt: 'geoVerifiedAt' in data ? (data.geoVerifiedAt ?? null) : fallbackVerifiedAt,
             }
           : {}),
       };
       setCommunities((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-      openCommunity(updated);
-      notify.success(`Localização de ${selected.name} salva! Os fiéis já veem a igreja neste ponto no mapa do app.`);
+      // Só reabre se a pessoa ainda está nesta comunidade (não troca a que estiver aberta)
+      if (selectedIdRef.current === savingId) openCommunity(updated);
+      notify.success(
+        confirmPin
+          ? `Localização de ${selected.name} salva! Os fiéis já veem a igreja neste ponto no mapa do app.`
+          : `Endereço de ${selected.name} salvo. O pino continua como estava — confira-o quando puder.`,
+      );
     } catch (error) {
       const status = (error as { response?: { status?: number } })?.response?.status;
       let message: string;
@@ -342,6 +392,7 @@ const MyLocationPage: React.FC = () => {
   };
 
   const backToList = async () => {
+    if (saving) return;
     if (pinChanged || addressChanged) {
       const ok = await confirm.action(
         'Sair sem salvar?',
@@ -388,7 +439,15 @@ const MyLocationPage: React.FC = () => {
         </div>
       )}
 
-      {!loadError && communities.length === 0 && (
+      {needsParish && (
+        <div className="empty-state">
+          A plataforma ajusta a localização de uma paróquia por vez. Escolha uma paróquia em{' '}
+          <Link to="/admin/communities">Comunidades</Link> e edite o pino no cadastro da comunidade — ou abra esta
+          tela com <code>?parishId=</code> da paróquia desejada.
+        </div>
+      )}
+
+      {!loadError && !needsParish && communities.length === 0 && (
         <div className="empty-state">
           Você ainda não gerencia nenhuma comunidade. Peça ao administrador da paróquia para vincular o seu acesso.
         </div>
@@ -404,6 +463,12 @@ const MyLocationPage: React.FC = () => {
                   communities.length === 1 ? 'comunidade precisa' : 'comunidades precisam'
                 } de conferência — elas aparecem primeiro.`}
           </p>
+          {communities.length >= LIST_LIMIT && (
+            <div className="myloc-error" role="status">
+              A lista está cortada: só as primeiras {LIST_LIMIT} comunidades aparecem aqui. Para ajustar as demais,
+              use a tela de Comunidades (filtrando por paróquia).
+            </div>
+          )}
           {communities.length >= SEARCH_FROM && (
             <input
               type="search"
@@ -424,10 +489,7 @@ const MyLocationPage: React.FC = () => {
                   <li key={c.id}>
                     <button type="button" className="myloc-card" onClick={() => openCommunity(c)}>
                       <span className="myloc-card-info">
-                        <span className="myloc-card-name">
-                          {c.name}
-                          {c.isMain && <span className="status-badge blue myloc-main">Matriz</span>}
-                        </span>
+                        <span className="myloc-card-name">{c.name}</span>
                         {c.parishName && <span className="myloc-card-parish">{c.parishName}</span>}
                         <span className="myloc-card-address">{addressLine(c) || 'Endereço não informado'}</span>
                       </span>
@@ -450,7 +512,12 @@ const MyLocationPage: React.FC = () => {
       {selected && status && (
         <section className="myloc-editor" aria-labelledby="myloc-editor-title">
           {communities.length > 1 && (
-            <button type="button" className="myloc-link myloc-back" onClick={() => void backToList()}>
+            <button
+              type="button"
+              className="myloc-link myloc-back"
+              onClick={() => void backToList()}
+              disabled={saving}
+            >
               ‹ Voltar para as comunidades
             </button>
           )}
@@ -484,7 +551,21 @@ const MyLocationPage: React.FC = () => {
             o pino até a porta da igreja. O botão <strong>Satélite</strong> do mapa ajuda a achar o telhado.
           </p>
 
-          <MapPicker value={pin} onChange={movePin} height={mapHeight} />
+          {/* Durante o salvamento o mapa não aceita toque nem arrasto */}
+          <div
+            aria-busy={saving}
+            style={saving ? { pointerEvents: 'none', opacity: 0.6 } : undefined}
+          >
+            <MapPicker value={pin} onChange={movePin} height={mapHeight} />
+          </div>
+
+          {gpsWeak && (
+            <div className="myloc-error" role="alert">
+              ⚠ O GPS informou a posição com pouca precisão (erro de cerca de {formatDistance(gpsAccuracy ?? 0)}).
+              Ela ainda <strong>não vale como conferência</strong>: toque no mapa ou arraste o pino até a porta da
+              igreja para liberar o botão Salvar.
+            </div>
+          )}
 
           <div className="myloc-status" role="status" aria-live="polite">
             {!pin ? (
@@ -511,6 +592,7 @@ const MyLocationPage: React.FC = () => {
                   <button
                     type="button"
                     className="myloc-link"
+                    disabled={saving}
                     onClick={() => movePin(originalPin.lat, originalPin.lng)}
                   >
                     Desfazer
@@ -569,6 +651,22 @@ const MyLocationPage: React.FC = () => {
             </div>
           </fieldset>
 
+          {/* Conferir sem mover: só quando o pino existe, não foi mexido e ainda não está conferido */}
+          {originalPin && !pinChanged && status !== 'verified' && (
+            <label className="myloc-confirm" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', margin: '0 0 1rem' }}>
+              <input
+                type="checkbox"
+                checked={pinConfirmed}
+                disabled={saving}
+                onChange={(e) => setPinConfirmed(e.target.checked)}
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                <strong>O pino está no lugar certo</strong> — conferi no mapa e ele está em cima da igreja.
+              </span>
+            </label>
+          )}
+
           {saveError && (
             <div className="myloc-error" role="alert">
               {saveError}
@@ -577,17 +675,21 @@ const MyLocationPage: React.FC = () => {
 
           <div className="myloc-save-bar">
             <span className="myloc-save-note">
-              {pinChanged || addressChanged
-                ? 'Alterações ainda não salvas.'
-                : status === 'verified'
-                  ? 'Nada para salvar.'
-                  : 'O pino está certo? Salve para marcar como conferido.'}
+              {gpsWeak
+                ? 'Toque no mapa ou arraste o pino até a igreja para poder salvar.'
+                : pinChanged || pinConfirmed
+                  ? 'Ao salvar, o pino fica marcado como conferido.'
+                  : addressChanged
+                    ? 'Só o endereço será salvo (o pino não muda).'
+                    : status === 'verified'
+                      ? 'Nada para salvar.'
+                      : 'O pino está certo? Marque "O pino está no lugar certo" ou ajuste-o no mapa.'}
             </span>
             <button
               type="button"
               className="myloc-btn primary myloc-save"
               onClick={() => void save()}
-              disabled={saving || !pin || (status === 'verified' && !pinChanged && !addressChanged)}
+              disabled={saving || !pin || gpsWeak || (!pinChanged && !pinConfirmed && !addressChanged)}
             >
               {saving ? 'Salvando…' : 'Salvar localização'}
             </button>

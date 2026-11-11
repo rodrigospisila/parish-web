@@ -8,7 +8,21 @@ import { reloadPlanEntitlements } from './usePlanEntitlements';
  * Teste de 30 dias POR PEDIDO (contrato 5): o teste deixou de ser automático.
  * `GET /billing/me` traz `trial: { available, usedAt, endsAt }` e o titular /
  * PARISH_ADMIN inicia com `POST /billing/trial { parishId }`, UMA vez por paróquia.
+ *
+ * O teste só faz sentido com o bloqueio por plano LIGADO (`enforcement === 'on'`
+ * no /me/entitlements): fora dele tudo já está liberado e o pedido gastaria o
+ * teste único à toa. As telas só mostram o botão com `canOfferTrial`; o
+ * backend também recusa (409 TRIAL_NOT_NEEDED) e devolve `available: false`.
  */
+
+/** O botão do teste só aparece com o bloqueio ligado E o teste ainda disponível. */
+export function canOfferTrial(
+  enforcement: 'off' | 'log' | 'on' | null | undefined,
+  trial: { available: boolean } | null | undefined,
+): boolean {
+  return enforcement === 'on' && trial?.available === true;
+}
+
 export interface PlanTrialInfo {
   /** A paróquia ainda pode pedir o teste */
   available: boolean;
@@ -107,7 +121,13 @@ export function usePlanTrial(parishId: string | null | undefined, options: { aut
       }
       if (status === 409 && code === 'TRIAL_NOT_NEEDED') {
         remember({ available: false, usedAt: null, endsAt: null });
-        notify.info('Esta paróquia já tem acesso ao plano completo — não precisa de teste.');
+        // Piloto / tudo com acesso / bloqueio por plano desligado: nada foi gasto (o servidor explica o motivo)
+        notify.info(
+          getErrorMessage(
+            error,
+            'Todos os recursos já estão liberados para esta paróquia no momento. O teste não foi usado e continua guardado.',
+          ),
+        );
         reloadPlanEntitlements();
         return 'not-needed';
       }

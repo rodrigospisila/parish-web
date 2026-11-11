@@ -71,6 +71,12 @@ interface NavItem {
   label: string;
   show: boolean;
   feature?: string;
+  /**
+   * Rota "minha" (própria escala, próprias pastorais, turma do catequista): o
+   * backend decide pela comunidade do recurso do usuário, não pela comunidade
+   * principal — o item fica no menu e a vitrine só entra se a tela receber PLAN_REQUIRED.
+   */
+  soft?: boolean;
   highlight?: boolean;
   end?: boolean;
 }
@@ -202,6 +208,8 @@ const AdminLayout: React.FC = () => {
   // Celular: menu recolhido; fecha ao trocar de tela
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => setMenuOpen(false), [location.pathname]);
+  // Tocar no item da tela ATUAL não muda a rota: fecha no clique do próprio link
+  const closeMenu = () => setMenuOpen(false);
 
   // "Recursos do plano" abre recolhida no celular (o menu fica acima do conteúdo)
   const [planOpen, setPlanOpen] = useState(
@@ -227,11 +235,11 @@ const AdminLayout: React.FC = () => {
         { to: '/admin/importar', icon: 'documento', label: 'Importar planilha', show: can('members') && managesCommunity },
         { to: '/admin/events', icon: 'calendario-liturgico', label: 'Eventos', show: can('events'), feature: 'events' },
         { to: '/admin/fixed-schedule', icon: 'missa-proxima', label: 'Agenda Fixa', show: can('fixed-schedule') },
-        // Plano grátis: pino e endereço das PRÓPRIAS comunidades
-        { to: '/admin/minha-localizacao', icon: 'comunidade', label: 'Minha localização', show: can('minha-localizacao') },
+        // Plano grátis: pino e endereço das PRÓPRIAS comunidades (a plataforma usa o "Mapa do território")
+        { to: '/admin/minha-localizacao', icon: 'comunidade', label: 'Minha localização', show: can('minha-localizacao') && !isSystemAdmin },
         { to: '/admin/schedules', icon: 'escala', label: 'Escalas', show: can('schedules'), feature: 'schedules' },
         // Coordenador também é escalado: "Minha Escala" vale para todos
-        { to: '/admin/my-schedule', icon: 'escala', label: 'Minha Escala', show: true, feature: 'schedules' },
+        { to: '/admin/my-schedule', icon: 'escala', label: 'Minha Escala', show: true, feature: 'schedules', soft: true },
         { to: '/admin/swaps', icon: 'trocas-escala', label: 'Trocas de Escala', show: can('swaps'), feature: 'swaps' },
       ],
     },
@@ -241,7 +249,7 @@ const AdminLayout: React.FC = () => {
         { to: '/admin/clergy-messages', icon: 'sacerdote', label: 'Palavra Pastoral', show: can('clergy-messages'), feature: 'clergy-messages' },
         { to: '/admin/saints', icon: 'santo', label: 'Santos', show: can('saints') },
         { to: '/admin/pastorals/community', icon: 'pastoral', label: 'Pastorais', show: can('pastorals/community'), feature: 'pastorals' },
-        { to: '/admin/pastorals/my', icon: 'pastoral', label: 'Minhas Pastorais', show: can('pastorals/my'), feature: 'pastorals', highlight: true },
+        { to: '/admin/pastorals/my', icon: 'pastoral', label: 'Minhas Pastorais', show: can('pastorals/my'), feature: 'pastorals', soft: true, highlight: true },
         { to: '/admin/pastorals/global', icon: 'igreja', label: 'Pastorais Globais', show: can('pastorals/global') },
         // Fiel/voluntário CATEQUISTA entra pela turma dele; a coordenação, pela Catequese
         {
@@ -250,6 +258,8 @@ const AdminLayout: React.FC = () => {
           label: isCoordination ? 'Catequese' : 'Catequese (minha turma)',
           show: can('catechesis') && (isCoordination || isCatechist),
           feature: 'catechesis',
+          // Catequista de papel de base: só aparece com turma (o backend já liberou a turma dele)
+          soft: !isCoordination,
           highlight: !isCoordination,
         },
         { to: '/admin/planning', icon: 'planejamento', label: 'Planejamento', show: isCoordination && can('planning'), feature: 'planning' },
@@ -295,7 +305,7 @@ const AdminLayout: React.FC = () => {
       ],
     },
   ];
-  const isItemLocked = (item: NavItem) => !!item.feature && isLocked(item.feature);
+  const isItemLocked = (item: NavItem) => !!item.feature && !item.soft && isLocked(item.feature);
   // Seções só com o que abre de verdade (no plano grátis, o painel fica enxuto)
   const sections = allSections.map((section) => ({
     label: section.label,
@@ -327,7 +337,10 @@ const AdminLayout: React.FC = () => {
           </div>
           <div
             className="sidebar-user"
-            onClick={() => navigate('/admin/account')}
+            onClick={() => {
+              closeMenu();
+              navigate('/admin/account');
+            }}
             style={{ cursor: 'pointer' }}
             title="Minha conta"
           >
@@ -344,7 +357,7 @@ const AdminLayout: React.FC = () => {
 
         <nav className="sidebar-nav" id="sidebar-menu" aria-label="Menu do painel">
           {canSeeDashboard && (
-            <NavLink to="/admin/dashboard" className="nav-link highlight">
+            <NavLink to="/admin/dashboard" className="nav-link highlight" onClick={closeMenu}>
               <NavIcon name="planejamento" /> Início
             </NavLink>
           )}
@@ -353,7 +366,7 @@ const AdminLayout: React.FC = () => {
               <React.Fragment key={section.label}>
                 <span className="nav-section-label">{section.label}</span>
                 {section.items.map((item) => (
-                  <NavLink key={item.to} to={item.to} end={item.end} className={`nav-link${item.highlight ? ' highlight' : ''}`}>
+                  <NavLink key={item.to} to={item.to} end={item.end} className={`nav-link${item.highlight ? ' highlight' : ''}`} onClick={closeMenu}>
                     <NavIcon name={item.icon} /> {item.label}
                   </NavLink>
                 ))}
@@ -373,13 +386,13 @@ const AdminLayout: React.FC = () => {
                 Recursos do plano <span className="nav-plan-count">{lockedFeatures.length}</span>
               </summary>
               {lockedFeatures.map((feature) => (
-                <NavLink key={feature.key} to={planFeaturePath(feature.key)} className="nav-link nav-link--plan">
+                <NavLink key={feature.key} to={planFeaturePath(feature.key)} className="nav-link nav-link--plan" onClick={closeMenu}>
                   <NavIcon name={feature.icon} /> {feature.name}
                   <PlanLock />
                 </NavLink>
               ))}
               {can('recursos') && (
-                <NavLink to={PLAN_FEATURES_PATH} end className="nav-link nav-link--plan-all">
+                <NavLink to={PLAN_FEATURES_PATH} end className="nav-link nav-link--plan-all" onClick={closeMenu}>
                   <NavIcon name="igreja" /> Conheça o plano completo
                 </NavLink>
               )}
@@ -392,7 +405,7 @@ const AdminLayout: React.FC = () => {
               <React.Fragment key={section.label}>
                 <span className="nav-section-label">{section.label}</span>
                 {section.items.map((item) => (
-                  <NavLink key={item.to} to={item.to} end={item.end} className={`nav-link${item.highlight ? ' highlight' : ''}`}>
+                  <NavLink key={item.to} to={item.to} end={item.end} className={`nav-link${item.highlight ? ' highlight' : ''}`} onClick={closeMenu}>
                     <NavIcon name={item.icon} /> {item.label}
                   </NavLink>
                 ))}

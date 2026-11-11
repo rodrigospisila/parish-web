@@ -41,7 +41,7 @@ export const UFS = ['AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS',
 
 /** O que o plano libera — texto fixo, igual nas telas de planos e crescimento. */
 export const O_QUE_O_PLANO_LIBERA =
-  'Pastorais, escalas e trocas, catequese, formação, salas, visitas e documentos. Calendário, eventos, mapa e liturgia continuam grátis; o fiel nunca paga.';
+  'Tudo além do plano grátis: pastorais, escalas e trocas, catequese, formação, espaços, visitação, documentos, eventos, notícias e avisos, mural de orações, palavra pastoral, planejamento, sacramentos (registro e processos), financeiro, dízimo e o painel da coordenação. Continuam grátis: cadastro de membros, horários de missa e de confissão (com o "não haverá" por data), localização das próprias comunidades, mapa, liturgia e santos. O fiel nunca paga.';
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const inteiro = new Intl.NumberFormat('pt-BR');

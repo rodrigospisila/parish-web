@@ -419,7 +419,7 @@ export const PERGUNTAS: Array<{ p: string; r: string }> = [
   },
   {
     p: 'O que faz parte do plano completo?',
-    r: 'Todo o resto: sacramentos e certidões, catequese, pastorais, escalas e trocas, dízimo e financeiro, eventos, palavra do pároco, mural de oração, formação, salas, visitação, documentos, planejamento e o painel de indicadores. O plano é contratado por comunidade.',
+    r: 'Todo o resto: sacramentos e certidões, catequese, pastorais, escalas e trocas, dízimo e financeiro, eventos, palavra do pároco, mural de oração, formação, salas, visitação, documentos, planejamento e o painel de indicadores. O plano é contratado por comunidade, em faixas pelo número de membros ativos: o cadastro sem limite é do plano grátis; ao contratar, vale o limite de membros da faixa escolhida.',
   },
   {
     p: 'O fiel paga alguma coisa?',

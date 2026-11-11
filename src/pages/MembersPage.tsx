@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import TitleIcon from '../components/TitleIcon';
 import axios from 'axios';
 import { notify, confirm } from '../services/notification.service';
@@ -30,6 +30,8 @@ import MemberPickerSelect from '../components/team/MemberPickerSelect';
 import { dayMonth, invitableRoles } from '../components/team/teamApi';
 import '../components/team/team.css';
 import './MembersPage.css';
+import { usePlanEntitlements } from '../hooks/usePlanEntitlements';
+import { planFeaturePath } from '../services/planErrors';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -192,6 +194,16 @@ const MembersPage: React.FC = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [sacramentsFor, setSacramentsFor] = useState<Member | null>(null);
+  // Registro de sacramentos é do plano completo: com o recurso bloqueado, o
+  // botão leva à vitrine em vez de abrir o modal (que só mostraria erro)
+  const navigate = useNavigate();
+  const { isLocked } = usePlanEntitlements();
+  const sacramentsLocked = isLocked('sacraments');
+  const openSacraments = (member: Member) => {
+    if (sacramentsLocked) navigate(planFeaturePath('sacraments'));
+    else setSacramentsFor(member);
+  };
+  const sacramentsTitle = sacramentsLocked ? 'Sacramentos — recurso do plano completo (ver o que faz)' : 'Sacramentos';
   // Senha provisória da conta ligada ao membro (ux-acesso-04)
   const canResetAccounts = USER_MANAGER_ROLES.includes(String(authUser?.role ?? ''));
   const [tempPasswordTarget, setTempPasswordTarget] = useState<{ id: string; name: string; phone?: string | null } | null>(null);
@@ -1032,8 +1044,8 @@ const MembersPage: React.FC = () => {
                       Editar
                     </button>
                   )}
-                  <button className="entity-btn accent" onClick={() => setSacramentsFor(member)}>
-                    Sacramentos
+                  <button className="entity-btn accent" onClick={() => openSacraments(member)} title={sacramentsLocked ? sacramentsTitle : undefined}>
+                    Sacramentos{sacramentsLocked ? ' · plano completo' : ''}
                   </button>
                   {canInvite && accessOf(member) && accessOf(member)!.state !== 'ACTIVE' && (
                     <button className="entity-btn" onClick={() => openInvite(member)}>
@@ -1127,7 +1139,7 @@ const MembersPage: React.FC = () => {
                           ✏️
                         </button>
                       )}
-                      <button className="entity-icon-btn" onClick={() => setSacramentsFor(member)} title="Sacramentos" aria-label={`Sacramentos de ${member.fullName}`}>
+                      <button className="entity-icon-btn" onClick={() => openSacraments(member)} title={sacramentsTitle} aria-label={sacramentsLocked ? 'Sacramentos: recurso do plano completo' : `Sacramentos de ${member.fullName}`}>
                         ✝️
                       </button>
                       {canInvite && accessOf(member) && accessOf(member)!.state !== 'ACTIVE' && (

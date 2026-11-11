@@ -12,7 +12,13 @@ import './plan.css';
  * "propaganda" dentro do painel). Cada cartão abre a vitrine do recurso.
  */
 const PlanFeaturesPage: React.FC = () => {
-  const { entitlements, isLocked, anyLocked, ready } = usePlanEntitlements();
+  const { entitlements, isLocked, isSoftLocked, anyLocked, ready } = usePlanEntitlements();
+  // Fora do modo "on" nada é bloqueado: tudo liberado NESTE PERÍODO (não é "ter o plano completo")
+  const openPeriod = !!entitlements && entitlements.enforcement !== 'on';
+  const onTrial = !openPeriod && !anyLocked && entitlements?.plan?.status === 'TRIAL';
+  const trialEnd = onTrial && entitlements?.plan?.trialEndsAt ? new Date(entitlements.plan.trialEndsAt).toLocaleDateString('pt-BR') : null;
+  const FREE_LEAD =
+    'O plano grátis cuida do cadastro e dos horários. O plano completo organiza a vida pastoral inteira da comunidade — das escalas à catequese, do dízimo aos sacramentos.';
   // Só o que o servidor trata como pago (lista do backend); sem resposta, o catálogo inteiro
   const paid = entitlements?.paidFeatures;
   const features = paid ? FEATURE_CATALOG.filter((feature) => paid.includes(feature.key)) : FEATURE_CATALOG;
@@ -24,11 +30,17 @@ const PlanFeaturesPage: React.FC = () => {
           <TitleIcon name="igreja" /> Recursos do plano completo
         </h1>
         <p className="planv-index__lead">
-          {ready && !anyLocked
-            ? 'Sua comunidade tem o plano completo: tudo abaixo já está liberado.'
-            : 'O plano grátis cuida do cadastro e dos horários. O plano completo organiza a vida pastoral inteira da comunidade — das escalas à catequese, do dízimo aos sacramentos.'}
+          {!ready || !entitlements
+            ? FREE_LEAD
+            : openPeriod
+              ? 'Neste período, todos os recursos abaixo estão liberados para a sua comunidade. Quando os planos entrarem em vigor, eles passam a fazer parte do plano completo, contratado por comunidade; o cadastro de membros, os horários de missa e confissão e a localização continuam grátis.'
+              : anyLocked
+                ? `Sua comunidade está no plano grátis. ${FREE_LEAD}`
+                : onTrial
+                  ? `Sua comunidade está no teste do plano completo${trialEnd ? ` até ${trialEnd}` : ''}: tudo abaixo está liberado.`
+                  : 'Sua comunidade tem o plano completo: tudo abaixo já está liberado.'}
         </p>
-        {ready && anyLocked && <PlanCta />}
+        {ready && !openPeriod && anyLocked && <PlanCta />}
       </header>
 
       <ul className="planv-grid" aria-label="Recursos do plano completo">
@@ -39,8 +51,11 @@ const PlanFeaturesPage: React.FC = () => {
               <Link to={planFeaturePath(feature.key)} className="planv-card">
                 <span className="planv-card__top">
                   <img src={`/title-icons/${feature.icon}.svg`} alt="" aria-hidden="true" width={40} height={40} className="planv-card__icon" />
-                  {ready && (
-                    <span className={`planv-badge ${locked ? 'planv-badge--plan' : 'planv-badge--on'}`}>{locked ? 'Plano completo' : 'Ativo'}</span>
+                  {/* Bloqueio incerto (recurso de nível paróquia): sem selo — o backend decide ao abrir */}
+                  {ready && !!entitlements && !isSoftLocked(feature.key) && (
+                    <span className={`planv-badge ${locked ? 'planv-badge--plan' : 'planv-badge--on'}`}>
+                      {locked ? 'Plano completo' : openPeriod ? 'Liberado' : 'Ativo'}
+                    </span>
                   )}
                 </span>
                 <span className="planv-card__name">{feature.name}</span>
@@ -56,7 +71,7 @@ const PlanFeaturesPage: React.FC = () => {
 
       <section className="planv-free planv-free--two" aria-labelledby="planv-free-title">
         <h2 id="planv-free-title" className="planv-free__title">
-          Sempre grátis
+          {openPeriod ? 'Continua grátis depois' : 'Sempre grátis'}
         </h2>
         <div className="planv-free__cols">
           <div>

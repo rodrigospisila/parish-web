@@ -11,7 +11,8 @@ import { maskBrPhone, phoneForApi } from '../utils/phone';
 import { isPagedResponse, useDebouncedValue } from '../utils/useDebouncedValue';
 import type { AccessRule } from '../components/accessRules';
 import { PlanBadge, brl, dataBR, diasAte, num, UFS } from './platform/platformShared';
-import { usePlanTrial } from '../hooks/usePlanTrial';
+import { canOfferTrial, usePlanTrial } from '../hooks/usePlanTrial';
+import { usePlanEntitlements } from '../hooks/usePlanEntitlements';
 import { PLAN_FEATURES_PATH, planFeaturePath } from '../services/planErrors';
 import { FEATURE_CATALOG, FREE_PLAN_FAITHFUL_ITEMS, FREE_PLAN_ITEMS, TRIAL_DAYS } from './plan/featureCatalog';
 import { TrialConfirmDialog } from './plan/PlanCta';
@@ -189,9 +190,15 @@ const MyPlanPage: React.FC = () => {
   // ── Teste de 30 dias por pedido (contrato 5): uma vez por paróquia ──
   const { starting: iniciandoTeste, start: iniciarTeste } = usePlanTrial(parishId || null, { autoLoad: false });
   const [confirmarTeste, setConfirmarTeste] = useState(false);
+  // Bloqueio por plano (PLAN_ENFORCEMENT): só no modo "on" existe plano grátis de fato.
+  // Fora dele ("log"/"off") todos os recursos estão liberados — os textos dizem isso e o
+  // teste NÃO é oferecido (clicar gastaria o teste único sem liberar nada).
+  const { entitlements } = usePlanEntitlements();
+  const periodoLivre = !!entitlements && entitlements.enforcement !== 'on';
+  const podePedirTeste = canOfferTrial(entitlements?.enforcement, dados?.trial);
   const resumo = useMemo(() => summarizePlans(dados?.communities ?? []), [dados]);
   const comecarTeste = async () => {
-    await iniciarTeste();
+    if (podePedirTeste) await iniciarTeste();
     setConfirmarTeste(false);
     await carregar();
   };
@@ -441,7 +448,9 @@ const MyPlanPage: React.FC = () => {
             <div className="planv-status">
               <div className="planv-status__main">
                 <h2 id="myplan-hoje" className="planv-status__title">
-                  {resumo.total === 0
+                  {periodoLivre
+                    ? 'Todos os recursos liberados neste período'
+                    : resumo.total === 0
                     ? 'Seu plano hoje'
                     : resumo.free === resumo.total
                       ? 'Plano grátis'
@@ -451,7 +460,7 @@ const MyPlanPage: React.FC = () => {
                           ? `Teste do plano completo${resumo.trialEndsAt ? ` até ${dataBR(resumo.trialEndsAt)}` : ''}`
                           : 'Plano por comunidade'}
                 </h2>
-                {resumo.total > 0 && (
+                {resumo.total > 0 && !periodoLivre && (
                   <ul className="planv-status__counts" aria-label="Situação das comunidades">
                     {resumo.free > 0 && <li className="planv-badge planv-badge--free">{num(resumo.free)} no plano grátis</li>}
                     {resumo.trial > 0 && (
@@ -464,7 +473,9 @@ const MyPlanPage: React.FC = () => {
                   </ul>
                 )}
                 <p className="planv-status__text">
-                  {resumo.free > 0
+                  {periodoLivre
+                    ? 'Neste período, todos os recursos do Parish estão liberados para as comunidades desta paróquia, sem custo e sem precisar de teste. Quando os planos entrarem em vigor, continuam grátis o cadastro de membros, os horários de missa e confissão e a localização das comunidades; os demais recursos (escalas, catequese, pastorais, eventos, sacramentos, dízimo…) passam a fazer parte do plano completo, contratado por comunidade. Nenhum dado é apagado.'
+                    : resumo.free > 0
                     ? 'No plano grátis a equipe cuida do cadastro de membros, dos horários de missa e confissão e da localização das comunidades. Os demais recursos fazem parte do plano completo, contratado por comunidade.'
                     : resumo.trial > 0
                       ? 'Durante o teste, todos os recursos ficam liberados. Quando ele terminar, as comunidades sem plano contratado voltam ao plano grátis — nenhum dado é apagado.'
@@ -477,7 +488,7 @@ const MyPlanPage: React.FC = () => {
                 )}
               </div>
               <div className="planv-status__aside">
-                {dados.trial?.available && (
+                {podePedirTeste && (
                   <>
                     <button
                       type="button"
@@ -502,7 +513,11 @@ const MyPlanPage: React.FC = () => {
             <h2 id="myplan-comparativo">O que cada plano inclui</h2>
             <div className="planv-compare-wrap">
               <table className="planv-compare">
-                <caption>O plano completo é contratado por comunidade. O fiel nunca paga.</caption>
+                <caption>
+                  {periodoLivre
+                    ? 'Neste período tudo está liberado. A tabela mostra como fica quando os planos entrarem em vigor: o plano completo é contratado por comunidade. O fiel nunca paga.'
+                    : 'O plano completo é contratado por comunidade. O fiel nunca paga.'}
+                </caption>
                 <thead>
                   <tr>
                     <th scope="col">Recurso</th>
@@ -617,8 +632,18 @@ const MyPlanPage: React.FC = () => {
               </dl>
             ) : (
               <p className="myplan-meta">
-                Nenhuma assinatura contratada: as comunidades ficam no plano grátis até a paróquia contratar. O teste de{' '}
-                {dados.trialDays} dias não começa sozinho — é pedido pelo botão, uma vez por paróquia.
+                {periodoLivre ? (
+                  <>
+                    Nenhuma assinatura contratada. Neste período todos os recursos estão liberados sem assinatura; quando
+                    os planos entrarem em vigor, as comunidades sem plano contratado ficam no plano grátis. O teste de{' '}
+                    {dados.trialDays} dias fica guardado para esse momento (uma vez por paróquia).
+                  </>
+                ) : (
+                  <>
+                    Nenhuma assinatura contratada: as comunidades ficam no plano grátis até a paróquia contratar. O teste
+                    de {dados.trialDays} dias não começa sozinho — é pedido pelo botão, uma vez por paróquia.
+                  </>
+                )}
               </p>
             )}
             {contaStatus === 'PAST_DUE' && (
@@ -1009,7 +1034,7 @@ const MyPlanPage: React.FC = () => {
         </>
       )}
 
-      {confirmarTeste && (
+      {confirmarTeste && podePedirTeste && (
         <TrialConfirmDialog busy={iniciandoTeste} onConfirm={() => void comecarTeste()} onClose={() => setConfirmarTeste(false)} />
       )}
 

@@ -309,10 +309,18 @@ const CommunitiesPage: React.FC = () => {
       const { laySacramentRecords, ...communityData } = formData;
 
       if (editingCommunity) {
+        // O pino só vai no PATCH se foi alterado NESTE formulário (comparado com o
+        // que estava quando ele abriu). Senão, um ajuste feito em "Minha
+        // localização" com o formulário aberto era desfeito ao salvar outro campo.
+        const { latitude, longitude, ...semPino } = communityData;
+        const pinoMudou =
+          (latitude ?? null) !== (editingCommunity.latitude ?? null) ||
+          (longitude ?? null) !== (editingCommunity.longitude ?? null);
+        const corpo = pinoMudou ? communityData : semPino;
         await axios.patch(
           `${API_URL}/communities/${editingCommunity.id}`,
           // Interruptor de sacramentos por leigos: só PARISH_ADMIN+ (o coordenador não muda)
-          isAdminRole ? { ...communityData, laySacramentRecords } : communityData,
+          isAdminRole ? { ...corpo, laySacramentRecords } : corpo,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         notify.success('Comunidade atualizada com sucesso!');
